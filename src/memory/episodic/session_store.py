@@ -73,6 +73,22 @@ async def get_recent(session_id: str, limit: int) -> list[StoredMessage]:
     return [_row_to_message(row) for row in reversed(rows)]
 
 
+async def get_messages(session_id: str, *, role: str | None = None) -> list[StoredMessage]:
+    async with db.acquire_app() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT message_id, session_id, role, content, metadata, created_at
+            FROM session_messages
+            WHERE session_id = $1
+              AND ($2::text IS NULL OR role = $2)
+            ORDER BY message_id ASC
+            """,
+            session_id,
+            role,
+        )
+    return [_row_to_message(row) for row in rows]
+
+
 def _row_to_session(row: Any) -> Session:
     return Session(
         session_id=row["session_id"],

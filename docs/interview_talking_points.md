@@ -29,3 +29,6 @@
 - Phase 6's walker traverses citation edges bidirectionally inside the local corpus and outbound-only for lazy ingest: outbound finds what this paper depended on, incoming finds what built on this paper.
 - Compression policy keeps recent messages verbatim and prepends a recursive summary of older history; the cache is keyed by upper message id so cost stays bounded.
 - The compressor is a pure consumer of `session_messages` and `session_summaries`, with no global state, making cache behavior fully testable.
+- Three-tier entity linking in `src/memory/semantic/linker.py` uses alias, canonical, then embedding plus an LLM judge, which is a practical fallback chain for noisy LLM concept extractions.
+- The concept graph is an Input Mode signal, not decoration: `graph_retriever.py` expands a query through graph neighbors and derives paper hints from chunk-level relation evidence.
+- Reflection idempotency is enforced through canonical aliases and upserted relation evidence, so replaying a session promotion is safe.

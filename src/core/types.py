@@ -148,3 +148,65 @@ class StoredMessage(BaseModel):
     content: str
     metadata: dict = Field(default_factory=dict)
     created_at: datetime
+
+
+class ConceptRelationExtraction(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    target_display: str
+    type: str
+    evidence_chunk_ids: list[int] = Field(default_factory=list)
+
+
+class ConceptExtraction(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    display_name: str
+    definition: str
+    aliases: list[str] = Field(default_factory=list)
+    evidence_chunk_ids: list[int] = Field(default_factory=list)
+    relations: list[ConceptRelationExtraction] = Field(default_factory=list)
+
+
+class StoredConcept(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    concept_id: int
+    canonical: str
+    display: str
+    definition: str | None = None
+    evidence_chunk_ids: list[int] = Field(default_factory=list)
+
+
+class ConceptLinkResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    concept: StoredConcept
+    created: bool
+    link_path: Literal["alias", "canonical", "embedding", "new"]
+
+
+class Neighbor(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    concept: StoredConcept
+    rel_type: str
+    weight: float
+    evidence_chunk_ids: list[int] = Field(default_factory=list)
+
+
+class GraphExpansion(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    seed_concept_ids: list[int] = Field(default_factory=list)
+    neighbor_concept_ids: list[int] = Field(default_factory=list)
+    extra_paper_hints: list[str] = Field(default_factory=list)
+
+
+class ReflectionReport(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    concepts_created: int = 0
+    concepts_reused: int = 0
+    relations_created: int = 0
+    relations_reused: int = 0
