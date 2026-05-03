@@ -23,3 +23,7 @@
 - Self-RAG uses cost tiers: batched relevance judging runs on `fast`, while sufficiency and citation verification use `main`.
 - Router stays pure: it queries concept aliases and emits policy flags, but never performs retrieval or live expansion.
 - JSON repair retry gives decomposition one "fix your JSON" attempt before surfacing validation failure.
+- Bounded multi-hop with LLM-judged frontier prevents combinatorial explosion of citation expansion.
+- Lazy ingestion means the corpus grows during a session; the agent extends its own memory.
+- Wall-clock budget is separate from depth and frontier limits, giving three independent safety knobs.
+- Phase 6's walker traverses citation edges bidirectionally inside the local corpus and outbound-only for lazy ingest: outbound finds what this paper depended on, incoming finds what built on this paper.

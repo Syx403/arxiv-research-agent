@@ -14,7 +14,8 @@ RRF_K = 60
 RETRIEVAL_TOP_K_AFTER_FUSION = 30
 RERANK_TOP_K = 10
 MULTI_HOP_MAX_DEPTH = 2
-MULTI_HOP_FRONTIER_LIMIT = 8
+MULTI_HOP_FRONTIER_LIMIT = 5
+MULTI_HOP_WALL_CLOCK_BUDGET_S = 60
 MAX_SUB_QUESTIONS = 5
 SELF_RAG_MAX_RETRIES = 2
 EPISODIC_VERBATIM_TURNS = 6
@@ -111,3 +112,18 @@ class SufficiencyVerdict(BaseModel):
 
     sufficient: bool
     missing_aspects: list[str] = Field(default_factory=list)
+
+
+class FrontierItem(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    paper_id: str
+    score: float
+    depth: int
+
+
+class WalkResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    visited_paper_ids: list[str]
+    newly_ingested_paper_ids: list[str]
