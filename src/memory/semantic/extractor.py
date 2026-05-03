@@ -37,7 +37,7 @@ async def extract_concepts_from_text(text: str, *, source_chunk_ids: list[int]) 
     )
     broken_output = response.content or ""
     try:
-        return _parse_payload(broken_output).concepts
+        concepts = _parse_payload(broken_output).concepts
     except ValidationError:
         repair = await client.chat(
             [
@@ -54,7 +54,29 @@ async def extract_concepts_from_text(text: str, *, source_chunk_ids: list[int]) 
             max_tokens=1800,
             response_format={"type": "json_object"},
         )
-        return _parse_payload(repair.content or "").concepts
+        concepts = _parse_payload(repair.content or "").concepts
+    if concepts:
+        return concepts
+
+    retry = await client.chat(
+        [
+            Message(role="system", content=SYSTEM_PROMPT),
+            Message(
+                role="user",
+                content=(
+                    "The previous valid JSON contained no concepts. Re-check the text. "
+                    "If a named method, framework, or technical idea is clearly defined, extract it. "
+                    "Still skip concepts that are merely mentioned.\n\n"
+                    f"Source chunk IDs: {json.dumps(source_chunk_ids)}\n\n"
+                    f"Text:\n{text}"
+                ),
+            ),
+        ],
+        temperature=0.0,
+        max_tokens=1800,
+        response_format={"type": "json_object"},
+    )
+    return _parse_payload(retry.content or "").concepts
 
 
 def _parse_payload(content: str) -> "_ConceptExtractionPayload":

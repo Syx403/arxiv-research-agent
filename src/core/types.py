@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.retrieval.index.types import Hit
+
 
 EMBEDDING_DIM = 1536
 CHUNK_TOKEN_SIZE = 800
@@ -16,7 +18,9 @@ RETRIEVAL_TOP_K_AFTER_FUSION = 30
 RERANK_TOP_K = 10
 MULTI_HOP_MAX_DEPTH = 2
 MULTI_HOP_FRONTIER_LIMIT = 5
+MULTI_HOP_MAX_CALLS = 1
 MULTI_HOP_WALL_CLOCK_BUDGET_S = 60
+PAPER_HINT_BOOST_FACTOR = 1.1
 MAX_SUB_QUESTIONS = 5
 SELF_RAG_MAX_RETRIES = 2
 EPISODIC_VERBATIM_TURNS = 6
@@ -99,6 +103,17 @@ class RouteDecision(BaseModel):
     sources: list[str] = Field(default_factory=lambda: ["local_pgvector"])
     use_concept_graph: bool = False
     may_use_semantic_scholar_live: bool = False
+
+
+class SubQResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    subq_index: int
+    hits: list[Hit] = Field(default_factory=list)
+    sufficient: bool
+    route_decision: RouteDecision
+    retries_used: int = 0
+    multi_hop_used: bool = False
 
 
 class RelevanceVerdict(BaseModel):

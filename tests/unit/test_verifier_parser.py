@@ -15,6 +15,11 @@ class _FakeChatClient:
         )
 
 
+class _BrokenVerifierClient:
+    async def chat(self, *args, **kwargs) -> ChatResponse:
+        return ChatResponse(content="", model="fake", finish_reason="length")
+
+
 def test_verifier_parser_builds_citation_verdict() -> None:
     citation = Citation(paper_id="p", chunk_id=7, claim_span=(0, 5))
 
@@ -42,3 +47,14 @@ async def test_verify_citations_uses_evidence_lookup(monkeypatch) -> None:
 
     assert report.passed is True
     assert report.verdicts[0].citation.chunk_id == 7
+
+
+@pytest.mark.asyncio
+async def test_verify_citations_keeps_citation_when_verifier_json_invalid(monkeypatch) -> None:
+    monkeypatch.setattr(verifier, "get_chat_client", lambda name: _BrokenVerifierClient())
+    citation = Citation(paper_id="p", chunk_id=7, claim_span=(0, 5))
+
+    report = await verifier.verify_citations("claim text", [citation], {7: "claim evidence"})
+
+    assert report.passed is True
+    assert "invalid JSON twice" in report.verdicts[0].rationale

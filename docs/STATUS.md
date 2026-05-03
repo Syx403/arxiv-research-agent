@@ -11,7 +11,7 @@
 | 6 | Multi-hop Citation Walker | complete | HEAD (see git log) | 2026-05-03 | none |
 | 7 | Episodic Memory and Compression | complete | HEAD (see git log) | 2026-05-03 | none |
 | 8 | Semantic Memory and Concept Graph | complete | HEAD (see git log) | 2026-05-03 | none |
-| 9 | LangGraph Orchestration | not started | - | - | - |
+| 9 | LangGraph Orchestration | complete | HEAD (see git log) | 2026-05-03 | none |
 | 10 | Evaluation Harness | not started | - | - | - |
 | 11 | User Interface | not started | - | - | - |
 | 12 | Polish and Documentation | not started | - | - | - |

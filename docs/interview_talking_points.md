@@ -32,3 +32,6 @@
 - Three-tier entity linking in `src/memory/semantic/linker.py` uses alias, canonical, then embedding plus an LLM judge, which is a practical fallback chain for noisy LLM concept extractions.
 - The concept graph is an Input Mode signal, not decoration: `graph_retriever.py` expands a query through graph neighbors and derives paper hints from chunk-level relation evidence.
 - Reflection idempotency is enforced through canonical aliases and upserted relation evidence, so replaying a session promotion is safe.
+- LangGraph state uses explicit reducers in `src/graph/state.py`: `add_messages` for message history and `merge_dicts` for sub-question results.
+- Retrieval is one graph node, while multi-hop is a separate budgeted node entered only when sufficiency fails and the route permits live expansion.
+- Persistence uses `AsyncPostgresSaver` over the psycopg pool, so Phase 9 can resume checkpointed state across a new Python process with the same `thread_id`.

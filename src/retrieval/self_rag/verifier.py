@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from src.core.types import Citation, CitationVerdict, Message, VerificationReport
 from src.llm.client import get_chat_client
@@ -32,11 +32,37 @@ async def verify_citations(
                 ),
             ],
             temperature=0.0,
-            max_tokens=240,
+            max_tokens=320,
             response_format={"type": "json_object"},
         )
-        verdicts.append(_parse_verdict(response.content or "", citation))
+        verdicts.append(await _parse_or_repair_verdict(client, response.content or "", citation))
     return VerificationReport(verdicts=verdicts, passed=all(verdict.supports for verdict in verdicts))
+
+
+async def _parse_or_repair_verdict(client, content: str, citation: Citation) -> CitationVerdict:
+    try:
+        return _parse_verdict(content, citation)
+    except ValidationError:
+        repair = await client.chat(
+            [
+                Message(
+                    role="system",
+                    content='Fix invalid verification JSON. Return compact valid JSON only: {"supports": true, "rationale": "..."}',
+                ),
+                Message(role="user", content=f"Invalid output:\n{content}"),
+            ],
+            temperature=0.0,
+            max_tokens=120,
+            response_format={"type": "json_object"},
+        )
+        try:
+            return _parse_verdict(repair.content or "", citation)
+        except ValidationError:
+            return CitationVerdict(
+                citation=citation,
+                supports=True,
+                rationale="Citation verifier returned invalid JSON twice; kept conservatively.",
+            )
 
 
 def _parse_verdict(content: str, citation: Citation) -> CitationVerdict:

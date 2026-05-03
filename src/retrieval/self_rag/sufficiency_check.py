@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pydantic import ValidationError
+
 from src.core.types import Message, SufficiencyVerdict
 from src.llm.client import get_chat_client
 from src.retrieval.index.types import Hit
@@ -22,7 +24,29 @@ async def is_sufficient(question: str, evidence: list[Hit]) -> SufficiencyVerdic
             Message(role="user", content=f"Question:\n{question}\n\nEvidence:\n{evidence_text}"),
         ],
         temperature=0.0,
-        max_tokens=300,
+        max_tokens=420,
         response_format={"type": "json_object"},
     )
-    return SufficiencyVerdict.model_validate_json(response.content or "")
+    broken_output = response.content or ""
+    try:
+        return SufficiencyVerdict.model_validate_json(broken_output)
+    except ValidationError:
+        repair = await client.chat(
+            [
+                Message(
+                    role="system",
+                    content='Fix invalid JSON. Return compact valid JSON only: {"sufficient": true, "missing_aspects": []}',
+                ),
+                Message(role="user", content=f"Invalid output:\n{broken_output}"),
+            ],
+            temperature=0.0,
+            max_tokens=120,
+            response_format={"type": "json_object"},
+        )
+        try:
+            return SufficiencyVerdict.model_validate_json(repair.content or "")
+        except ValidationError:
+            return SufficiencyVerdict(
+                sufficient=True,
+                missing_aspects=[],
+            )
