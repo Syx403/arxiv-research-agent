@@ -7,7 +7,7 @@ from typing import TypeVar
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
 from src.core.logging import redact_secrets
-from src.core.types import RETRY_MAX_ATTEMPTS
+from src.core.types import RETRY_MAX_ATTEMPTS, RETRY_WAIT_INITIAL_SECONDS, RETRY_WAIT_MAX_SECONDS
 from src.llm.errors import LLMRateLimitError, LLMServerError, LLMTimeoutError
 
 
@@ -29,7 +29,10 @@ def with_retry(func: F | None = None) -> Callable[[F], F] | F:
     def decorator(inner: F) -> F:
         return retry(
             retry=retry_if_exception_type((LLMRateLimitError, LLMTimeoutError, LLMServerError)),
-            wait=wait_exponential_jitter(initial=0.01, max=0.05),
+            wait=wait_exponential_jitter(
+                initial=RETRY_WAIT_INITIAL_SECONDS,
+                max=RETRY_WAIT_MAX_SECONDS,
+            ),
             stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
             before_sleep=_before_sleep,
             reraise=True,

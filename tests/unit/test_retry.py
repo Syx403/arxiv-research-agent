@@ -6,8 +6,16 @@ from src.llm.errors import LLMAuthError, LLMRateLimitError
 from src.llm.retry import with_retry
 
 
+def _speed_up_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.core.types.RETRY_WAIT_INITIAL_SECONDS", 0.01)
+    monkeypatch.setattr("src.core.types.RETRY_WAIT_MAX_SECONDS", 0.05)
+    monkeypatch.setattr("src.llm.retry.RETRY_WAIT_INITIAL_SECONDS", 0.01)
+    monkeypatch.setattr("src.llm.retry.RETRY_WAIT_MAX_SECONDS", 0.05)
+
+
 @pytest.mark.asyncio
-async def test_retries_rate_limit_then_succeeds() -> None:
+async def test_retries_rate_limit_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    _speed_up_retry(monkeypatch)
     calls = 0
 
     @with_retry()
@@ -38,7 +46,11 @@ async def test_does_not_retry_auth_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_retry_log_masks_synthetic_key(caplog: pytest.LogCaptureFixture) -> None:
+async def test_retry_log_masks_synthetic_key(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _speed_up_retry(monkeypatch)
     calls = 0
     secret = "Authorization: Bearer abc123def456ghi789"
 

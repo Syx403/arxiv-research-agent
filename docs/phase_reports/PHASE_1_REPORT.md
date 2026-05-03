@@ -86,3 +86,10 @@ None.
 
 ## Ready for review
 The planner can read these files and run those commands to verify.
+
+## Post-review fixes
+- Follow-up commit: `HEAD (see git log)`.
+- Changed retry backoff from test-speed production values to production-safe constants: `RETRY_WAIT_INITIAL_SECONDS = 1.0` and `RETRY_WAIT_MAX_SECONDS = 30.0` in `src/core/types.py`.
+- Updated `src/llm/retry.py` to use those constants in `wait_exponential_jitter`.
+- Updated `tests/unit/test_retry.py` to monkeypatch retry waits to `0.01` and `0.05` seconds so unit tests still complete quickly.
+- Verification: `uv run pytest tests/unit -q` passes.
