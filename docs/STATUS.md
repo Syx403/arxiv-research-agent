@@ -2,9 +2,9 @@
 
 | Phase | Title | Status | Commit | Date | Owner handoff |
 |-------|-------|--------|--------|------|---------------|
-| 0 | Bootstrap | complete | 0d7530e | 2026-05-03 | H-1 confirmed 2026-05-03 |
+| 0 | Bootstrap | complete | 0d7530e | 2026-05-03 | H-1 confirmed 2026-05-03; H-2 confirmed 2026-05-03 |
 | 1 | Provider Adapter Layer | complete | b69aa26 + HEAD (see git log) | 2026-05-03 | none |
-| 2 | Database Schema and Connection | not started | - | - | - |
+| 2 | Database Schema and Connection | complete | HEAD (see git log) | 2026-05-03 | none |
 | 3 | Corpus Clients and Ingestion | not started | - | - | - |
 | 4 | Vector Index and Hybrid Retrieval | not started | - | - | - |
 | 5 | Agentic RAG Components | not started | - | - | - |

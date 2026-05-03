@@ -7,3 +7,9 @@
 - Secret masking: `src/core/logging.py` redacts bearer tokens, API keys, and key-like values at the logging-filter layer.
 - Embedding dimension validation: `src/llm/providers/openai_embed.py` rejects vectors that do not match the 1536-dimensional `text-embedding-3-small` contract.
 - Client lifecycle: `src/llm/client.py` caches provider clients and closes all underlying async clients through `close_llm_clients()`.
+- Split-driver architecture: `src/core/db.py` uses asyncpg for application SQL because it is fast and supports `pgvector.asyncpg.register_vector`, while psycopg is reserved for LangGraph PostgresSaver with `autocommit=True` and `dict_row`.
+- Hybrid retrieval-ready schema: `src/core/sql/002_chunks.sql` stores `vector(1536)` with HNSW plus a generated stored `tsvector` with GIN, ready for Phase 4 RRF fusion.
+- Concept graph schema: `src/core/sql/004_concepts.sql` models concepts, aliases, and relations with JSONB `evidence_chunks` for chunk-level grounding.
+- Updated-at trigger: `src/core/sql/007_triggers.sql` keeps concept mutation timestamps observable for tests and later reasoning.
+- LangGraph checkpointing: `scripts/bootstrap_db.py` calls `AsyncPostgresSaver.setup()` over the psycopg pool, proving LangGraph 1.x checkpoint integration against local Postgres.
+- pgvector precision: I learned the hard way that pgvector stores as float4. The integration test uses `pytest.approx` to validate the round-trip semantically rather than bit-equality.
