@@ -1,10 +1,23 @@
 # Execution Plan: arxiv-research-agent
 
-> **Document version**: 1.5
+> **Document version**: 1.6
 > **Owner**: Project planner (Claude)
 > **Executor**: Codex (GPT-5.5)
 > **Reviewer**: Project planner (Claude), per phase
 > **Audience**: Codex executor and the human owner. This document is Codex's only source of context. Read it from start to finish before doing anything.
+
+## Changelog v1.5 → v1.6
+
+The owner has chosen to use DeepSeek V4 Pro as the main brain (via DeepSeek native API) and DeepSeek V4 Flash as the cheap-tier brain. OpenRouter remains wired as an available provider but is not in the default registry — it is held in reserve for the case where DeepSeek's tool-use or strict-JSON behaviour proves unreliable in later phases. The `OpenRouterChatClient` class is still implemented in `src/llm/providers/openrouter.py`; only the registry entries change.
+
+This is a config-level decision, but it ripples through every node spec because v1.5 named `haiku-4.5` and `flash-cheap` directly. v1.6 renames these to role-based logical aliases.
+
+- **Logical aliases**: `main` (= DeepSeek V4 Pro, native), `fast` (= DeepSeek V4 Flash, native). Old aliases `haiku-4.5`, `flash-cheap`, `deepseek-v4` are removed from the default registry.
+- **OpenRouter retained but not routed**: `OpenRouterChatClient` still implemented and tested, but no default registry entry. Phase 1 model-verification ADR documents this as the explicit fallback option (a one-line registry edit re-enables it under an alias such as `fallback-haiku`).
+- **Phase 1 §6.3 task 1**: model verification updated. Required entries: DeepSeek V4 Pro (`main`), DeepSeek V4 Flash (`fast`), OpenAI `text-embedding-3-small` (`embed-small`), Cohere rerank (`rerank`). LangGraph version/security check unchanged.
+- **Phase 1 §6.3 task 5**: registry is two chat aliases (`main`, `fast`) plus the embed and rerank aliases. Vendor IDs filled in by Phase 1 verification.
+- **All node specs** (Phase 5, 6, 7, 8, 9, 10): `haiku-4.5` → `main`, `flash-cheap` → `fast`. Phase 1 acceptance and validation also use `main`.
+- **Phase 1 §6.3 task 13 smoke test**: explicitly uses cheapest variants only — DeepSeek V4 Flash for chat smoke (single-token output), single short string for embed, single-doc single-query rerank. Estimated total smoke-test cost well under USD 0.01.
 
 ## Changelog v1.4 → v1.5
 
@@ -167,8 +180,8 @@ User question (Chainlit UI)
 | Layer | Choice | Why |
 |---|---|---|
 | Orchestration | LangGraph (>=0.2.50,<0.3) | Explicit state graph, checkpointing, time travel |
-| LLM (chat/tool) | Anthropic Claude Haiku 4.5 (main brain), plus a current Flash-tier model and a current DeepSeek V4 flagship for cheap routing | Multi-model for cost-performance trade-off |
-| Chat routing | OpenRouter for Haiku and the chosen Flash-tier; native DeepSeek API for the chosen DeepSeek model | OpenRouter does not cover all needs |
+| LLM (chat/tool) | DeepSeek V4 Pro as `main` brain, DeepSeek V4 Flash as `fast` (batch judging, HyDE, frontier scoring, etc.) | Single-vendor chat tier — cost-efficient; OpenRouter retained as opt-in fallback |
+| Chat routing | DeepSeek native API for `main` and `fast`. OpenRouter is configured (env var present, `OpenRouterChatClient` implemented) but not in the default registry | Reduces moving parts during initial development; OpenRouter unlocked by a one-line registry edit if DeepSeek proves unreliable in later phases |
 | Embedding | OpenAI `text-embedding-3-small` (1536 dim), direct OpenAI API | OpenRouter has weak embedding coverage |
 | Reranker | Cohere rerank, direct Cohere API; specific version selected in Phase 1 | OpenRouter has no rerank |
 | Database | PostgreSQL 16 + `pgvector` extension, single Docker service | Single source of truth for vectors, metadata, concept graph, and LangGraph checkpoints |
@@ -791,35 +804,35 @@ Build the LLM/embedding/rerank adapter layer. Business code in later phases will
 
 ### 6.2 Background
 
-We use four providers:
+We use four providers in v1.6:
 
-- **OpenRouter** for chat models routed through it: Claude Haiku 4.5 and a current Flash-tier model (Google or other). Model IDs are OpenRouter-style (`provider/model`).
-- **DeepSeek** native API for the current DeepSeek V4 flagship. Their endpoint is `https://api.deepseek.com/v1`.
+- **DeepSeek** native API for both `main` (V4 Pro) and `fast` (V4 Flash). Endpoint: `https://api.deepseek.com/v1` (OpenAI-compatible).
 - **OpenAI** direct for `text-embedding-3-small`.
 - **Cohere** direct for the current rerank model.
+- **OpenRouter** is configured (env var present, `OpenRouterChatClient` implemented and tested) but **not** in the default registry. It exists as an opt-in fallback path. Phase 1 records the exact one-line registry edit needed to re-enable it under an alias such as `fallback-haiku`.
 
 ### 6.3 Tasks
 
 1. **Model and LangGraph verification (do this first).**
-   - Open Codex's web search or fetch tool. Pull the current model lists:
-     - OpenRouter `GET https://openrouter.ai/api/v1/models` (no auth required for the list).
+   - Open Codex's web search or fetch tool. Pull the current model docs:
      - DeepSeek docs: `https://api-docs.deepseek.com/`.
      - Cohere rerank docs: `https://docs.cohere.com/reference/rerank-2`.
      - OpenAI embedding docs: `https://platform.openai.com/docs/guides/embeddings`.
+     - OpenRouter model list at `GET https://openrouter.ai/api/v1/models` is **only consulted to record the candidate fallback model ID** (e.g., `anthropic/claude-haiku-4.5` if it exists), not to wire it into the default registry.
    - For each provider, choose:
-     - **OpenRouter chat (main)**: `anthropic/claude-haiku-4.5` (this is the planner's anchor; verify it exists; if not, ask the owner).
-     - **OpenRouter chat (cheap routing)**: pick the cheapest current Flash-tier model with reliable JSON mode. Candidates to check in order: `google/gemini-2.5-flash`, `google/gemini-flash-1.5`, then any current `mistral` Flash-tier. **Do not** use `google/gemini-2.0-flash-001` (retiring 2026-06-01).
-     - **DeepSeek**: pick the current V4 flagship per their docs. Candidates: `deepseek-v4-pro`, `deepseek-v4-flash`, `deepseek-chat`. Pick the one their current docs identify as the latest production-quality model; document the mapping.
-     - **Cohere rerank**: pick the latest stable rerank model. Candidate IDs in order of preference: `rerank-v4.0-pro`, `rerank-v4.0-fast`, `rerank-v3.5`. Reproducibility matters more than newness — choose one and pin.
+     - **DeepSeek `main`**: the current V4 Pro production model. Candidate IDs to verify in order: `deepseek-v4-pro`, `deepseek-chat` (legacy alias). Pick the one their docs identify as the current production V4 Pro and pin it.
+     - **DeepSeek `fast`**: the current V4 Flash variant. Candidate IDs: `deepseek-v4-flash`, then any other "flash" / "lite" / "small" V4 alias their docs name. Pick one and pin.
+     - **Cohere rerank**: candidate IDs in order of preference: `rerank-v4.0-pro`, `rerank-v4.0-fast`, `rerank-v3.5`. Choose one and pin.
      - **OpenAI embedding**: `text-embedding-3-small`, dimension 1536.
-   - **LangGraph version and security check** (resolves N-C-2):
+     - **OpenRouter (fallback only, not in default registry)**: record the candidate fallback ID for Haiku 4.5 (`anthropic/claude-haiku-4.5`) in the ADR for future opt-in. Do not add it to the registry now.
+   - **LangGraph version and security check**:
      - Check PyPI and GitHub advisories for the `langgraph` and `langgraph-checkpoint-postgres` packages. Specifically look for the historical msgpack checkpoint deserialization advisory affecting the 0.2.x line.
      - Decide between two paths:
        - **Path A — stay on `langgraph>=0.2.50,<0.3`**: only acceptable if the latest 0.2.x release contains the deserialization fix or a documented strict-mode opt-in. Document the mitigation: our checkpoint store is local Postgres only and never accepts checkpoints from untrusted sources.
-       - **Path B — upgrade to `langgraph>=1.0,<2`**: acceptable if 1.x is GA and `langgraph-checkpoint-postgres` has a compatible release. Update `pyproject.toml` accordingly. Verify the `AsyncPostgresSaver` import path and `add_messages` reducer still apply (they do across versions, but confirm).
+       - **Path B — upgrade to `langgraph>=1.0,<2`**: acceptable if 1.x is GA and `langgraph-checkpoint-postgres` has a compatible release. Update `pyproject.toml` accordingly. Verify the `AsyncPostgresSaver` import path and `add_messages` reducer still apply.
      - Pick one path. **Do not pick a path that has neither the fix nor a compatible 1.x line; ask the human owner instead.**
-   - Write `docs/decisions/0001-model-and-langgraph-selection.md` recording each model choice, the LangGraph path chosen, the date checked, and the URLs of the supporting documentation and advisory.
-   - Update `src/llm/registry.py` (created later in this phase) with the chosen IDs. If Path B was selected, also update `pyproject.toml`.
+   - Write `docs/decisions/0001-model-and-langgraph-selection.md` recording each model choice, the LangGraph path chosen, the OpenRouter fallback candidate ID (for future opt-in), the date checked, and the URLs of the supporting documentation and advisory.
+   - Update `src/llm/registry.py` with the chosen IDs (only the four default-registry entries: `main`, `fast`, `embed-small`, `rerank`). If Path B was selected, also update `pyproject.toml`.
 
 2. **`src/core/types.py`** — Define shared Pydantic models and code constants. The first line of the file must be `from __future__ import annotations` so forward references (e.g., `Message` referring to `ToolCall` defined later) resolve cleanly.
 
@@ -851,7 +864,7 @@ We use four providers:
    - Exponential backoff with jitter, max attempts from `RETRY_MAX_ATTEMPTS` config.
    - Log each retry at `WARNING`, masking sensitive fields. Use `tenacity.before_sleep_log` with a custom callable that scrubs the error message.
 
-5. **`src/llm/registry.py`** — A `ModelRegistry` mapping logical names to provider routes. Populate from the choices in Task 1:
+5. **`src/llm/registry.py`** — A `ModelRegistry` mapping role-based logical names to provider routes. Populate from the choices in Task 1:
 
 ```python
 @dataclass(frozen=True)
@@ -861,15 +874,17 @@ class ProviderRoute:
     capability: Literal["chat", "embedding", "rerank"]
 
 REGISTRY: dict[str, ProviderRoute] = {
-    "haiku-4.5":      ProviderRoute("openrouter",      "<verified-id>", "chat"),
-    "deepseek-v4":    ProviderRoute("deepseek_native", "<verified-id>", "chat"),
-    "flash-cheap":    ProviderRoute("openrouter",      "<verified-id>", "chat"),
+    "main":           ProviderRoute("deepseek_native", "<verified-v4-pro-id>",   "chat"),
+    "fast":           ProviderRoute("deepseek_native", "<verified-v4-flash-id>", "chat"),
     "embed-small":    ProviderRoute("openai_native",   "text-embedding-3-small", "embedding"),
-    "rerank":         ProviderRoute("cohere_native",   "<verified-id>", "rerank"),
+    "rerank":         ProviderRoute("cohere_native",   "<verified-rerank-id>",   "rerank"),
 }
+
+# Reserved (NOT registered by default; opt-in only by uncommenting one line):
+# "fallback-haiku": ProviderRoute("openrouter", "anthropic/claude-haiku-4.5", "chat"),
 ```
 
-   Use logical aliases (`flash-cheap`, `deepseek-v4`) so the rest of the code does not encode vendor model IDs. The Phase 1 owner-handoff allows live verification but must not commit secrets.
+   Use **role-based** logical aliases (`main`, `fast`) so the rest of the code never encodes vendor identity. If DeepSeek proves unreliable in later phases, re-enable the OpenRouter route by uncommenting the `fallback-haiku` line and updating the affected node specs to call `get_chat_client("fallback-haiku")` for the failing nodes only. Document any such switch as a new ADR.
 
 6. **`src/llm/providers/openrouter.py`** — `OpenRouterChatClient`:
    - Built on `httpx.AsyncClient` (not the official OpenAI SDK).
@@ -919,11 +934,17 @@ REGISTRY: dict[str, ProviderRoute] = {
     - `tests/unit/test_status_mapping.py` — For each provider client, mock httpx to return status codes 400/401/403/429/500/503 and verify the right error class is raised.
     - `tests/unit/test_embedding_dim.py` — Mock OpenAI to return a 1024-dim vector; verify `LLMProviderError` is raised.
     - `tests/unit/test_close_clients.py` — Build and close clients; verify httpx `is_closed` is true after `aclose()`.
-    - `tests/integration/test_provider_smoke.py` — A skipped-by-default test (skip if `INTEGRATION_TESTS=1` env not set) that does a one-token call against each provider to verify auth and basic round trip.
+    - `tests/integration/test_provider_smoke.py` — Skipped by default (only runs if `INTEGRATION_TESTS=1`). **Cost-minimised**: this test must NEVER call `main` (DeepSeek V4 Pro). Instead it exercises only the cheapest path of each provider:
+      - **Chat**: one call to `fast` (DeepSeek V4 Flash) with a 2-token prompt and `max_tokens=1`. Asserts the response object parses and contains a non-empty `model` field.
+      - **Embedding**: one call to `embed-small` with a single short string ("hello"). Asserts vector length equals 1536.
+      - **Rerank**: one call to `rerank` with one query and one document. Asserts the result list has length 1.
+      - **OpenRouter**: not called by default. The `OpenRouterChatClient` has its own focused unit test (`tests/unit/test_status_mapping.py`) which verifies HTTP behaviour without real network calls. A dedicated `test_openrouter_smoke.py` exists but is skipped unless both `INTEGRATION_TESTS=1` and `OPENROUTER_SMOKE=1` are set; it uses the cheapest available OpenRouter model with `max_tokens=1`. This keeps cost zero by default.
+
+      Combined per-run smoke cost (DeepSeek Flash + OpenAI embed + Cohere rerank) is well under USD 0.01.
 
 ### 6.4 Acceptance criteria
 
-- [ ] `from src.llm.client import get_chat_client; client = get_chat_client("haiku-4.5")` works in a Python REPL after `make install` and a populated `.env`.
+- [ ] `from src.llm.client import get_chat_client; client = get_chat_client("main")` works in a Python REPL after `make install` and a populated `.env`. Same for `get_chat_client("fast")`.
 - [ ] `uv run pytest tests/unit -q` passes with all unit tests green.
 - [ ] No code path imports `openai` or `cohere` outside `src/llm/providers/` (a comment in the grep validation acknowledges that test files may reference SDK types via mocks).
 - [ ] Logging masks API keys: a manual check by running a provider call and inspecting logs shows no full key visible.
@@ -1400,13 +1421,13 @@ Build the per-sub-question retrieval-side agentic components as standalone modul
 1. **`src/retrieval/query/decomposer.py`**:
    - `async def decompose(question: str, *, max_subq: int = MAX_SUB_QUESTIONS) -> Decomposition`
    - `Decomposition` carries a list of `SubQuestion(text, depends_on: list[int])`. Dependencies form a DAG.
-   - Use `haiku-4.5` with a prompt requiring JSON output validated by `model_validate_json`.
+   - Use `main` with a prompt requiring JSON output validated by `model_validate_json`.
    - For trivial questions, return a single sub-question equal to the input.
    - On JSON parse failure: one auto-retry asking the model to fix the JSON; then raise.
 
 2. **`src/retrieval/query/rewriter.py`**:
    - `async def rewrite_for_retrieval(subq: str) -> str` — tightens the query for retrieval.
-   - `async def hyde(subq: str) -> str` — generates a hypothetical answer for HyDE-style retrieval. Use `flash-cheap`.
+   - `async def hyde(subq: str) -> str` — generates a hypothetical answer for HyDE-style retrieval. Use `fast`.
    - A heuristic decides which to use: skip HyDE if the sub-question is shorter than 8 tokens or matches a keyword pattern.
 
 3. **`src/retrieval/query/router.py`**:
@@ -1424,16 +1445,16 @@ Build the per-sub-question retrieval-side agentic components as standalone modul
 
 6. **`src/retrieval/self_rag/relevance_judge.py`**:
    - `async def judge_relevance(subq: str, hit: Hit) -> RelevanceVerdict`
-   - `RelevanceVerdict = {"relevant": bool, "rationale": str}`. Use `flash-cheap` for batched judgement.
+   - `RelevanceVerdict = {"relevant": bool, "rationale": str}`. Use `fast` for batched judgement.
    - `async def judge_batch(subq: str, hits: list[Hit]) -> list[RelevanceVerdict]` — concurrency-bounded with `asyncio.Semaphore(8)`.
 
 7. **`src/retrieval/self_rag/sufficiency_check.py`**:
    - `async def is_sufficient(question: str, evidence: list[Hit]) -> SufficiencyVerdict`
-   - `SufficiencyVerdict = {"sufficient": bool, "missing_aspects": list[str]}`. Use `haiku-4.5`.
+   - `SufficiencyVerdict = {"sufficient": bool, "missing_aspects": list[str]}`. Use `main`.
 
 8. **`src/retrieval/self_rag/verifier.py`**:
    - `async def verify_citations(answer: str, citations: list[Citation], evidence_lookup: dict[int, str]) -> VerificationReport`
-   - For each citation, ask `haiku-4.5` whether the cited chunk supports the specific claim_span. Return per-citation verdicts.
+   - For each citation, ask `main` whether the cited chunk supports the specific claim_span. Return per-citation verdicts.
 
 9. **Tests**:
    - `tests/unit/test_decomposer_parsing.py` — Mock LLM client; verify Pydantic parsing handles malformed JSON via the one-retry path.
@@ -1498,7 +1519,7 @@ Implement the bounded multi-hop citation traversal subsystem. The walker is invo
    - `WalkResult = {"visited_paper_ids": list[str], "newly_ingested_paper_ids": list[str]}`.
    - Algorithm:
      1. Mark each seed as visited (depth 0) and enqueue its references.
-     2. Score each candidate via a quick LLM judge ("does this paper title+abstract relate to <question>?", returns 0-10), using `flash-cheap` for cost control. Batch.
+     2. Score each candidate via a quick LLM judge ("does this paper title+abstract relate to <question>?", returns 0-10), using `fast` for cost control. Batch.
      3. Keep top-`frontier_limit` per hop.
      4. For each kept candidate, lazy-ingest it via `ingestion.ingest_paper` if not already in the DB (this writes to `papers` and `chunks` so subsequent retrieval finds the new chunks).
      5. If `depth < max_depth`, fetch the new paper's references and enqueue them with depth+1.
@@ -1565,7 +1586,7 @@ Implement working memory (typed dict for graph state) and episodic memory (sessi
    - Strategy:
      1. Fetch recent N turns; keep them verbatim.
      2. For older messages, look up `session_summaries` for the latest cached row where `up_to_message_id <= cutoff_message_id`. If hit, prepend that summary as a system message.
-     3. If older messages exist past the cached `up_to_message_id`, summarize the new prefix incrementally using `flash-cheap` and upsert into `session_summaries` keyed by `(session_id, new_up_to_message_id)`.
+     3. If older messages exist past the cached `up_to_message_id`, summarize the new prefix incrementally using `fast` and upsert into `session_summaries` keyed by `(session_id, new_up_to_message_id)`.
    - Never re-summarize the same prefix twice.
 
 4. **Tests**:
@@ -1617,7 +1638,7 @@ Build the semantic memory tier: a concept graph with extractor, three-tier entit
 1. **`src/memory/semantic/extractor.py`**:
    - `async def extract_concepts_from_text(text: str, *, source_chunk_ids: list[int]) -> list[ConceptExtraction]`.
    - LLM-driven extraction with strict JSON: each concept has `display_name`, `definition`, `aliases`, `evidence_chunk_ids`, optional `relations: list[{target_display, type, evidence_chunk_ids}]`.
-   - Use `haiku-4.5`. Be conservative; instruct the model to extract only concepts that have clear definitions in the text.
+   - Use `main`. Be conservative; instruct the model to extract only concepts that have clear definitions in the text.
 
 2. **`src/memory/semantic/linker.py`**:
    - `async def link_concept(extraction: ConceptExtraction) -> ConceptLinkResult`.
@@ -1625,7 +1646,7 @@ Build the semantic memory tier: a concept graph with extractor, three-tier entit
      1. Normalize `display_name` (lowercase, strip, collapse whitespace) → candidate canonical.
      2. Look up `concept_aliases` for an exact match.
      3. If miss: look up `concepts.canonical` for an exact match.
-     4. If miss: vector search on `concepts.embedding` (cosine ≥ 0.85), then LLM judge confirms same concept (`haiku-4.5`).
+     4. If miss: vector search on `concepts.embedding` (cosine ≥ 0.85), then LLM judge confirms same concept (`main`).
      5. If still miss: insert a new concept; insert canonical and any provided aliases.
    - Concept embeddings: at insert time, embed the string `display_name + ". " + definition` via `embed-small` (resolves M-5 / A-4). Store the vector in `concepts.embedding`.
 
@@ -1638,7 +1659,7 @@ Build the semantic memory tier: a concept graph with extractor, three-tier entit
 4. **`src/memory/semantic/graph_retriever.py`** — Input Mode:
    - `async def expand_query_via_graph(question: str) -> GraphExpansion`.
    - Steps:
-     1. Detect concept mentions: extract candidate phrases via a quick LLM call (`flash-cheap`); for each candidate, look up `concept_aliases`/`concepts.canonical`/embedding-search. Collect resolved `concept_ids`.
+     1. Detect concept mentions: extract candidate phrases via a quick LLM call (`fast`); for each candidate, look up `concept_aliases`/`concepts.canonical`/embedding-search. Collect resolved `concept_ids`.
      2. For each resolved concept, fetch neighbors of types `extends`, `compares`, `is-a`, `uses` up to a small limit.
      3. **Derive paper hints by joining `evidence_chunks` JSONB array elements to `chunks.paper_id`**, then to distinct paper IDs (resolves M-11). SQL pattern:
 
@@ -1750,7 +1771,7 @@ Wire all components from Phases 1, 4, 5, 6, 7, and 8 into a LangGraph state grap
 
 5. **`src/graph/nodes/synthesize.py`** — assembles final answer (resolves N-M-2):
    - Constructs a prompt that lists each kept evidence chunk in the form `[chunk_id={cid} paper_id={pid} section={section}]\n{text}` so the model sees both identifiers.
-   - Instructs `haiku-4.5` to write a grounded answer where every cited claim ends with the inline citation token `[paper_id#chunk_id]` (both fields required, separated by `#`). Forbid `[paper_id]`-only citations.
+   - Instructs `main` to write a grounded answer where every cited claim ends with the inline citation token `[paper_id#chunk_id]` (both fields required, separated by `#`). Forbid `[paper_id]`-only citations.
    - Parses citations with the regex `\[(?P<pid>[^\]#\s]+)#(?P<cid>\d+)\]`. Constructs `Citation(paper_id=pid, chunk_id=int(cid), ...)` for each match. If the model produces malformed citations, retry once with a "fix the citation format" message, then raise.
    - Builds an `evidence_lookup: dict[int, str]` from the synthesizer's evidence list (chunk_id → chunk text). This lookup is passed into the verifier in step 6.
 
@@ -1844,7 +1865,7 @@ class GoldQuestion(BaseModel):
 
 4. **`src/eval/metrics/llm_judge.py`**:
    - `async def judge_answer(question: str, answer: str, gold: GoldQuestion) -> JudgeVerdict`.
-   - G-Eval-style: `haiku-4.5` scores 1-5 on `correctness`, `groundedness`, `completeness`. Output JSON, parsed strictly.
+   - G-Eval-style: `main` scores 1-5 on `correctness`, `groundedness`, `completeness`. Output JSON, parsed strictly.
 
 5. **`src/eval/runner.py`** and **`scripts/eval_run.py`**:
    - For each gold question, run the agent (`graph.builder.run` with a fresh thread_id).
