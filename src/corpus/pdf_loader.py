@@ -20,8 +20,12 @@ COMMON_SECTION_NAMES = {
     "results",
     "discussion",
     "conclusion",
+    "appendix",
+    "acknowledgements",
+    "acknowledgments",
     "references",
 }
+_CTRL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 @dataclass(frozen=True)
@@ -63,16 +67,24 @@ def _append_section(sections: list[Section], name: str, lines: list[str]) -> Non
 
 
 def _sanitize_text(text: str) -> str:
-    return text.replace("\x00", "")
+    return _CTRL_CHAR_RE.sub("", text)
 
 
 def _is_section_header(line: str) -> bool:
+    if sum(1 for char in line if char.isalpha() and char.isascii()) < 3:
+        return False
+    if any(ord(char) < 32 for char in line):
+        return False
+    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9 ,:/()-]*$", line):
+        return False
     if len(line) > 90 or line.endswith("."):
         return False
     normalized = _normalize_header(line).lower()
     if normalized in COMMON_SECTION_NAMES:
         return True
     if line.isupper() and 3 <= len(line) <= 60:
+        if " " not in line:
+            return False
         return True
     return bool(re.match(r"^\d+(\.\d+)*\s+[A-Z][A-Za-z0-9 ,:/()-]{2,}$", line))
 

@@ -27,3 +27,27 @@ def test_chunking_splits_long_sentence_with_overlap() -> None:
     assert len(chunks) > 1
     assert all(chunk.section == "Long" for chunk in chunks)
     assert all(chunk.token_count <= 50 for chunk in chunks)
+
+
+def test_chunking_filters_tiny_or_control_only_chunks() -> None:
+    chunks = chunk_sections(
+        [
+            Section(name="Tiny", text="x"),
+            Section(name="Control", text="\x03\x04\x05"),
+        ]
+    )
+
+    assert chunks == []
+
+
+def test_chunking_keeps_long_valid_text() -> None:
+    section = Section(
+        name="Valid",
+        text="This valid paragraph has enough readable content to survive the quality filter.",
+    )
+
+    chunks = chunk_sections([section])
+
+    assert len(chunks) == 1
+    assert chunks[0].section == "Valid"
+    assert "readable content" in chunks[0].text

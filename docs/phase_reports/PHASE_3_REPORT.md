@@ -6,7 +6,7 @@
 **Owner handoff pending**: none
 
 ## Summary
-Phase 3 implemented the corpus acquisition and transactional ingestion path for arXiv seed papers. The ingestion flow collects external artifacts first, embeds chunks outside the database transaction, then performs a short atomic write for `papers`, `chunks`, and `citations`. Validation exposed two real-world ingestion edges: transient/incomplete arXiv PDF downloads and PDF text containing NUL bytes; both were hardened before final acceptance. The full seed corpus now ingests 30/30 papers, produces 2049 chunks, and has citation rows for 100% of completed papers.
+Phase 3 implemented the corpus acquisition and transactional ingestion path for arXiv seed papers. The ingestion flow collects external artifacts first, embeds chunks outside the database transaction, then performs a short atomic write for `papers`, `chunks`, and `citations`. Validation exposed real-world ingestion edges: transient/incomplete arXiv PDF downloads, PDF text containing control bytes, and glyph-code pseudo-headers from `pypdf`; these are now hardened. After the post-review cleanup, the full seed corpus ingests 30/30 papers, produces 1493 quality-filtered chunks, and has citation rows for 100% of completed papers.
 
 ## Files created
 - `src/corpus/__init__.py` - corpus package marker.
@@ -116,6 +116,17 @@ All checks passed!
 - The arXiv PDF download path was hardened with manual streaming, partial-file cleanup, and bounded retry because the package `download_pdf()` left incomplete 1 MiB files on transient failures.
 - Failed-paper retries now redownload PDFs so a prior partial file cannot poison the retry path.
 - PDF loader output removes NUL bytes because PostgreSQL text columns cannot store `\x00`; validation found one seed PDF with this condition.
+
+## Post-review fixes
+- Issue: planner review found 68 garbage chunks across 2049 chunks, concentrated around ReAct, Reflexion, and Tree of Thoughts. Root causes were non-NUL C0 control bytes, uppercase glyph-code pseudo-headers, and no final chunk quality filter.
+- Fix: `_sanitize_text` now strips C0 controls except newline, tab, and carriage return; `_is_section_header` requires at least 3 ASCII letters, no non-printables, printable header characters, and rejects unknown single-token uppercase pseudo-headers; `chunk_sections` drops chunks shorter than 30 stripped chars or over 10% disallowed control chars.
+- Tests: `tests/unit/test_chunking.py` covers tiny/control-only chunks being filtered and valid text surviving; `tests/unit/test_pdf_loader.py` covers NUL/non-NUL C0 stripping and pseudo-header rejection for `+RWVSRW4$` and `DFRXQWHU...`.
+- Validation: `uv run pytest tests/unit -q` passed with `44 passed in 0.70s`; `INTEGRATION_TESTS=1 uv run pytest tests/integration/test_ingest_one.py tests/integration/test_ingest_partial_failure.py -q` passed with `2 passed in 8.60s`.
+- Re-ingested corpus: `make db-reset` and `make ingest` completed; final summary was `papers ingested=30, papers skipped=0, papers failed=0, chunks inserted=1493, citations inserted=1456`.
+- Final SQL counts: complete papers `30`; total chunks `1493`; garbage chunk query returned `0`.
+- Per-paper chunk counts after cleanup: ReAct (`arxiv:2210.03629`) has `59` chunks; Tree of Thoughts (`arxiv:2308.09687`) has `115`; Reflexion (`arxiv:2303.11366`) has `31`.
+- BM25 sanity for `ReAct reasoning and acting interleaved`: top 5 contained ReAct chunks at ranks 2, 3, and 4 with sections `I NTRODUCTION`, `Method`, and `ABSTRACT`; no glyph-code section names appeared.
+- BM25 sanity for `ReAct reasoning and acting`: top 3 were ReAct chunks from `I NTRODUCTION` and `D T RAJECTORIES`, ahead of unrelated reference sections.
 
 ## Open questions for the planner
 None.

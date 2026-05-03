@@ -20,8 +20,10 @@ class _FakeReader:
                 """
                 Abstract
                 This paper introduces a test.
+                +RWVSRW4$
+                DFRXQWHUWRSDVWRYHEXUQHUDQGDWRDVWHU
                 1 Introduction
-                The introduction \x00text is here.
+                The introduction \x00\x03text is here.
                 METHOD
                 The method text is here.
                 """
@@ -38,6 +40,9 @@ def test_load_pdf_extracts_sections(monkeypatch, tmp_path: Path) -> None:
 
     assert [section.name for section in sections] == ["Abstract", "Introduction", "METHOD"]
     assert "introduces a test" in sections[0].text
+    assert "+RWVSRW4$" in sections[0].text
+    assert "DFRXQWHU" in sections[0].text
     assert "introduction text" in sections[1].text
     assert "\x00" not in sections[1].text
+    assert "\x03" not in sections[1].text
     assert "method text" in sections[2].text

@@ -9,6 +9,10 @@ from src.core.types import CHUNK_TOKEN_OVERLAP, CHUNK_TOKEN_SIZE
 from src.corpus.pdf_loader import Section
 
 
+MIN_CHUNK_CHARS = 30
+MAX_CTRL_RATIO = 0.1
+
+
 @dataclass(frozen=True)
 class Chunk:
     section: str
@@ -25,7 +29,7 @@ def chunk_sections(
     chunks: list[Chunk] = []
     for section in sections:
         chunks.extend(_chunk_one_section(section, encoding, target_tokens, overlap))
-    return chunks
+    return [chunk for chunk in chunks if _is_quality_chunk(chunk)]
 
 
 def _chunk_one_section(
@@ -94,3 +98,13 @@ def _overlap_text(text: str, encoding, overlap: int) -> str:
         return ""
     tokens = encoding.encode(text)
     return encoding.decode(tokens[-overlap:]).strip()
+
+
+def _is_quality_chunk(chunk: Chunk) -> bool:
+    text = chunk.text.strip()
+    if len(text) < MIN_CHUNK_CHARS:
+        return False
+    ctrl_count = sum(1 for char in text if ord(char) < 32 and char not in "\n\t\r")
+    if ctrl_count / max(len(text), 1) > MAX_CTRL_RATIO:
+        return False
+    return True
