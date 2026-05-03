@@ -7,7 +7,7 @@
 | 2 | Database Schema and Connection | complete | HEAD (see git log) | 2026-05-03 | none |
 | 3 | Corpus Clients and Ingestion | complete | 609ab95 + HEAD (see git log) | 2026-05-03 | none |
 | 4 | Vector Index and Hybrid Retrieval | complete | HEAD (see git log) | 2026-05-03 | none |
-| 5 | Agentic RAG Components | not started | - | - | - |
+| 5 | Agentic RAG Components | complete | HEAD (see git log) | 2026-05-03 | none |
 | 6 | Multi-hop Citation Walker | not started | - | - | - |
 | 7 | Episodic Memory and Compression | not started | - | - | - |
 | 8 | Semantic Memory and Concept Graph | not started | - | - | - |

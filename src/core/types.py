@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 EMBEDDING_DIM = 1536
@@ -12,7 +12,7 @@ RETRIEVAL_TOP_K_VECTOR = 30
 RETRIEVAL_TOP_K_LEXICAL = 30
 RRF_K = 60
 RETRIEVAL_TOP_K_AFTER_FUSION = 30
-RERANK_TOP_K = 5
+RERANK_TOP_K = 10
 MULTI_HOP_MAX_DEPTH = 2
 MULTI_HOP_FRONTIER_LIMIT = 8
 MAX_SUB_QUESTIONS = 5
@@ -68,3 +68,46 @@ class CitationVerdict(BaseModel):
 class VerificationReport(BaseModel):
     verdicts: list[CitationVerdict]
     passed: bool
+
+
+class SubQuestion(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    depends_on: list[int] = Field(default_factory=list)
+
+
+class Decomposition(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    sub_questions: list[SubQuestion]
+
+    @model_validator(mode="after")
+    def validate_dependency_dag(self) -> "Decomposition":
+        for idx, sub_question in enumerate(self.sub_questions):
+            for dependency in sub_question.depends_on:
+                if dependency < 0 or dependency >= idx:
+                    raise ValueError("Sub-question dependencies must point to earlier sub-questions")
+        return self
+
+
+class RouteDecision(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    sources: list[str] = Field(default_factory=lambda: ["local_pgvector"])
+    use_concept_graph: bool = False
+    may_use_semantic_scholar_live: bool = False
+
+
+class RelevanceVerdict(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    relevant: bool
+    rationale: str
+
+
+class SufficiencyVerdict(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    sufficient: bool
+    missing_aspects: list[str] = Field(default_factory=list)

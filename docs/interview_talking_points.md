@@ -18,3 +18,8 @@
 - Crash-resilient ingestion lifecycle: papers move through `in_progress`, `complete`, and `failed`, so complete rows are skipped and failed rows can be cleaned and retried.
 - Semantic Scholar pacing: the async client uses 1 request/sec without a key and 10 requests/sec with a key, with tenacity retry on HTTP 429.
 - arXiv pacing: the sync `arxiv` package runs through `asyncio.to_thread`, and a single global client plus lock preserves 3-second pacing across the process.
+- Decomposition produces a dependency DAG of sub-questions, not just a flat list.
+- HyDE is heuristic-gated, so short or keyword-style queries do not spend LLM calls on hypothetical answers.
+- Self-RAG uses cost tiers: batched relevance judging runs on `fast`, while sufficiency and citation verification use `main`.
+- Router stays pure: it queries concept aliases and emits policy flags, but never performs retrieval or live expansion.
+- JSON repair retry gives decomposition one "fix your JSON" attempt before surfacing validation failure.
