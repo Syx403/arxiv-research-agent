@@ -13,3 +13,8 @@
 - Updated-at trigger: `src/core/sql/007_triggers.sql` keeps concept mutation timestamps observable for tests and later reasoning.
 - LangGraph checkpointing: `scripts/bootstrap_db.py` calls `AsyncPostgresSaver.setup()` over the psycopg pool, proving LangGraph 1.x checkpoint integration against local Postgres.
 - pgvector precision: I learned the hard way that pgvector stores as float4. The integration test uses `pytest.approx` to validate the round-trip semantically rather than bit-equality.
+- Lazy ingestion architecture: Phase 3 collects arXiv metadata, PDFs, PDF text, embeddings, and Semantic Scholar references before opening the short database write transaction.
+- Section-aware chunking: `src/corpus/chunking.py` uses `tiktoken` `cl100k_base` with an 800-token target and 100-token overlap while preserving section boundaries.
+- Crash-resilient ingestion lifecycle: papers move through `in_progress`, `complete`, and `failed`, so complete rows are skipped and failed rows can be cleaned and retried.
+- Semantic Scholar pacing: the async client uses 1 request/sec without a key and 10 requests/sec with a key, with tenacity retry on HTTP 429.
+- arXiv pacing: the sync `arxiv` package runs through `asyncio.to_thread`, and a single global client plus lock preserves 3-second pacing across the process.
