@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -127,3 +128,23 @@ class WalkResult(BaseModel):
 
     visited_paper_ids: list[str]
     newly_ingested_paper_ids: list[str]
+
+
+class Session(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    session_id: str
+    title: str | None = None
+    created_at: datetime
+    last_active: datetime
+
+
+class StoredMessage(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    message_id: int
+    session_id: str
+    role: str
+    content: str
+    metadata: dict = Field(default_factory=dict)
+    created_at: datetime

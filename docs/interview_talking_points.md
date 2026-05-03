@@ -27,3 +27,5 @@
 - Lazy ingestion means the corpus grows during a session; the agent extends its own memory.
 - Wall-clock budget is separate from depth and frontier limits, giving three independent safety knobs.
 - Phase 6's walker traverses citation edges bidirectionally inside the local corpus and outbound-only for lazy ingest: outbound finds what this paper depended on, incoming finds what built on this paper.
+- Compression policy keeps recent messages verbatim and prepends a recursive summary of older history; the cache is keyed by upper message id so cost stays bounded.
+- The compressor is a pure consumer of `session_messages` and `session_summaries`, with no global state, making cache behavior fully testable.

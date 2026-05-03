@@ -9,7 +9,7 @@
 | 4 | Vector Index and Hybrid Retrieval | complete | HEAD (see git log) | 2026-05-03 | none |
 | 5 | Agentic RAG Components | complete | HEAD (see git log) | 2026-05-03 | none |
 | 6 | Multi-hop Citation Walker | complete | HEAD (see git log) | 2026-05-03 | none |
-| 7 | Episodic Memory and Compression | not started | - | - | - |
+| 7 | Episodic Memory and Compression | complete | HEAD (see git log) | 2026-05-03 | none |
 | 8 | Semantic Memory and Concept Graph | not started | - | - | - |
 | 9 | LangGraph Orchestration | not started | - | - | - |
 | 10 | Evaluation Harness | not started | - | - | - |
