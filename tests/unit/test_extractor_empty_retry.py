@@ -20,6 +20,17 @@ async def test_extract_concepts_retries_empty_valid_payload(monkeypatch) -> None
     assert client.calls == 2
 
 
+@pytest.mark.asyncio
+async def test_extract_concepts_returns_empty_after_invalid_empty_retry(monkeypatch) -> None:
+    client = _EmptyThenInvalidClient()
+    monkeypatch.setattr(extractor, "get_chat_client", lambda name: client)
+
+    concepts = await extractor.extract_concepts_from_text("No clear definition.", source_chunk_ids=[1])
+
+    assert concepts == []
+    assert client.calls == 2
+
+
 class _EmptyThenConceptClient:
     def __init__(self) -> None:
         self.calls = 0
@@ -45,3 +56,14 @@ class _EmptyThenConceptClient:
             model="fake",
             finish_reason="stop",
         )
+
+
+class _EmptyThenInvalidClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def chat(self, *args, **kwargs) -> ChatResponse:
+        self.calls += 1
+        if self.calls == 1:
+            return ChatResponse(content='{"concepts":[]}', model="fake", finish_reason="stop")
+        return ChatResponse(content="", model="fake", finish_reason="length")

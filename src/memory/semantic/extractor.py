@@ -76,7 +76,10 @@ async def extract_concepts_from_text(text: str, *, source_chunk_ids: list[int]) 
         max_tokens=1800,
         response_format={"type": "json_object"},
     )
-    return _parse_payload(retry.content or "").concepts
+    try:
+        return _parse_payload(retry.content or "").concepts
+    except ValidationError:
+        return []
 
 
 def _parse_payload(content: str) -> "_ConceptExtractionPayload":

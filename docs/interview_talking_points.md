@@ -35,3 +35,5 @@
 - LangGraph state uses explicit reducers in `src/graph/state.py`: `add_messages` for message history and `merge_dicts` for sub-question results.
 - Retrieval is one graph node, while multi-hop is a separate budgeted node entered only when sufficiency fails and the route permits live expansion.
 - Persistence uses `AsyncPostgresSaver` over the psycopg pool, so Phase 9 can resume checkpointed state across a new Python process with the same `thread_id`.
+- Eval is resumable: CSV-as-checkpoint plus `skip_reflection` ensures Ctrl-C costs at most one in-flight question and never contaminates the persistent concept graph.
+- `verify_citations` is concurrency-bounded fan-out, cutting per-question wall time by parallelizing citation checks up to eight in flight.

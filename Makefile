@@ -1,4 +1,4 @@
-.PHONY: install fmt lint test ingest eval ui ui-graph db-up db-down db-reset
+.PHONY: install fmt lint test ingest eval eval-fresh ui ui-graph db-up db-down db-reset
 
 install:
 	uv sync
@@ -27,8 +27,12 @@ db-reset:
 ingest:
 	uv run python scripts/ingest_seed_corpus.py
 
-eval:
+eval: ## Run or resume the gold evaluation harness.
 	uv run python scripts/eval_run.py
+
+eval-fresh: ## Delete the latest eval checkpoint and run from a clean CSV.
+	rm -rf data/eval_outputs/latest
+	$(MAKE) eval
 
 ui:
 	uv run chainlit run src/ui/app.py --host 127.0.0.1 --port 8000

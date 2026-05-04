@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from src.core.types import ReflectionReport
 from src.graph.state import AgentState
 from src.memory import reflection
 from src.memory.episodic import session_store
 
 
 async def reflect_node(state: AgentState) -> dict:
+    if state.get("skip_reflection"):
+        return {"reflection": ReflectionReport()}
     thread_id = state.get("thread_id")
     if not thread_id:
         raise RuntimeError("reflect_node requires state.thread_id")

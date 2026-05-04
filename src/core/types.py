@@ -225,3 +225,12 @@ class ReflectionReport(BaseModel):
     concepts_reused: int = 0
     relations_created: int = 0
     relations_reused: int = 0
+
+
+class JudgeVerdict(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    correctness: int = Field(ge=1, le=5)
+    groundedness: int = Field(ge=1, le=5)
+    completeness: int = Field(ge=1, le=5)
+    rationale: str

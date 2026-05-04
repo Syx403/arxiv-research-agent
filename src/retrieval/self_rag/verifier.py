@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from pydantic import BaseModel, ValidationError
 
 from src.core.types import Citation, CitationVerdict, Message, VerificationReport
@@ -12,8 +14,21 @@ async def verify_citations(
     evidence_lookup: dict[int, str],
 ) -> VerificationReport:
     client = get_chat_client("main")
-    verdicts: list[CitationVerdict] = []
-    for citation in citations:
+    semaphore = asyncio.Semaphore(8)
+    verdicts = await asyncio.gather(
+        *(_verify_one_citation(client, semaphore, answer, citation, evidence_lookup) for citation in citations)
+    )
+    return VerificationReport(verdicts=list(verdicts), passed=all(verdict.supports for verdict in verdicts))
+
+
+async def _verify_one_citation(
+    client,
+    semaphore: asyncio.Semaphore,
+    answer: str,
+    citation: Citation,
+    evidence_lookup: dict[int, str],
+) -> CitationVerdict:
+    async with semaphore:
         if citation.chunk_id not in evidence_lookup:
             raise KeyError(f"Missing evidence for chunk_id={citation.chunk_id}")
         response = await client.chat(
@@ -35,8 +50,7 @@ async def verify_citations(
             max_tokens=320,
             response_format={"type": "json_object"},
         )
-        verdicts.append(await _parse_or_repair_verdict(client, response.content or "", citation))
-    return VerificationReport(verdicts=verdicts, passed=all(verdict.supports for verdict in verdicts))
+        return await _parse_or_repair_verdict(client, response.content or "", citation)
 
 
 async def _parse_or_repair_verdict(client, content: str, citation: Citation) -> CitationVerdict:

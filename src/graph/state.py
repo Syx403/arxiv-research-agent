@@ -37,3 +37,4 @@ class AgentState(TypedDict, total=False):
     tool_iters: int
     active_subq_index: int | None
     evidence_lookup: dict[int, str]
+    skip_reflection: bool

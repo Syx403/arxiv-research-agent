@@ -25,13 +25,13 @@ _setup_done = False
 _init_lock = asyncio.Lock()
 
 
-async def run(question: str, *, thread_id: str) -> AgentState:
+async def run(question: str, *, thread_id: str, skip_reflection: bool = False) -> AgentState:
     await session_store.get_or_create_session(thread_id)
     graph = await _get_graph()
     config = {"configurable": {"thread_id": thread_id}}
     if not question.strip():
         return await graph.ainvoke(None, config=config)
-    initial_state = _initial_state(question, thread_id)
+    initial_state = _initial_state(question, thread_id, skip_reflection=skip_reflection)
     return await graph.ainvoke(initial_state, config=config)
 
 
@@ -80,7 +80,7 @@ async def _get_graph():
         return _graph
 
 
-def _initial_state(question: str, thread_id: str) -> AgentState:
+def _initial_state(question: str, thread_id: str, *, skip_reflection: bool = False) -> AgentState:
     return {
         "messages": [HumanMessage(content=question)],
         "thread_id": thread_id,
@@ -98,4 +98,5 @@ def _initial_state(question: str, thread_id: str) -> AgentState:
         "tool_iters": 0,
         "active_subq_index": None,
         "evidence_lookup": {},
+        "skip_reflection": skip_reflection,
     }
