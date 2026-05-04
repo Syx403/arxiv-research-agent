@@ -4,8 +4,12 @@ import asyncio
 
 from pydantic import BaseModel, ValidationError
 
+from src.core.diagnostics import log_raw_response
 from src.core.types import Citation, CitationVerdict, Message, VerificationReport
 from src.llm.client import get_chat_client
+
+
+VERIFIER_EVIDENCE_CHAR_LIMIT = 1200
 
 
 async def verify_citations(
@@ -31,6 +35,15 @@ async def _verify_one_citation(
     async with semaphore:
         if citation.chunk_id not in evidence_lookup:
             raise KeyError(f"Missing evidence for chunk_id={citation.chunk_id}")
+        raw_evidence = evidence_lookup[citation.chunk_id]
+        evidence_text = raw_evidence[:VERIFIER_EVIDENCE_CHAR_LIMIT]
+        truncated = len(raw_evidence) > VERIFIER_EVIDENCE_CHAR_LIMIT
+        truncation_note = (
+            ""
+            if not truncated
+            else f" (truncated to 1200 chars from original {len(raw_evidence)} chars)"
+        )
+        truncation_marker = " [truncated]" if truncated else ""
         response = await client.chat(
             [
                 Message(
@@ -42,13 +55,20 @@ async def _verify_one_citation(
                     content=(
                         f"Answer:\n{answer}\n\n"
                         f"Claim span:\n{_claim_span_text(answer, citation)}\n\n"
-                        f"Evidence chunk {citation.chunk_id}:\n{evidence_lookup[citation.chunk_id]}"
+                        f"Evidence chunk {citation.chunk_id}{truncation_marker}{truncation_note}:\n"
+                        f"{evidence_text}"
                     ),
                 ),
             ],
             temperature=0.0,
             max_tokens=320,
             response_format={"type": "json_object"},
+        )
+        log_raw_response(
+            "verifier",
+            response.content,
+            citation_chunk_id=citation.chunk_id,
+            event="initial",
         )
         return await _parse_or_repair_verdict(client, response.content or "", citation)
 
@@ -72,10 +92,16 @@ async def _parse_or_repair_verdict(client, content: str, citation: Citation) -> 
         try:
             return _parse_verdict(repair.content or "", citation)
         except ValidationError:
+            log_raw_response(
+                "verifier",
+                repair.content,
+                citation_chunk_id=citation.chunk_id,
+                event="parse_failure_twice",
+            )
             return CitationVerdict(
                 citation=citation,
-                supports=True,
-                rationale="Citation verifier returned invalid JSON twice; kept conservatively.",
+                supports=False,
+                rationale="PARSE_FAILURE: verifier returned invalid JSON twice; treating as unverified.",
             )
 
 

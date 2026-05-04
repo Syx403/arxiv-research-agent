@@ -5,9 +5,6 @@ from src.graph.state import AgentState
 
 
 def route_after_retrieve(state: AgentState) -> str:
-    if _all_subquestions_complete(state):
-        return "synthesize"
-
     current = _current_result(state)
     if (
         current is not None
@@ -18,10 +15,15 @@ def route_after_retrieve(state: AgentState) -> str:
     ):
         return "multi_hop"
 
+    if _all_subquestions_complete(state):
+        return "synthesize"
+
     return "synthesize"
 
 
 def route_after_verify(state: AgentState) -> str:
+    if state.get("synthesis_format_degraded"):
+        return "reflect"
     verification = state.get("verification")
     if (
         verification is not None

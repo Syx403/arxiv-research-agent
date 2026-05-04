@@ -50,7 +50,7 @@ async def test_judge_relevance_repairs_invalid_json(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_judge_relevance_keeps_hit_when_repair_is_invalid(monkeypatch) -> None:
+async def test_judge_relevance_drops_hit_when_repair_is_invalid(monkeypatch) -> None:
     client = _BrokenRepairChatClient()
     monkeypatch.setattr(relevance_judge, "get_chat_client", lambda name: client)
 
@@ -59,8 +59,8 @@ async def test_judge_relevance_keeps_hit_when_repair_is_invalid(monkeypatch) -> 
         Hit(chunk_id=1, paper_id="p", section="S", text="ReAct text", score=1.0),
     )
 
-    assert verdict.relevant is True
-    assert "invalid JSON twice" in verdict.rationale
+    assert verdict.relevant is False
+    assert verdict.rationale == "PARSE_FAILURE: relevance judge returned invalid JSON; dropping hit."
 
 
 class _RepairingChatClient:

@@ -56,5 +56,22 @@ async def test_verify_citations_keeps_citation_when_verifier_json_invalid(monkey
 
     report = await verifier.verify_citations("claim text", [citation], {7: "claim evidence"})
 
-    assert report.passed is True
-    assert "invalid JSON twice" in report.verdicts[0].rationale
+    assert report.passed is False
+    assert report.verdicts[0].supports is False
+    assert report.verdicts[0].rationale.startswith("PARSE_FAILURE")
+
+
+@pytest.mark.asyncio
+async def test_verify_citations_parse_failure_makes_report_fail(monkeypatch) -> None:
+    monkeypatch.setattr(verifier, "get_chat_client", lambda name: _BrokenVerifierClient())
+    good = Citation(paper_id="p", chunk_id=7, claim_span=(0, 5))
+    parse_failure = Citation(paper_id="p", chunk_id=8, claim_span=(0, 5))
+
+    report = await verifier.verify_citations(
+        "claim text",
+        [good, parse_failure],
+        {7: "claim evidence", 8: "claim evidence"},
+    )
+
+    assert report.passed is False
+    assert any(verdict.rationale.startswith("PARSE_FAILURE") for verdict in report.verdicts)

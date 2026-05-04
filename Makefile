@@ -1,4 +1,4 @@
-.PHONY: install fmt lint test ingest eval eval-fresh ui ui-graph db-up db-down db-reset
+.PHONY: install fmt lint test ingest eval eval-sample eval-fresh ui ui-graph db-up db-down db-reset
 
 install:
 	uv sync
@@ -29,6 +29,9 @@ ingest:
 
 eval: ## Run or resume the gold evaluation harness.
 	uv run python scripts/eval_run.py
+
+eval-sample: ## Run a 5-question pre-flight eval before the full eval.
+	uv run python scripts/eval_run.py --question-ids q-005,q-013,q-019,q-025,q-029
 
 eval-fresh: ## Delete the latest eval checkpoint and run from a clean CSV.
 	rm -rf data/eval_outputs/latest

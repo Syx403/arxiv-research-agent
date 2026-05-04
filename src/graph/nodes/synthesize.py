@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import logging
 import re
 
+from src.core.diagnostics import log_raw_response
 from src.core.types import Citation, Message
 from src.graph.state import AgentState
-from src.llm.client import get_chat_client
+from src.llm.client import EmptyProviderResponseError, get_chat_client
 
 
 CITATION_RE = re.compile(r"\[(?P<pid>[^\]#\s]+)#(?P<cid>\d+)\]")
-MALFORMED_CITATION_RE = re.compile(r"\[[^\]#\s]+\]")
+logger = logging.getLogger(__name__)
 
 
 class SynthesizerError(RuntimeError):
@@ -18,18 +20,28 @@ class SynthesizerError(RuntimeError):
 async def synthesize_node(state: AgentState) -> dict:
     evidence = state.get("evidence", [])
     failure_notes = _system_notes(state)
-    answer = await _generate_answer(state.get("question", ""), evidence, failure_notes=failure_notes)
+    question = state.get("question", "")
+    try:
+        answer = await _generate_answer(question, evidence, failure_notes=failure_notes)
+    except EmptyProviderResponseError as exc:
+        logger.warning("synthesis_empty_provider_response", extra={"question": question[:160], "error": str(exc)})
+        return _degraded_update("", evidence)
     citations = _parse_citations(answer)
-    if not citations or MALFORMED_CITATION_RE.search(answer):
-        answer = await _fix_citation_format(answer, state.get("question", ""), evidence)
+    if not citations:
+        try:
+            answer = await _fix_citation_format(answer, question, evidence)
+        except EmptyProviderResponseError as exc:
+            logger.warning("synthesis_repair_empty_provider_response", extra={"question": question[:160], "error": str(exc)})
+            return _degraded_update(answer, evidence)
         citations = _parse_citations(answer)
-        if not citations or MALFORMED_CITATION_RE.search(answer):
-            raise SynthesizerError("Synthesizer failed to produce valid [paper_id#chunk_id] citations")
+        if not citations:
+            return _degraded_update(answer, evidence)
 
     return {
         "answer": answer,
         "citations": citations,
         "evidence_lookup": {hit.chunk_id: hit.text for hit in evidence},
+        "synthesis_format_degraded": False,
     }
 
 
@@ -42,8 +54,9 @@ async def _generate_answer(question: str, evidence, *, failure_notes: list[str])
                 content=(
                     "Answer research questions using only the supplied evidence. "
                     "Keep the answer concise: one paragraph, 4-6 sentences. "
-                    "Every cited claim must end with [paper_id#chunk_id], for example [arxiv:2210.03629#123]. "
-                    "Never use [paper_id]-only citations."
+                    "Use the bracketed [paper_id#chunk_id] identifier shown at the top of each evidence chunk as the inline citation. "
+                    "For example, after a claim derived from the chunk headed [arxiv:2210.03629#123], end the sentence with [arxiv:2210.03629#123]. "
+                    "Never use [paper_id]-only or [chunk_id]-only citations."
                 ),
             ),
             Message(
@@ -58,6 +71,12 @@ async def _generate_answer(question: str, evidence, *, failure_notes: list[str])
         temperature=0.0,
         max_tokens=1200,
     )
+    log_raw_response(
+        "synthesize_initial",
+        response.content,
+        evidence_count=len(evidence),
+        available_chunk_ids_count=len(evidence),
+    )
     return (response.content or "").strip()
 
 
@@ -68,14 +87,16 @@ async def _fix_citation_format(answer: str, question: str, evidence) -> str:
             Message(
                 role="system",
                 content=(
-                    "Fix citation formatting only. Every citation must be [paper_id#chunk_id]. "
-                    "Do not invent chunk IDs; use the evidence headers."
+                    "Fix citations to use the bracketed [paper_id#chunk_id] identifier shown at the top of each evidence chunk. "
+                    "Replace any [chunk_id]-only or [paper_id]-only citations with the full [paper_id#chunk_id] form using the matching evidence header. "
+                    "If the previous answer was empty, write a concise new answer using the evidence."
                 ),
             ),
             Message(
                 role="user",
                 content=(
                     f"Question:\n{question}\n\n"
+                    "If the invalid answer below is empty, write a concise answer using the evidence below.\n\n"
                     f"Invalid answer:\n{answer}\n\n"
                     f"Evidence:\n{_format_evidence(evidence)}"
                 ),
@@ -84,12 +105,18 @@ async def _fix_citation_format(answer: str, question: str, evidence) -> str:
         temperature=0.0,
         max_tokens=1200,
     )
+    log_raw_response(
+        "synthesize_repair",
+        response.content,
+        evidence_count=len(evidence),
+        available_chunk_ids_count=len(evidence),
+    )
     return (response.content or "").strip()
 
 
 def _format_evidence(evidence) -> str:
     return "\n".join(
-        f"[chunk_id={hit.chunk_id} paper_id={hit.paper_id} section={hit.section or 'Unknown'}]\n{hit.text}\n---"
+        f"[{hit.paper_id}#{hit.chunk_id}] (section={hit.section or 'Unknown'})\n{hit.text}\n---"
         for hit in evidence
     )
 
@@ -104,6 +131,15 @@ def _parse_citations(answer: str) -> list[Citation]:
         )
         for match in CITATION_RE.finditer(answer)
     ]
+
+
+def _degraded_update(answer: str, evidence) -> dict:
+    return {
+        "answer": answer,
+        "citations": [],
+        "evidence_lookup": {hit.chunk_id: hit.text for hit in evidence},
+        "synthesis_format_degraded": True,
+    }
 
 
 def _system_notes(state: AgentState) -> list[str]:

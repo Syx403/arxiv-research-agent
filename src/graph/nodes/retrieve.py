@@ -72,6 +72,7 @@ async def _run_subquestion_pipeline(
     rewritten = await rewriter.rewrite_for_retrieval(subq)
     embedding_text = await rewriter.hyde(subq) if rewriter.should_use_hyde(subq) else rewritten
 
+    accumulated_hits: dict[int, Hit] = {}
     kept_hits: list[Hit] = []
     retries_used = 0
     sufficient = False
@@ -83,7 +84,11 @@ async def _run_subquestion_pipeline(
         hits = deduplicator.dedupe(hits)
         hits = await reranker.rerank(query_text, hits, top_n=RERANK_TOP_K)
         verdicts = await relevance_judge.judge_batch(subq, hits)
-        kept_hits = [hit for hit, verdict in zip(hits, verdicts, strict=True) if verdict.relevant]
+        new_kept = [hit for hit, verdict in zip(hits, verdicts, strict=True) if verdict.relevant]
+        for hit in new_kept:
+            if hit.chunk_id not in accumulated_hits:
+                accumulated_hits[hit.chunk_id] = hit
+        kept_hits = list(accumulated_hits.values())
         sufficiency = await sufficiency_check.is_sufficient(subq, kept_hits)
         sufficient = sufficiency.sufficient
         if sufficient or retries_used >= SELF_RAG_MAX_RETRIES:

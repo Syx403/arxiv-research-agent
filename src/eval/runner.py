@@ -20,6 +20,7 @@ from src.eval.metrics.citation_metrics import citation_precision, citation_recal
 from src.eval.metrics.llm_judge import judge_answer
 from src.eval.metrics.retrieval_metrics import mrr, recall_at_k
 from src.graph.builder import run, shutdown
+from src.llm import usage
 
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,15 @@ DATASET_NAME = "arxiv-research-agent-gold-v1"
 OUTPUT_DIR = Path("data/eval_outputs/latest")
 PER_QUESTION_CSV = OUTPUT_DIR / "per_question.csv"
 SUMMARY_JSON = OUTPUT_DIR / "summary.json"
+HARD_FAILURE_THRESHOLD = 0.10
+
+
+class EvalThresholdError(RuntimeError):
+    def __init__(self, summary: dict[str, Any]) -> None:
+        self.summary = summary
+        rate = summary["hard_failure_rate"]
+        threshold = summary["hard_failure_threshold"]
+        super().__init__(f"EVAL FAILED: hard failure rate {rate:.2f} exceeds threshold {threshold:.2f}")
 
 
 @dataclass
@@ -45,16 +55,18 @@ class EvalRow:
     judge_completeness: int
     judge_rationale: str
     answer: str
+    hard_failure: bool = False
 
 
 CSV_FIELDNAMES = list(EvalRow.__dataclass_fields__.keys())
 
 
 async def run_eval(*, limit: int | None = None, question_ids: list[str] | None = None) -> dict[str, Any]:
+    usage.reset()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     questions = _select_questions(limit=limit, question_ids=question_ids)
     selected_ids = {question.id for question in questions}
-    done_ids = _read_done_ids(PER_QUESTION_CSV) & selected_ids
+    done_ids = set() if os.getenv("DIAGNOSTIC_LOG") else _read_done_ids(PER_QUESTION_CSV) & selected_ids
     print(f"Skipping {len(done_ids)} already-completed questions")
 
     langsmith_state = _setup_langsmith_dataset(questions)
@@ -83,11 +95,16 @@ async def run_eval(*, limit: int | None = None, question_ids: list[str] | None =
     rows = _load_existing_rows(selected_ids)
     summary = _write_summary(rows, total_skipped_via_resume=len(done_ids))
     print(json.dumps(summary, indent=2, sort_keys=True))
+    if summary["hard_failure_rate"] > HARD_FAILURE_THRESHOLD:
+        raise EvalThresholdError(summary)
     return summary
 
 
 async def _run_one(gold: GoldQuestion, *, langsmith_state: "_LangSmithState | None") -> EvalRow:
     thread_id = f"eval-{gold.id}-{uuid4()}"
+    previous_diagnostic_question_id = os.environ.get("DIAGNOSTIC_QUESTION_ID")
+    if os.getenv("DIAGNOSTIC_LOG"):
+        os.environ["DIAGNOSTIC_QUESTION_ID"] = gold.id
     try:
         try:
             result = await run(gold.question, thread_id=thread_id, skip_reflection=True)
@@ -99,10 +116,22 @@ async def _run_one(gold: GoldQuestion, *, langsmith_state: "_LangSmithState | No
         retrieved_paper_ids = _dedupe_paper_ids([hit.paper_id for hit in result.get("evidence", [])])
         cited_paper_ids = _dedupe_paper_ids([citation.paper_id for citation in result.get("citations", [])])
         judge = await judge_answer(gold.question, answer, gold)
-        row = _row_from_result(gold, answer, retrieved_paper_ids, cited_paper_ids, judge)
+        row = _row_from_result(
+            gold,
+            answer,
+            retrieved_paper_ids,
+            cited_paper_ids,
+            judge,
+            hard_failure=bool(result.get("synthesis_format_degraded") and not cited_paper_ids),
+        )
         _create_langsmith_run(gold, row, langsmith_state=langsmith_state)
         return row
     finally:
+        if os.getenv("DIAGNOSTIC_LOG"):
+            if previous_diagnostic_question_id is None:
+                os.environ.pop("DIAGNOSTIC_QUESTION_ID", None)
+            else:
+                os.environ["DIAGNOSTIC_QUESTION_ID"] = previous_diagnostic_question_id
         await _cleanup_eval_run(thread_id)
 
 
@@ -112,6 +141,7 @@ def _row_from_result(
     retrieved_paper_ids: list[str],
     cited_paper_ids: list[str],
     judge: JudgeVerdict,
+    hard_failure: bool = False,
 ) -> EvalRow:
     return EvalRow(
         id=gold.id,
@@ -128,6 +158,7 @@ def _row_from_result(
         judge_completeness=judge.completeness,
         judge_rationale=judge.rationale,
         answer=answer,
+        hard_failure=hard_failure,
     )
 
 
@@ -148,6 +179,7 @@ def _failure_row(gold: GoldQuestion, exc: Exception) -> EvalRow:
         judge_completeness=1,
         judge_rationale=message,
         answer=message,
+        hard_failure=True,
     )
 
 
@@ -206,6 +238,7 @@ def _row_from_csv_dict(raw: dict[str, str]) -> EvalRow:
         judge_completeness=int(raw["judge_completeness"]),
         judge_rationale=raw["judge_rationale"],
         answer=raw["answer"],
+        hard_failure=(raw.get("hard_failure") or "").lower() == "true",
     )
 
 
@@ -221,8 +254,12 @@ def _write_summary(rows: list[EvalRow], *, total_skipped_via_resume: int) -> dic
             "avg_correctness": 0.0,
             "avg_groundedness": 0.0,
             "avg_completeness": 0.0,
+            "hard_failure_count": 0,
+            "hard_failure_rate": 0.0,
+            "hard_failure_threshold": HARD_FAILURE_THRESHOLD,
         }
     else:
+        hard_failure_count = sum(1 for row in rows if row.hard_failure)
         summary = {
             "total_questions": len(rows),
             "total_skipped_via_resume": total_skipped_via_resume,
@@ -233,10 +270,15 @@ def _write_summary(rows: list[EvalRow], *, total_skipped_via_resume: int) -> dic
             "avg_correctness": mean(row.judge_correctness for row in rows),
             "avg_groundedness": mean(row.judge_groundedness for row in rows),
             "avg_completeness": mean(row.judge_completeness for row in rows),
+            "hard_failure_count": hard_failure_count,
+            "hard_failure_rate": hard_failure_count / len(rows),
+            "hard_failure_threshold": HARD_FAILURE_THRESHOLD,
             "estimated_run_level_calls": len(rows),
             "estimated_judge_calls": len(rows),
-            "cost_note": "Token usage is not centrally tracked; estimates count graph runs and judge calls only.",
+            "cost_note": "Token usage is recorded when provider responses expose usage; rerank cost is estimated per call.",
         }
+    summary["token_usage"] = usage.snapshot()
+    summary["estimated_cost_usd"] = usage.estimated_cost_usd()
     SUMMARY_JSON.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     return summary
 

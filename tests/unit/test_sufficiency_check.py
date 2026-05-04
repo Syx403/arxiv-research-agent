@@ -39,5 +39,7 @@ async def test_sufficiency_check_falls_back_after_invalid_json(monkeypatch) -> N
 
     verdict = await sufficiency_check.is_sufficient("question", evidence)
 
-    assert verdict.sufficient is True
-    assert verdict.missing_aspects == []
+    assert verdict.sufficient is False
+    assert verdict.missing_aspects == [
+        "PARSE_FAILURE: sufficiency check returned invalid JSON; treating as insufficient."
+    ]

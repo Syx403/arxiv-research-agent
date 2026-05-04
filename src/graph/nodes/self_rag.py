@@ -2,12 +2,20 @@ from __future__ import annotations
 
 from langchain_core.messages import SystemMessage
 
-from src.core.types import SELF_RAG_MAX_RETRIES
+from src.core.types import SELF_RAG_MAX_RETRIES, VerificationReport
 from src.graph.state import AgentState
 from src.retrieval.self_rag.verifier import verify_citations
 
 
 async def self_rag_node(state: AgentState) -> dict:
+    if state.get("synthesis_format_degraded"):
+        return {
+            "verification": VerificationReport(
+                verdicts=[],
+                passed=False,
+                rationale="synthesis_format_degraded",
+            )
+        }
     answer = state.get("answer") or ""
     citations = state.get("citations", [])
     verification = await verify_citations(answer, citations, state.get("evidence_lookup", {}))

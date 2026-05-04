@@ -38,3 +38,4 @@ class AgentState(TypedDict, total=False):
     active_subq_index: int | None
     evidence_lookup: dict[int, str]
     skip_reflection: bool
+    synthesis_format_degraded: bool

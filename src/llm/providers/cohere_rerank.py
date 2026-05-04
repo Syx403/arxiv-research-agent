@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import inspect
+import importlib
 from typing import Any
 
-import cohere
 from pydantic import BaseModel
 
 from src.core.config import get_settings, require_secret
@@ -26,7 +26,10 @@ class CohereRerankClient:
             env_var="COHERE_API_KEY",
             provider=self.provider,
         )
-        self._client = client or cohere.AsyncClientV2(api_key=resolved_key)
+        self._client = client
+        if self._client is None:
+            cohere_module = importlib.import_module("cohere")
+            self._client = cohere_module.AsyncClientV2(api_key=resolved_key)
 
     def _raise_for_status(self, status: int, body: str = "") -> None:
         if status >= 400:

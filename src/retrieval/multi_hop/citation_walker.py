@@ -282,12 +282,5 @@ def _extract_json_object(content: str) -> str:
 def _heuristic_score(question: str, candidate: CitationCandidate) -> float:
     query_terms = {term for term in re.findall(r"[a-z0-9]+", question.lower()) if len(term) > 3}
     candidate_text = f"{candidate.title or ''} {candidate.abstract or ''}".lower()
-    matched = sum(1 for term in query_terms if term in candidate_text)
-    score = min(10.0, float(matched * 2))
-    if "reflexion" in candidate_text:
-        score += 4.0
-    if "react" in candidate_text:
-        score += 2.0
-    if candidate.edge_type == "outbound" and not candidate.is_complete:
-        score += 0.5
-    return min(10.0, score)
+    matched_terms = sum(1 for term in query_terms if term in candidate_text)
+    return min(10.0, 10.0 * matched_terms / max(len(query_terms), 1))

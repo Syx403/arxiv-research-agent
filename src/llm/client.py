@@ -9,6 +9,11 @@ from src.llm.providers.deepseek import DeepSeekChatClient
 from src.llm.providers.openai_embed import OpenAIEmbeddingClient
 from src.llm.providers.openrouter import OpenRouterChatClient
 from src.llm.registry import ProviderRoute, get_route
+from src.llm import usage
+
+
+class EmptyProviderResponseError(RuntimeError):
+    """Raised when a chat provider returns empty non-length content twice."""
 
 
 class ChatClient(Protocol):
@@ -52,6 +57,7 @@ class RerankClient(Protocol):
 
 @dataclass
 class _RoutedChatClient:
+    role: str
     route: ProviderRoute
     provider_client: DeepSeekChatClient | OpenRouterChatClient
 
@@ -65,7 +71,7 @@ class _RoutedChatClient:
         max_tokens: int | None = None,
         response_format: dict | None = None,
     ) -> ChatResponse:
-        return await self.provider_client.chat(
+        response = await self.provider_client.chat(
             messages,
             model=model or self.route.vendor_model,
             tools=tools,
@@ -73,6 +79,23 @@ class _RoutedChatClient:
             max_tokens=max_tokens,
             response_format=response_format,
         )
+        _record_chat_usage(self.role, response)
+        if _should_retry_empty_response(response):
+            response = await self.provider_client.chat(
+                messages,
+                model=model or self.route.vendor_model,
+                tools=tools,
+                temperature=0.1,
+                max_tokens=max_tokens,
+                response_format=response_format,
+            )
+            _record_chat_usage(self.role, response)
+            if _should_retry_empty_response(response):
+                raise EmptyProviderResponseError(
+                    f"Provider returned empty content twice for role={self.role!r}, "
+                    f"model={(model or self.route.vendor_model)!r}"
+                )
+        return response
 
     async def aclose(self) -> None:
         await self.provider_client.aclose()
@@ -80,6 +103,7 @@ class _RoutedChatClient:
 
 @dataclass
 class _RoutedEmbeddingClient:
+    role: str
     route: ProviderRoute
     provider_client: OpenAIEmbeddingClient
 
@@ -89,7 +113,9 @@ class _RoutedEmbeddingClient:
         *,
         model: str | None = None,
     ) -> list[list[float]]:
-        return await self.provider_client.embed(texts, model=model or self.route.vendor_model)
+        vectors = await self.provider_client.embed(texts, model=model or self.route.vendor_model)
+        usage.record(self.role, prompt=getattr(self.provider_client, "last_prompt_tokens", 0))
+        return vectors
 
     async def aclose(self) -> None:
         await self.provider_client.aclose()
@@ -97,6 +123,7 @@ class _RoutedEmbeddingClient:
 
 @dataclass
 class _RoutedRerankClient:
+    role: str
     route: ProviderRoute
     provider_client: CohereRerankClient
 
@@ -108,12 +135,14 @@ class _RoutedRerankClient:
         model: str | None = None,
         top_n: int,
     ) -> list[RerankedDoc]:
-        return await self.provider_client.rerank(
+        results = await self.provider_client.rerank(
             query,
             documents,
             model=model or self.route.vendor_model,
             top_n=top_n,
         )
+        usage.record(self.role)
+        return results
 
     async def aclose(self) -> None:
         await self.provider_client.aclose()
@@ -134,7 +163,7 @@ def get_chat_client(model_name: str) -> ChatClient:
         provider_client = _get_provider_client(route.provider, OpenRouterChatClient)
     else:
         raise KeyError(f"{model_name!r} is not a chat model")
-    routed = _RoutedChatClient(route=route, provider_client=provider_client)
+    routed = _RoutedChatClient(role=model_name, route=route, provider_client=provider_client)
     _routed_clients[model_name] = routed
     return routed
 
@@ -145,7 +174,7 @@ def get_embedding_client(model_name: str = "embed-small") -> EmbeddingClient:
     if cached is not None:
         return cached  # type: ignore[return-value]
     provider_client = _get_provider_client(route.provider, OpenAIEmbeddingClient)
-    routed = _RoutedEmbeddingClient(route=route, provider_client=provider_client)
+    routed = _RoutedEmbeddingClient(role=model_name, route=route, provider_client=provider_client)
     _routed_clients[model_name] = routed
     return routed
 
@@ -156,7 +185,7 @@ def get_rerank_client(model_name: str = "rerank") -> RerankClient:
     if cached is not None:
         return cached  # type: ignore[return-value]
     provider_client = _get_provider_client(route.provider, CohereRerankClient)
-    routed = _RoutedRerankClient(route=route, provider_client=provider_client)
+    routed = _RoutedRerankClient(role=model_name, route=route, provider_client=provider_client)
     _routed_clients[model_name] = routed
     return routed
 
@@ -181,3 +210,15 @@ def _get_provider_client(provider: str, factory):
     client = factory()
     _provider_clients[provider] = client
     return client
+
+
+def _record_chat_usage(role: str, response: ChatResponse) -> None:
+    usage.record(
+        role,
+        prompt=response.usage.prompt_tokens if response.usage else 0,
+        completion=response.usage.completion_tokens if response.usage else 0,
+    )
+
+
+def _should_retry_empty_response(response: ChatResponse) -> bool:
+    return (response.content or "").strip() == "" and response.finish_reason != "length"

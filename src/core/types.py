@@ -74,6 +74,7 @@ class CitationVerdict(BaseModel):
 class VerificationReport(BaseModel):
     verdicts: list[CitationVerdict]
     passed: bool
+    rationale: str = ""
 
 
 class SubQuestion(BaseModel):

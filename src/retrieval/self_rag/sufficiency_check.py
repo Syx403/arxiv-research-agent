@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
+from src.core.diagnostics import log_raw_response
 from src.core.types import Message, SufficiencyVerdict
 from src.llm.client import get_chat_client
 from src.retrieval.index.types import Hit
@@ -27,6 +28,12 @@ async def is_sufficient(question: str, evidence: list[Hit]) -> SufficiencyVerdic
         max_tokens=420,
         response_format={"type": "json_object"},
     )
+    log_raw_response(
+        "sufficiency",
+        response.content,
+        evidence_count=len(evidence),
+        event="initial",
+    )
     broken_output = response.content or ""
     try:
         return SufficiencyVerdict.model_validate_json(broken_output)
@@ -46,7 +53,13 @@ async def is_sufficient(question: str, evidence: list[Hit]) -> SufficiencyVerdic
         try:
             return SufficiencyVerdict.model_validate_json(repair.content or "")
         except ValidationError:
+            log_raw_response(
+                "sufficiency",
+                repair.content,
+                evidence_count=len(evidence),
+                event="parse_failure_twice",
+            )
             return SufficiencyVerdict(
-                sufficient=True,
-                missing_aspects=[],
+                sufficient=False,
+                missing_aspects=["PARSE_FAILURE: sufficiency check returned invalid JSON; treating as insufficient."],
             )

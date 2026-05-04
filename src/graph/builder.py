@@ -99,4 +99,5 @@ def _initial_state(question: str, thread_id: str, *, skip_reflection: bool = Fal
         "active_subq_index": None,
         "evidence_lookup": {},
         "skip_reflection": skip_reflection,
+        "synthesis_format_degraded": False,
     }

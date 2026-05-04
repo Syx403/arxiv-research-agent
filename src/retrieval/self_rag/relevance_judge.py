@@ -4,6 +4,7 @@ import asyncio
 
 from pydantic import ValidationError
 
+from src.core.diagnostics import log_raw_response
 from src.core.types import Message, RelevanceVerdict
 from src.llm.client import get_chat_client
 from src.retrieval.index.types import Hit
@@ -26,6 +27,12 @@ async def judge_relevance(subq: str, hit: Hit) -> RelevanceVerdict:
         max_tokens=260,
         response_format={"type": "json_object"},
     )
+    log_raw_response(
+        "relevance_judge",
+        response.content,
+        chunk_id=hit.chunk_id,
+        event="initial",
+    )
     broken_output = response.content or ""
     try:
         return RelevanceVerdict.model_validate_json(broken_output)
@@ -45,9 +52,15 @@ async def judge_relevance(subq: str, hit: Hit) -> RelevanceVerdict:
         try:
             return RelevanceVerdict.model_validate_json(repair.content or "")
         except ValidationError:
+            log_raw_response(
+                "relevance_judge",
+                repair.content,
+                chunk_id=hit.chunk_id,
+                event="parse_failure_twice",
+            )
             return RelevanceVerdict(
-                relevant=True,
-                rationale="Relevance judge returned invalid JSON twice; kept conservatively.",
+                relevant=False,
+                rationale="PARSE_FAILURE: relevance judge returned invalid JSON; dropping hit.",
             )
 
 
