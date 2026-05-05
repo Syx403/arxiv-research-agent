@@ -35,7 +35,7 @@ def test_route_after_retrieve_hard_stops_at_multi_hop_budget() -> None:
 
 
 def test_route_after_verify_hard_stops_at_retry_budget() -> None:
-    citation = Citation(paper_id="arxiv:2210.03629", chunk_id=1, claim_span=(0, 10))
+    citation = Citation(paper_id="arxiv:2210.03629", chunk_id=1, claim_text="ReAct claim", claim_span=(0, 10))
     state = {
         "verification": VerificationReport(
             verdicts=[CitationVerdict(citation=citation, supports=False, rationale="unsupported")],

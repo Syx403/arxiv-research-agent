@@ -20,6 +20,7 @@ from src.eval.metrics.citation_metrics import citation_precision, citation_recal
 from src.eval.metrics.llm_judge import judge_answer
 from src.eval.metrics.retrieval_metrics import mrr, recall_at_k
 from src.graph.builder import run, shutdown
+from src.graph.nodes.synthesize import CITATION_RE
 from src.llm import usage
 
 
@@ -28,6 +29,9 @@ DATASET_NAME = "arxiv-research-agent-gold-v1"
 OUTPUT_DIR = Path("data/eval_outputs/latest")
 PER_QUESTION_CSV = OUTPUT_DIR / "per_question.csv"
 SUMMARY_JSON = OUTPUT_DIR / "summary.json"
+HARD_FAILURE_CLASSES = {"agent_exception", "synthesis_empty", "citation_parse_empty", "judge_invalid"}
+WARNING_CLASSES = {"retrieval_empty", "verifier_all_rejected"}
+# Typed counters keep retriever/verifier warning classes out of the hard-failure gate.
 HARD_FAILURE_THRESHOLD = 0.10
 
 
@@ -56,6 +60,11 @@ class EvalRow:
     judge_rationale: str
     answer: str
     hard_failure: bool = False
+    failure_class: str = ""
+    synthesis_finish_reason: str = ""
+    citation_parse_count: int = 0
+    verifier_rejected_count: int = 0
+    parse_failure_count: int = 0
 
 
 CSV_FIELDNAMES = list(EvalRow.__dataclass_fields__.keys())
@@ -88,6 +97,10 @@ async def run_eval(*, limit: int | None = None, question_ids: list[str] | None =
                 row = await _run_one(gold, langsmith_state=langsmith_state)
                 writer.writerow(_row_to_csv_dict(row))
                 handle.flush()
+                logger.info(
+                    "eval_cost_progress",
+                    extra={"id": gold.id, "estimated_cost_usd": usage.estimated_cost_usd().get("total", 0.0)},
+                )
                 logger.info("eval_question_complete", extra={"id": gold.id})
     finally:
         await shutdown()
@@ -116,13 +129,26 @@ async def _run_one(gold: GoldQuestion, *, langsmith_state: "_LangSmithState | No
         retrieved_paper_ids = _dedupe_paper_ids([hit.paper_id for hit in result.get("evidence", [])])
         cited_paper_ids = _dedupe_paper_ids([citation.paper_id for citation in result.get("citations", [])])
         judge = await judge_answer(gold.question, answer, gold)
+        diagnostics = _diagnostics_from_result(result, answer)
+        failure_class = _classify_result(
+            result=result,
+            answer=answer,
+            retrieved_paper_ids=retrieved_paper_ids,
+            cited_paper_ids=cited_paper_ids,
+            judge=judge,
+            citation_parse_count=diagnostics["citation_parse_count"],
+        )
         row = _row_from_result(
             gold,
             answer,
             retrieved_paper_ids,
             cited_paper_ids,
             judge,
-            hard_failure=bool(result.get("synthesis_format_degraded") and not cited_paper_ids),
+            failure_class=failure_class,
+            synthesis_finish_reason=diagnostics["synthesis_finish_reason"],
+            citation_parse_count=diagnostics["citation_parse_count"],
+            verifier_rejected_count=diagnostics["verifier_rejected_count"],
+            parse_failure_count=diagnostics["parse_failure_count"],
         )
         _create_langsmith_run(gold, row, langsmith_state=langsmith_state)
         return row
@@ -141,7 +167,11 @@ def _row_from_result(
     retrieved_paper_ids: list[str],
     cited_paper_ids: list[str],
     judge: JudgeVerdict,
-    hard_failure: bool = False,
+    failure_class: str = "",
+    synthesis_finish_reason: str = "",
+    citation_parse_count: int = 0,
+    verifier_rejected_count: int = 0,
+    parse_failure_count: int = 0,
 ) -> EvalRow:
     return EvalRow(
         id=gold.id,
@@ -158,7 +188,12 @@ def _row_from_result(
         judge_completeness=judge.completeness,
         judge_rationale=judge.rationale,
         answer=answer,
-        hard_failure=hard_failure,
+        hard_failure=failure_class in HARD_FAILURE_CLASSES,
+        failure_class=failure_class,
+        synthesis_finish_reason=synthesis_finish_reason,
+        citation_parse_count=citation_parse_count,
+        verifier_rejected_count=verifier_rejected_count,
+        parse_failure_count=parse_failure_count,
     )
 
 
@@ -180,6 +215,7 @@ def _failure_row(gold: GoldQuestion, exc: Exception) -> EvalRow:
         judge_rationale=message,
         answer=message,
         hard_failure=True,
+        failure_class="agent_exception",
     )
 
 
@@ -239,6 +275,11 @@ def _row_from_csv_dict(raw: dict[str, str]) -> EvalRow:
         judge_rationale=raw["judge_rationale"],
         answer=raw["answer"],
         hard_failure=(raw.get("hard_failure") or "").lower() == "true",
+        failure_class=raw.get("failure_class", ""),
+        synthesis_finish_reason=raw.get("synthesis_finish_reason", ""),
+        citation_parse_count=int(raw.get("citation_parse_count") or 0),
+        verifier_rejected_count=int(raw.get("verifier_rejected_count") or 0),
+        parse_failure_count=int(raw.get("parse_failure_count") or 0),
     )
 
 
@@ -257,8 +298,10 @@ def _write_summary(rows: list[EvalRow], *, total_skipped_via_resume: int) -> dic
             "hard_failure_count": 0,
             "hard_failure_rate": 0.0,
             "hard_failure_threshold": HARD_FAILURE_THRESHOLD,
+            "failure_classes": {},
         }
     else:
+        failure_classes = _failure_class_counts(rows)
         hard_failure_count = sum(1 for row in rows if row.hard_failure)
         summary = {
             "total_questions": len(rows),
@@ -273,6 +316,7 @@ def _write_summary(rows: list[EvalRow], *, total_skipped_via_resume: int) -> dic
             "hard_failure_count": hard_failure_count,
             "hard_failure_rate": hard_failure_count / len(rows),
             "hard_failure_threshold": HARD_FAILURE_THRESHOLD,
+            "failure_classes": failure_classes,
             "estimated_run_level_calls": len(rows),
             "estimated_judge_calls": len(rows),
             "cost_note": "Token usage is recorded when provider responses expose usage; rerank cost is estimated per call.",
@@ -281,6 +325,68 @@ def _write_summary(rows: list[EvalRow], *, total_skipped_via_resume: int) -> dic
     summary["estimated_cost_usd"] = usage.estimated_cost_usd()
     SUMMARY_JSON.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     return summary
+
+
+def _diagnostics_from_result(result: dict[str, Any], answer: str) -> dict[str, int | str]:
+    citation_parse_count = len(list(CITATION_RE.finditer(answer)))
+    cited_count = len(result.get("citations", []))
+    return {
+        "synthesis_finish_reason": str(result.get("synthesis_finish_reason") or ""),
+        "citation_parse_count": citation_parse_count,
+        "verifier_rejected_count": max(citation_parse_count - cited_count, 0),
+        "parse_failure_count": _parse_failure_count(result.get("verification")),
+    }
+
+
+def _classify_result(
+    *,
+    result: dict[str, Any],
+    answer: str,
+    retrieved_paper_ids: list[str],
+    cited_paper_ids: list[str],
+    judge: JudgeVerdict,
+    citation_parse_count: int,
+) -> str:
+    if _judge_invalid(judge):
+        return "judge_invalid"
+    if result.get("synthesis_format_degraded"):
+        if not answer.strip():
+            return "synthesis_empty"
+        if citation_parse_count == 0:
+            return "citation_parse_empty"
+    if not retrieved_paper_ids:
+        return "retrieval_empty"
+    if citation_parse_count > 0 and not cited_paper_ids:
+        return "verifier_all_rejected"
+    return ""
+
+
+def _judge_invalid(judge: JudgeVerdict) -> bool:
+    return judge.rationale.startswith("Judge returned invalid JSON twice")
+
+
+def _parse_failure_count(verification) -> int:
+    if verification is None:
+        verdicts = []
+    elif isinstance(verification, dict):
+        verdicts = verification.get("verdicts", [])
+    else:
+        verdicts = getattr(verification, "verdicts", [])
+    return sum(
+        1
+        for verdict in verdicts
+        if str(verdict.get("rationale", "") if isinstance(verdict, dict) else getattr(verdict, "rationale", "")).startswith(
+            "PARSE_FAILURE:"
+        )
+    )
+
+
+def _failure_class_counts(rows: list[EvalRow]) -> dict[str, int]:
+    classes = ["", *sorted(HARD_FAILURE_CLASSES | WARNING_CLASSES)]
+    counts = {failure_class: 0 for failure_class in classes}
+    for row in rows:
+        counts[row.failure_class] = counts.get(row.failure_class, 0) + 1
+    return counts
 
 
 def _setup_langsmith_dataset(questions: list[GoldQuestion]) -> "_LangSmithState | None":

@@ -7,8 +7,8 @@ from typing import Any
 from pydantic import BaseModel
 
 from src.core.config import get_settings, require_secret
-from src.llm.errors import LLMInvalidRequestError, error_for_status
-from src.llm.retry import with_retry
+from src.llm.errors import EmptyProviderResponseError, LLMInvalidRequestError, error_for_status
+from src.llm.retry import retry_transient_network, with_retry
 
 
 class RerankedDoc(BaseModel):
@@ -48,11 +48,13 @@ class CohereRerankClient:
         if not indexed_documents:
             raise LLMInvalidRequestError("No non-empty documents to rerank", provider=self.provider)
 
-        response = await self._client.rerank(
-            model=model,
-            query=query,
-            documents=[doc for _, doc in indexed_documents],
-            top_n=top_n,
+        response = await retry_transient_network(
+            lambda: self._rerank_once(
+                model=model,
+                query=query,
+                documents=[doc for _, doc in indexed_documents],
+                top_n=top_n,
+            )
         )
         results = _get_attr(response, "results")
         reranked: list[RerankedDoc] = []
@@ -78,6 +80,18 @@ class CohereRerankClient:
         result = close()
         if inspect.isawaitable(result):
             await result
+
+    async def _rerank_once(self, *, model: str, query: str, documents: list[str], top_n: int):
+        response = await self._client.rerank(
+            model=model,
+            query=query,
+            documents=documents,
+            top_n=top_n,
+        )
+        results = _get_attr(response, "results")
+        if not results:
+            raise EmptyProviderResponseError("Cohere rerank returned no results for non-empty documents")
+        return response
 
 
 def _get_attr(obj: Any, name: str) -> Any:

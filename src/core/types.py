@@ -16,6 +16,10 @@ RETRIEVAL_TOP_K_LEXICAL = 30
 RRF_K = 60
 RETRIEVAL_TOP_K_AFTER_FUSION = 30
 RERANK_TOP_K = 10
+SYNTHESIS_EVIDENCE_MAX_CHUNKS = 8
+SYNTHESIS_EVIDENCE_CHARS_PER_CHUNK = 800
+SUFFICIENCY_EVIDENCE_MAX_CHUNKS = 5
+SUFFICIENCY_EVIDENCE_CHARS_PER_CHUNK = 600
 MULTI_HOP_MAX_DEPTH = 2
 MULTI_HOP_FRONTIER_LIMIT = 5
 MULTI_HOP_MAX_CALLS = 1
@@ -59,10 +63,13 @@ class ChatResponse(BaseModel):
 
 
 class Citation(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     paper_id: str
     chunk_id: int
-    quote: str | None = None
+    claim_text: str
     claim_span: tuple[int, int] | None = None
+    quote: str | None = None
 
 
 class CitationVerdict(BaseModel):

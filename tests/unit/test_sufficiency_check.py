@@ -18,7 +18,7 @@ class _FakeChatClient:
 
 class _BrokenChatClient:
     async def chat(self, *args, **kwargs) -> ChatResponse:
-        return ChatResponse(content='{"sufficient": true', model="fake", finish_reason="length")
+        return ChatResponse(content='{"sufficient": true', model="fake", finish_reason="stop")
 
 
 @pytest.mark.asyncio

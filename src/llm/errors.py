@@ -44,6 +44,10 @@ class LLMProviderError(LLMError):
     pass
 
 
+class EmptyProviderResponseError(RuntimeError):
+    """Raised when a provider returns a successful but semantically empty response."""
+
+
 def error_for_status(provider: str, status: int, body: str = "") -> LLMError:
     lowered = body.lower()
     if status in (401, 403):

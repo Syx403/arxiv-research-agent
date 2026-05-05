@@ -23,4 +23,5 @@ async def decompose_node(state: AgentState) -> dict:
         "tool_iters": 0,
         "active_subq_index": None,
         "evidence_lookup": {},
+        "synthesis_finish_reason": "",
     }

@@ -24,7 +24,8 @@ from src.retrieval.multi_hop.frontier import Frontier
 
 
 logger = logging.getLogger(__name__)
-SCORE_BATCH_SIZE = 16
+SCORE_BATCH_SIZE = 8
+SCORE_CANDIDATE_TEXT_LIMIT = 300
 
 
 @dataclass(frozen=True)
@@ -178,8 +179,8 @@ async def _score_candidate_batch(
         {
             "paper_id": candidate.paper_id,
             "edge_type": candidate.edge_type,
-            "title": candidate.title or "",
-            "abstract": candidate.abstract or "",
+            "title": _truncate_for_scoring(candidate.title or ""),
+            "abstract": _truncate_for_scoring(candidate.abstract or ""),
         }
         for candidate in candidates
     ]
@@ -284,3 +285,9 @@ def _heuristic_score(question: str, candidate: CitationCandidate) -> float:
     candidate_text = f"{candidate.title or ''} {candidate.abstract or ''}".lower()
     matched_terms = sum(1 for term in query_terms if term in candidate_text)
     return min(10.0, 10.0 * matched_terms / max(len(query_terms), 1))
+
+
+def _truncate_for_scoring(text: str) -> str:
+    if len(text) <= SCORE_CANDIDATE_TEXT_LIMIT:
+        return text
+    return f"{text[:SCORE_CANDIDATE_TEXT_LIMIT]}...[truncated]"

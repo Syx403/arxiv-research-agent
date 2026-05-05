@@ -16,9 +16,12 @@ Use only source chunk IDs supplied by the user as evidence.
 Return only JSON matching this shape:
 {"concepts":[{"display_name":"...","definition":"...","aliases":["..."],"evidence_chunk_ids":[1],"relations":[{"target_display":"...","type":"uses","evidence_chunk_ids":[1]}]}]}
 """
+EXTRACTOR_TEXT_CHAR_LIMIT = 6000
 
 
 async def extract_concepts_from_text(text: str, *, source_chunk_ids: list[int]) -> list[ConceptExtraction]:
+    if len(text) > EXTRACTOR_TEXT_CHAR_LIMIT:
+        text = f"{text[:EXTRACTOR_TEXT_CHAR_LIMIT]}...[truncated for provider stability]"
     client = get_chat_client("main")
     response = await client.chat(
         [

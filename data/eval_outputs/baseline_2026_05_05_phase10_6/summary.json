@@ -1,0 +1,59 @@
+{
+  "avg_citation_precision": 0.7333333333333333,
+  "avg_citation_recall": 0.5055555555555555,
+  "avg_completeness": 4.366666666666666,
+  "avg_correctness": 4.166666666666667,
+  "avg_groundedness": 4.366666666666666,
+  "avg_mrr": 0.9027777777777778,
+  "avg_recall_at_5": 0.7333333333333333,
+  "cost_note": "Token usage is recorded when provider responses expose usage; rerank cost is estimated per call.",
+  "estimated_cost_usd": {
+    "embed-small": 0.00740816,
+    "fast": 0.16086819,
+    "main": 0.43395382000000005,
+    "rerank": 0.226,
+    "total": 0.82823017
+  },
+  "estimated_judge_calls": 30,
+  "estimated_run_level_calls": 30,
+  "failure_classes": {
+    "": 24,
+    "agent_exception": 1,
+    "citation_parse_empty": 0,
+    "judge_invalid": 0,
+    "retrieval_empty": 0,
+    "synthesis_empty": 0,
+    "verifier_all_rejected": 5
+  },
+  "hard_failure_count": 1,
+  "hard_failure_rate": 0.03333333333333333,
+  "hard_failure_threshold": 0.1,
+  "token_usage": {
+    "embed-small": {
+      "calls": 127,
+      "completion_tokens": 0,
+      "prompt_tokens": 370408,
+      "role": "embed-small"
+    },
+    "fast": {
+      "calls": 1625,
+      "completion_tokens": 343332,
+      "prompt_tokens": 924789,
+      "role": "fast"
+    },
+    "main": {
+      "calls": 782,
+      "completion_tokens": 278969,
+      "prompt_tokens": 470696,
+      "role": "main"
+    },
+    "rerank": {
+      "calls": 113,
+      "completion_tokens": 0,
+      "prompt_tokens": 0,
+      "role": "rerank"
+    }
+  },
+  "total_questions": 30,
+  "total_skipped_via_resume": 0
+}

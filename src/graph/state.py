@@ -39,3 +39,4 @@ class AgentState(TypedDict, total=False):
     evidence_lookup: dict[int, str]
     skip_reflection: bool
     synthesis_format_degraded: bool
+    synthesis_finish_reason: str

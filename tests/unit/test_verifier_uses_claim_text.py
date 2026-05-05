@@ -7,23 +7,23 @@ from src.retrieval.self_rag import verifier
 
 
 @pytest.mark.asyncio
-async def test_verifier_truncates_long_evidence_to_1200_chars(monkeypatch) -> None:
+async def test_verifier_prompt_uses_sentence_claim_text(monkeypatch) -> None:
     client = _CapturingVerifierClient()
     monkeypatch.setattr(verifier, "get_chat_client", lambda name: client)
+    sentence = "ReAct interleaves reasoning and acting [arxiv:2210.03629#123]."
+    citation = Citation(
+        paper_id="arxiv:2210.03629",
+        chunk_id=123,
+        claim_text=sentence,
+        claim_span=(0, len(sentence)),
+    )
 
-    report = await verifier.verify_citations("claim text", [_citation(7)], {7: "x" * 5000})
+    await verifier.verify_citations("answer text", [citation], {123: "ReAct evidence"})
 
-    assert report.passed is True
     user_message = client.messages[1].content
     assert user_message is not None
-    assert "Evidence chunk 7 (truncated to 1200 chars):" in user_message
-    evidence_body = user_message.rsplit(":\n", maxsplit=1)[1]
-    assert evidence_body == "x" * verifier.VERIFIER_EVIDENCE_CHAR_LIMIT
-    assert len(evidence_body) == 1200
-
-
-def _citation(chunk_id: int) -> Citation:
-    return Citation(paper_id="p", chunk_id=chunk_id, claim_text=f"claim {chunk_id}")
+    assert f"Specific claim being verified:\n{sentence}" in user_message
+    assert "Specific claim being verified:\n[arxiv:2210.03629#123]" not in user_message
 
 
 class _CapturingVerifierClient:

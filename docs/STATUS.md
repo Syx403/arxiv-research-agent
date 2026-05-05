@@ -14,5 +14,6 @@
 | 9 | LangGraph Orchestration | complete | HEAD (see git log) | 2026-05-03 | none |
 | 10 | Evaluation Harness | complete | HEAD (see git log) | 2026-05-04 | none |
 | 10.5 | Fail-closed Self-RAG and Sample Eval Gate | complete | HEAD (see git log) | 2026-05-04 | self-RAG fail-closed + token cost visible |
+| 10.6 | Engineering Rigor + Foundation | complete | HEAD (see git log) | 2026-05-05 | F3=substantial support; F6=typed counters; F8 deferred items in ENGINEERING_BACKLOG.md |
 | 11 | User Interface | not started | - | - | - |
 | 12 | Polish and Documentation | not started | - | - | - |
