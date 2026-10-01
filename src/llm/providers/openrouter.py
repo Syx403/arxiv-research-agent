@@ -48,7 +48,7 @@ class OpenRouterChatClient:
     def _raise_for_status(self, response: httpx.Response) -> None:
         if response.status_code < 400:
             return
-        raise error_for_status(self.provider, response.status_code, response.text)
+        raise error_for_status(self.provider, response.status_code, response.text, headers=response.headers)
 
     @with_retry()
     async def chat(

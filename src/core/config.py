@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     langsmith_api_key: SecretStr | None = Field(default=None, validation_alias="LANGSMITH_API_KEY")
     langsmith_project: str = Field(default="arxiv-research-agent", validation_alias="LANGSMITH_PROJECT")
-    langsmith_tracing: bool = Field(default=True, validation_alias="LANGSMITH_TRACING")
+    langsmith_tracing: bool = Field(default=False, validation_alias="LANGSMITH_TRACING")
 
     postgres_host: str = Field(default="localhost", validation_alias="POSTGRES_HOST")
     postgres_port: int = Field(default=5432, validation_alias="POSTGRES_PORT")
@@ -28,9 +28,8 @@ class Settings(BaseSettings):
         default=SecretStr("arxiv_agent_dev"), validation_alias="POSTGRES_PASSWORD"
     )
 
-    semantic_scholar_api_key: SecretStr | None = Field(
-        default=None, validation_alias="SEMANTIC_SCHOLAR_API_KEY"
-    )
+    discovery_timeout_s: float = Field(default=90, gt=0, le=180, validation_alias="ARA_DISCOVERY_TIMEOUT_S")
+    discovery_max_papers: int = Field(default=3, ge=1, le=3, validation_alias="ARA_DISCOVERY_MAX_PAPERS")
     github_token: SecretStr | None = Field(default=None, validation_alias="GITHUB_TOKEN")
 
     openrouter_http_referer: str | None = Field(

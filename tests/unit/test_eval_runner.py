@@ -68,6 +68,9 @@ async def _run_eval_with_fake_agent(
     async def fake_cleanup(_thread_id: str) -> None:
         return None
 
+    async def fake_corpus():
+        return {"fixture": "fixed"}
+
     monkeypatch.setattr(runner, "OUTPUT_DIR", output_dir)
     monkeypatch.setattr(runner, "PER_QUESTION_CSV", csv_path)
     monkeypatch.setattr(runner, "SUMMARY_JSON", summary_path)
@@ -77,6 +80,7 @@ async def _run_eval_with_fake_agent(
     monkeypatch.setattr(runner, "judge_answer", fake_judge_answer)
     monkeypatch.setattr(runner, "_cleanup_eval_run", fake_cleanup)
     monkeypatch.setattr(runner, "shutdown", fake_shutdown)
+    monkeypatch.setattr(runner, "capture_corpus", fake_corpus)
 
     return await runner.run_eval()
 

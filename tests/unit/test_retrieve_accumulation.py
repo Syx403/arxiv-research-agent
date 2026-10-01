@@ -11,6 +11,7 @@ from src.retrieval.index.types import Hit
 async def test_retrieve_retry_accumulates_relevant_hits_by_chunk_id(monkeypatch) -> None:
     hybrid_calls = 0
     sufficiency_calls = 0
+    judged = []
 
     async def fake_route(_subq: str) -> RouteDecision:
         return RouteDecision()
@@ -31,24 +32,17 @@ async def test_retrieve_retry_accumulates_relevant_hits_by_chunk_id(monkeypatch)
         return hits
 
     async def fake_judge_batch(subq: str, hits: list[Hit]) -> list[RelevanceVerdict]:
-        verdicts_by_call = {
-            1: [True, False],
-            2: [True, True],
-            3: [False, True],
-        }
+        judged.extend(hit.chunk_id for hit in hits)
         return [
-            RelevanceVerdict(relevant=relevant, rationale="ok")
-            for relevant in verdicts_by_call[hybrid_calls]
+            RelevanceVerdict(relevant=hit.chunk_id != 2, rationale="ok") for hit in hits
         ]
 
-    async def fake_sufficient(subq: str, hits: list[Hit]) -> SufficiencyVerdict:
+    async def fake_sufficient(subq: str, hits: list[Hit], **kwargs) -> SufficiencyVerdict:
         nonlocal sufficiency_calls
         sufficiency_calls += 1
         return SufficiencyVerdict(sufficient=sufficiency_calls == 3, missing_aspects=["more"])
 
-    monkeypatch.setattr(retrieve.router, "route", fake_route)
     monkeypatch.setattr(retrieve.rewriter, "rewrite_for_retrieval", fake_rewrite)
-    monkeypatch.setattr(retrieve.rewriter, "should_use_hyde", lambda subq: False)
     monkeypatch.setattr(retrieve, "get_embedding_client", lambda name: _FakeEmbeddingClient())
     monkeypatch.setattr(retrieve, "hybrid_search", fake_hybrid_search)
     monkeypatch.setattr(retrieve.deduplicator, "dedupe", lambda hits: hits)
@@ -60,9 +54,11 @@ async def test_retrieve_retry_accumulates_relevant_hits_by_chunk_id(monkeypatch)
         "How does Toolformer differ from ToolLLM?",
         subq_index=0,
         multi_hop_used=False,
+        question_type="comparison",
     )
 
-    assert [hit.chunk_id for hit in result.hits] == [1, 2, 3, 4]
+    assert [hit.chunk_id for hit in result.hits] == [1, 3, 4]
+    assert judged == [1, 2, 2, 3, 4]  # Reassess when the focus changes; reuse within the same focus.
     assert result.sufficient is True
     assert result.retries_used == 2
 

@@ -29,13 +29,10 @@ async def test_retrieve_pipeline_logs_each_stage(monkeypatch, caplog) -> None:
     async def fake_judge_batch(subq: str, hits: list[Hit]) -> list[RelevanceVerdict]:
         return [RelevanceVerdict(relevant=True, rationale="ok") for _ in hits]
 
-    async def fake_sufficient(subq: str, hits: list[Hit]) -> SufficiencyVerdict:
+    async def fake_sufficient(subq: str, hits: list[Hit], **kwargs) -> SufficiencyVerdict:
         return SufficiencyVerdict(sufficient=True, missing_aspects=[])
 
-    monkeypatch.setattr(retrieve.router, "route", fake_route)
-    monkeypatch.setattr(retrieve.graph_retriever, "expand_query_via_graph", fake_expand)
     monkeypatch.setattr(retrieve.rewriter, "rewrite_for_retrieval", fake_rewrite)
-    monkeypatch.setattr(retrieve.rewriter, "should_use_hyde", lambda subq: False)
     monkeypatch.setattr(retrieve, "get_embedding_client", lambda name: _FakeEmbeddingClient())
     monkeypatch.setattr(retrieve, "hybrid_search", fake_hybrid_search)
     monkeypatch.setattr(retrieve.deduplicator, "dedupe", lambda hits: hits)
@@ -51,15 +48,12 @@ async def test_retrieve_pipeline_logs_each_stage(monkeypatch, caplog) -> None:
         )
 
     assert result.hits
-    assert graph_expansion.extra_paper_hints == ["arxiv:paper"]
+    assert graph_expansion.extra_paper_hints == []
     logged_stages = {record.stage for record in caplog.records if record.message == "retrieve_stage"}
     assert {
-        "route",
-        "graph_expand",
         "rewrite",
         "embed",
         "hybrid_search",
-        "apply_paper_boost",
         "dedupe",
         "rerank",
         "filter_relevant",
@@ -81,3 +75,28 @@ def _hit() -> Hit:
 class _FakeEmbeddingClient:
     async def embed(self, texts: list[str], *, model: str | None = None) -> list[list[float]]:
         return [[0.01] * 1536 for _ in texts]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["definition", "comparison"])
+async def test_focused_retrieval_skips_speculative_hyde(monkeypatch, kind):
+    async def rewrite(question):
+        return "ReAct reasoning acting"
+    async def forbidden_hyde(question):
+        raise AssertionError("Named-method questions can search the rewritten query directly")
+    monkeypatch.setattr(retrieve.rewriter, "rewrite_for_retrieval", rewrite)
+    ctx = retrieve.RetrievalContext(subq="How does ReAct work with LLM reasoning and actions?", subq_index=0,
+                                   question_type=kind, question_id="q", multi_hop_used=False)
+    await retrieve._stage_rewrite(ctx)
+    assert ctx.embedding_text == ctx.rewritten_query == "ReAct reasoning acting"
+
+
+def test_ui_progress_reports_the_final_evidence_pack(monkeypatch):
+    events = []
+    monkeypatch.setattr(retrieve, 'record_event', lambda name, **values: events.append(values))
+    ctx = retrieve.RetrievalContext(subq='What is ReAct?', subq_index=0, question_type='definition',
+                                   question_id='q', multi_hop_used=False, hits=[_hit()],
+                                   accumulated_hits={1: _hit(), 2: Hit(2, 'other', 'Related work', 'A passing mention.', .1)})
+    retrieve._log_stage(ctx, 'check_sufficiency')
+    assert events[0]['accepted_chunks'] == 1
+    assert events[0]['papers'] == 1

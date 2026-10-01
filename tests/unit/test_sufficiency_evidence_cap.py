@@ -45,10 +45,11 @@ async def test_sufficiency_caps_to_top_five_and_truncates(monkeypatch) -> None:
     assert user_prompt.count("[arxiv:test#") == SUFFICIENCY_EVIDENCE_MAX_CHUNKS
     assert "[arxiv:test#14]" in user_prompt
     assert "[arxiv:test#9]" not in user_prompt
-    assert "...[truncated from " in user_prompt
-    assert len(sufficiency_check._format_evidence(sufficiency_check._select_evidence([_hit(i) for i in range(15)]))) <= (
-        SUFFICIENCY_EVIDENCE_MAX_CHUNKS * (SUFFICIENCY_EVIDENCE_CHARS_PER_CHUNK + 160)
-    )
+    assert "...[truncated from " not in user_prompt
+    from src.retrieval.evidence import token_count, evidence_text, EVIDENCE_SUBQUESTION_TOKENS
+    selected = sufficiency_check._select_evidence([_hit(i) for i in range(15)])
+    assert sum(token_count(evidence_text(h)) for h in selected) <= EVIDENCE_SUBQUESTION_TOKENS
+
 
 
 @pytest.mark.asyncio
@@ -58,7 +59,8 @@ async def test_sufficiency_finish_length_fails_closed(monkeypatch) -> None:
     verdict = await sufficiency_check.is_sufficient("question", [_hit(1)])
 
     assert verdict.sufficient is False
-    assert verdict.missing_aspects[0].startswith("PARSE_FAILURE")
+    assert verdict.status == "error"
+    assert verdict.error_code == "sufficiency_judgment_failed"
 
 
 def _hit(index: int) -> Hit:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 
 from src.core.types import RERANK_TOP_K
 from src.llm.client import get_rerank_client
@@ -13,7 +14,8 @@ async def rerank(query: str, hits: list[Hit], top_n: int = RERANK_TOP_K) -> list
     client = get_rerank_client("rerank")
     results = await client.rerank(
         query,
-        [hit.text for hit in hits],
+        [json.dumps({"title": hit.title, "section": hit.section, "content": hit.text}, ensure_ascii=False)
+         for hit in hits],
         top_n=min(top_n, len(hits)),
     )
     reranked: list[Hit] = []

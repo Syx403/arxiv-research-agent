@@ -1,0 +1,165 @@
+{
+  "version": "quality-calibration-1",
+  "checked_on": "2026-09-16",
+  "label_origin": "Assistant-authored source checks; product criteria approved by user. Independent human answer labels pending.",
+  "scope": "Targeted regression after jointly calibrated fit, completion and answer-scope criteria; not a held-out benchmark.",
+  "cases": [
+    {
+      "id": "a2-broad-but-clear",
+      "split": "acceptance",
+      "category": "discovery",
+      "turns": [
+        {
+          "question": "找两三篇LLM Agent长期记忆方案的论文，我先了解各自主要机制，不需要实验细节。",
+          "route": "discover",
+          "rubric": [
+            "主题和介绍深度已经清楚，不应强制先选具体应用。",
+            "应提供不同记忆机制的有据概览，不捏造速度、成本或热门程度。",
+            "直接匹配与证据成熟度分开；概念方案可以直接匹配；综述或相邻机制不用于凑够独立方案数。"
+          ],
+          "min_results": 2,
+          "max_results": 3
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/abs/2310.08560",
+          "check": "摘要：分层记忆和虚拟上下文管理；不能据此断言实现成本低或开销已量化。"
+        },
+        {
+          "url": "https://arxiv.org/abs/2502.12110",
+          "check": "A-MEM作为另一种相关记忆机制的参考；不以此作为穷尽列表。"
+        }
+      ]
+    },
+    {
+      "id": "a4-switch-details",
+      "split": "acceptance",
+      "category": "reading",
+      "turns": [
+        {
+          "question": "阅读 arXiv:2101.03961v3，解释每个token被送到几个专家，以及专家容量不足时溢出的token怎么处理。请用正文依据回答，不要只概括摘要。",
+          "route": "read",
+          "rubric": [
+            "应说明单专家路由及残差旁路，不能把溢出token说成从序列中删除。"
+          ],
+          "required_ids": [
+            "2101.03961v3"
+          ],
+          "allowed_ids": [
+            "2101.03961v3"
+          ]
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/html/2101.03961v3",
+          "check": "第2.1–2.2节：每token选择一个专家；溢出token跳过专家计算并沿残差连接传递；训练使用可微辅助负载均衡损失。"
+        }
+      ]
+    },
+    {
+      "id": "a6-first-paper",
+      "split": "acceptance",
+      "category": "conversation",
+      "turns": [
+        {
+          "question": "找到Voyager这个Minecraft Agent的论文，只根据摘要简单介绍，不用读原文。",
+          "route": "discover",
+          "rubric": [
+            "应找到具身Agent论文，而不是天文Voyager或同名系统。"
+          ],
+          "required_ids": [
+            "2305.16291"
+          ],
+          "allowed_ids": [
+            "2305.16291"
+          ],
+          "min_results": 1,
+          "max_results": 1
+        },
+        {
+          "question": "现在深入第一篇：它的技能库如何存储和检索技能？只解释这个机制，给出正文证据。",
+          "route": "read",
+          "rubric": [
+            "正确消解第一篇，不重复询问论文名称；应说明可执行技能代码、描述及相关检索机制。"
+          ],
+          "first_from_previous": true,
+          "allowed_ids": [
+            "2305.16291"
+          ]
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/abs/2305.16291",
+          "check": "摘要：自动课程、可执行代码技能库、迭代提示；通过GPT-4黑盒调用学习而非微调模型参数。"
+        },
+        {
+          "url": "https://arxiv.org/html/2305.16291v2",
+          "check": "技能库章节；需阅读该段以判断检索和存储细节。"
+        }
+      ]
+    },
+    {
+      "id": "a8-unsupported-premise",
+      "split": "acceptance",
+      "category": "boundary",
+      "turns": [
+        {
+          "question": "阅读 arXiv:2408.15664v1，核实“该论文证明了在任意数据分布下都能得到全局最优路由”这个说法。如果找到证明就给出原文，否则说明目前证据能支持什么、不能支持什么。",
+          "route": "read",
+          "rubric": [
+            "不得编造普适全局最优定理；应区分经验负载均衡、本文真实理论讨论和题设夸大。",
+            "不能仅凭有限检索宣称已经证明整篇没有该内容；应说明证据覆盖和不确定性。"
+          ],
+          "allowed_ids": [
+            "2408.15664v1"
+          ],
+          "allowed_statuses": [
+            "complete"
+          ],
+          "require_claim_audit": true,
+          "require_full_audit": true
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/html/2408.15664v1",
+          "check": "第3节、Algorithm 1：按历史负载调整专家偏置；负载高于平均时减少偏置，低于平均时增加。偏置不引入辅助损失的干扰梯度。"
+        }
+      ]
+    },
+    {
+      "id": "q1-supported-claim",
+      "split": "acceptance",
+      "category": "boundary",
+      "turns": [
+        {
+          "question": "核实 arXiv:2408.15664v1 是否支持这个说法：Loss-Free Balancing 根据历史批次的专家负载调节偏置，偏置只影响 top-K 选择，不作为辅助损失反向传播。请对照原文确认，并保留必要条件。",
+          "route": "read",
+          "required_ids": [
+            "2408.15664v1"
+          ],
+          "allowed_ids": [
+            "2408.15664v1"
+          ],
+          "allowed_statuses": [
+            "complete"
+          ],
+          "require_claim_audit": true,
+          "rubric": [
+            "应根据方法与算法支持有条件的机制陈述，而非对任何核实请求都一律回答证据不足。",
+            "不要把历史负载偏置更新等同于当前序列信息，保留因果约束；不得泛化为任意数据分布最优。"
+          ]
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/html/2408.15664v1",
+          "note": "Section 3 and Algorithm 1: expert-wise historical load bias and unchanged selected affinity weights."
+        }
+      ]
+    }
+  ]
+}

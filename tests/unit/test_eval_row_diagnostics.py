@@ -17,14 +17,18 @@ def test_eval_row_diagnostics_from_verified_result() -> None:
             passed=False,
         ),
         "synthesis_finish_reason": "length",
+        "multi_hop_attempts": 2,
+        "multi_hop_expansions": 1,
     }
 
     diagnostics = runner._diagnostics_from_result(result, answer)
 
     assert diagnostics["synthesis_finish_reason"] == "length"
     assert diagnostics["citation_parse_count"] == 5
-    assert diagnostics["verifier_rejected_count"] == 3
+    assert diagnostics["verifier_rejected_count"] == 1
     assert diagnostics["parse_failure_count"] == 1
+    assert diagnostics["multi_hop_attempts"] == 2
+    assert diagnostics["multi_hop_expansions"] == 1
 
 
 def test_failure_classification_distinguishes_hard_and_warning_classes() -> None:

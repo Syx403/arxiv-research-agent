@@ -8,7 +8,7 @@ from src.llm.registry import ProviderRoute
 
 
 @pytest.mark.asyncio
-async def test_chat_retries_once_on_empty_non_length_response() -> None:
+async def test_chat_retries_on_empty_non_length_response() -> None:
     provider = _FakeProvider(
         [
             ChatResponse(content="", model="fake", finish_reason="stop"),
@@ -24,14 +24,15 @@ async def test_chat_retries_once_on_empty_non_length_response() -> None:
     response = await client.chat([Message(role="user", content="hello")], temperature=0.0)
 
     assert provider.calls == 2
-    assert provider.temperatures == [0.0, 0.1]
+    assert provider.temperatures == [0.0, 0.0]
     assert response.content == "valid"
 
 
 @pytest.mark.asyncio
-async def test_chat_raises_when_empty_retry_also_empty() -> None:
+async def test_chat_raises_after_three_empty_responses() -> None:
     provider = _FakeProvider(
         [
+            ChatResponse(content="", model="fake", finish_reason="stop"),
             ChatResponse(content="", model="fake", finish_reason="stop"),
             ChatResponse(content="", model="fake", finish_reason="stop"),
         ]
@@ -45,7 +46,7 @@ async def test_chat_raises_when_empty_retry_also_empty() -> None:
     with pytest.raises(EmptyProviderResponseError):
         await client.chat([Message(role="user", content="hello")])
 
-    assert provider.calls == 2
+    assert provider.calls == 3
 
 
 class _FakeProvider:

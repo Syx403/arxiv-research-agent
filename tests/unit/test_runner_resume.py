@@ -6,6 +6,7 @@ import pytest
 
 from src.eval import runner
 from src.eval.datasets.gold_questions import GoldQuestion
+from src.eval.artifacts import ensure_manifest, make_manifest
 
 
 def _gold(index: int) -> GoldQuestion:
@@ -45,6 +46,7 @@ async def test_runner_resumes_from_existing_csv(monkeypatch, tmp_path, capsys) -
     summary_path = output_dir / "summary.json"
     questions = [_gold(index) for index in range(1, 6)]
     processed: list[str] = []
+    ensure_manifest(output_dir, make_manifest(cases=[q.model_dump() for q in questions], corpus={"fixture": "fixed"}, mode="gold_eval"))
 
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=runner.CSV_FIELDNAMES)
@@ -59,6 +61,9 @@ async def test_runner_resumes_from_existing_csv(monkeypatch, tmp_path, capsys) -
     async def fake_shutdown() -> None:
         return None
 
+    async def fake_corpus():
+        return {"fixture": "fixed"}
+
     monkeypatch.setattr(runner, "OUTPUT_DIR", output_dir)
     monkeypatch.setattr(runner, "PER_QUESTION_CSV", csv_path)
     monkeypatch.setattr(runner, "SUMMARY_JSON", summary_path)
@@ -66,6 +71,7 @@ async def test_runner_resumes_from_existing_csv(monkeypatch, tmp_path, capsys) -
     monkeypatch.setattr(runner, "_setup_langsmith_dataset", lambda questions: None)
     monkeypatch.setattr(runner, "_run_one", fake_run_one)
     monkeypatch.setattr(runner, "shutdown", fake_shutdown)
+    monkeypatch.setattr(runner, "capture_corpus", fake_corpus)
 
     summary = await runner.run_eval()
 

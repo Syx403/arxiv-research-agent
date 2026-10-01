@@ -4,7 +4,8 @@ import csv
 import json
 import logging
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import mean
 from typing import Any
@@ -16,6 +17,7 @@ from src.core import db
 from src.core.config import get_settings
 from src.core.types import JudgeVerdict
 from src.eval.datasets.gold_questions import GOLD_QUESTIONS, GoldQuestion
+from src.eval.artifacts import capture_corpus, ensure_manifest, make_manifest
 from src.eval.metrics.citation_metrics import citation_precision, citation_recall
 from src.eval.metrics.llm_judge import judge_answer
 from src.eval.metrics.retrieval_metrics import mrr, recall_at_k
@@ -26,11 +28,11 @@ from src.llm import usage
 
 logger = logging.getLogger(__name__)
 DATASET_NAME = "arxiv-research-agent-gold-v1"
-OUTPUT_DIR = Path("data/eval_outputs/latest")
+OUTPUT_DIR = Path(os.getenv("ARA_EVAL_OUTPUT_DIR") or f"data/eval_outputs/run-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}-{uuid4().hex[:8]}")
 PER_QUESTION_CSV = OUTPUT_DIR / "per_question.csv"
 SUMMARY_JSON = OUTPUT_DIR / "summary.json"
-HARD_FAILURE_CLASSES = {"agent_exception", "synthesis_empty", "citation_parse_empty", "judge_invalid"}
-WARNING_CLASSES = {"retrieval_empty", "verifier_all_rejected"}
+HARD_FAILURE_CLASSES = {"agent_exception", "synthesis_empty", "citation_parse_empty", "judge_invalid", "evidence_judgment_failed"}
+WARNING_CLASSES = {"multi_hop_scorer_failed", "retrieval_empty", "verifier_all_rejected"}
 # Typed counters keep retriever/verifier warning classes out of the hard-failure gate.
 HARD_FAILURE_THRESHOLD = 0.10
 
@@ -65,6 +67,12 @@ class EvalRow:
     citation_parse_count: int = 0
     verifier_rejected_count: int = 0
     parse_failure_count: int = 0
+    multi_hop_attempts: int = 0
+    multi_hop_expansions: int = 0
+    status: str = ""
+    stop_reason: str = ""
+    token_usage: dict = field(default_factory=dict)
+    estimated_cost_usd: dict = field(default_factory=dict)
 
 
 CSV_FIELDNAMES = list(EvalRow.__dataclass_fields__.keys())
@@ -74,8 +82,10 @@ async def run_eval(*, limit: int | None = None, question_ids: list[str] | None =
     usage.reset()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     questions = _select_questions(limit=limit, question_ids=question_ids)
+    corpus = await capture_corpus()
+    ensure_manifest(OUTPUT_DIR, make_manifest(cases=[q.model_dump() for q in questions], corpus=corpus, mode="gold_eval"))
     selected_ids = {question.id for question in questions}
-    done_ids = set() if os.getenv("DIAGNOSTIC_LOG") else _read_done_ids(PER_QUESTION_CSV) & selected_ids
+    done_ids = _read_done_ids(PER_QUESTION_CSV) & selected_ids
     print(f"Skipping {len(done_ids)} already-completed questions")
 
     langsmith_state = _setup_langsmith_dataset(questions)
@@ -114,6 +124,8 @@ async def run_eval(*, limit: int | None = None, question_ids: list[str] | None =
 
 
 async def _run_one(gold: GoldQuestion, *, langsmith_state: "_LangSmithState | None") -> EvalRow:
+    usage_before, costs_before = usage.snapshot(), usage.estimated_cost_usd()
+    row = None
     thread_id = f"eval-{gold.id}-{uuid4()}"
     previous_diagnostic_question_id = os.environ.get("DIAGNOSTIC_QUESTION_ID")
     if os.getenv("DIAGNOSTIC_LOG"):
@@ -149,10 +161,22 @@ async def _run_one(gold: GoldQuestion, *, langsmith_state: "_LangSmithState | No
             citation_parse_count=diagnostics["citation_parse_count"],
             verifier_rejected_count=diagnostics["verifier_rejected_count"],
             parse_failure_count=diagnostics["parse_failure_count"],
+            multi_hop_attempts=diagnostics["multi_hop_attempts"],
+            multi_hop_expansions=diagnostics["multi_hop_expansions"],
         )
+        row.status = result.get("status", "")
+        row.stop_reason = result.get("stop_reason", "")
         _create_langsmith_run(gold, row, langsmith_state=langsmith_state)
         return row
     finally:
+        if row is not None:
+            row.token_usage = {
+                role: {key: value - usage_before.get(role, {}).get(key, 0)
+                       for key, value in data.items() if isinstance(value, (int, float))}
+                for role, data in usage.snapshot().items()
+            }
+            row.estimated_cost_usd = {role: value - costs_before.get(role, 0.0)
+                                      for role, value in usage.estimated_cost_usd().items()}
         if os.getenv("DIAGNOSTIC_LOG"):
             if previous_diagnostic_question_id is None:
                 os.environ.pop("DIAGNOSTIC_QUESTION_ID", None)
@@ -172,6 +196,8 @@ def _row_from_result(
     citation_parse_count: int = 0,
     verifier_rejected_count: int = 0,
     parse_failure_count: int = 0,
+    multi_hop_attempts: int = 0,
+    multi_hop_expansions: int = 0,
 ) -> EvalRow:
     return EvalRow(
         id=gold.id,
@@ -194,6 +220,8 @@ def _row_from_result(
         citation_parse_count=citation_parse_count,
         verifier_rejected_count=verifier_rejected_count,
         parse_failure_count=parse_failure_count,
+        multi_hop_attempts=multi_hop_attempts,
+        multi_hop_expansions=multi_hop_expansions,
     )
 
 
@@ -255,6 +283,8 @@ def _row_to_csv_dict(row: EvalRow) -> dict[str, Any]:
     data["expected_paper_ids"] = json.dumps(row.expected_paper_ids)
     data["retrieved_paper_ids"] = json.dumps(row.retrieved_paper_ids)
     data["cited_paper_ids"] = json.dumps(row.cited_paper_ids)
+    data["token_usage"] = json.dumps(row.token_usage)
+    data["estimated_cost_usd"] = json.dumps(row.estimated_cost_usd)
     return data
 
 
@@ -280,6 +310,11 @@ def _row_from_csv_dict(raw: dict[str, str]) -> EvalRow:
         citation_parse_count=int(raw.get("citation_parse_count") or 0),
         verifier_rejected_count=int(raw.get("verifier_rejected_count") or 0),
         parse_failure_count=int(raw.get("parse_failure_count") or 0),
+        multi_hop_attempts=int(raw.get("multi_hop_attempts") or 0),
+        multi_hop_expansions=int(raw.get("multi_hop_expansions") or 0),
+        status=raw.get("status", ""), stop_reason=raw.get("stop_reason", ""),
+        token_usage=json.loads(raw.get("token_usage") or "{}"),
+        estimated_cost_usd=json.loads(raw.get("estimated_cost_usd") or "{}"),
     )
 
 
@@ -299,6 +334,8 @@ def _write_summary(rows: list[EvalRow], *, total_skipped_via_resume: int) -> dic
             "hard_failure_rate": 0.0,
             "hard_failure_threshold": HARD_FAILURE_THRESHOLD,
             "failure_classes": {},
+            "multi_hop_attempts_total": 0,
+            "multi_hop_expansions_total": 0,
         }
     else:
         failure_classes = _failure_class_counts(rows)
@@ -317,12 +354,25 @@ def _write_summary(rows: list[EvalRow], *, total_skipped_via_resume: int) -> dic
             "hard_failure_rate": hard_failure_count / len(rows),
             "hard_failure_threshold": HARD_FAILURE_THRESHOLD,
             "failure_classes": failure_classes,
+            "multi_hop_attempts_total": sum(row.multi_hop_attempts for row in rows),
+            "multi_hop_expansions_total": sum(row.multi_hop_expansions for row in rows),
             "estimated_run_level_calls": len(rows),
             "estimated_judge_calls": len(rows),
             "cost_note": "Token usage is recorded when provider responses expose usage; rerank cost is estimated per call.",
         }
-    summary["token_usage"] = usage.snapshot()
-    summary["estimated_cost_usd"] = usage.estimated_cost_usd()
+    accumulated_usage, accumulated_cost = {}, {}
+    for row in rows:
+        for role, data in row.token_usage.items():
+            counters = accumulated_usage.setdefault(role, {})
+            for key, value in data.items():
+                counters[key] = counters.get(key, 0) + value
+        for role, value in row.estimated_cost_usd.items():
+            accumulated_cost[role] = accumulated_cost.get(role, 0.0) + value
+    summary["token_usage"] = accumulated_usage
+    summary["estimated_cost_usd"] = accumulated_cost
+    summary["delivery_status_counts"] = {status: sum(r.status == status for r in rows)
+                                         for status in ("complete", "partial", "incomplete", "")}
+    summary["cost_note"] = "Per-question usage and peak-rate estimates include resumed rows; uncertain request charges require the separate request budget ledger. Cohere is Trial."
     SUMMARY_JSON.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     return summary
 
@@ -330,11 +380,15 @@ def _write_summary(rows: list[EvalRow], *, total_skipped_via_resume: int) -> dic
 def _diagnostics_from_result(result: dict[str, Any], answer: str) -> dict[str, int | str]:
     citation_parse_count = len(list(CITATION_RE.finditer(answer)))
     cited_count = len(result.get("citations", []))
+    draft_report = result.get("draft_verification") or result.get("verification")
     return {
         "synthesis_finish_reason": str(result.get("synthesis_finish_reason") or ""),
         "citation_parse_count": citation_parse_count,
-        "verifier_rejected_count": max(citation_parse_count - cited_count, 0),
-        "parse_failure_count": _parse_failure_count(result.get("verification")),
+        "verifier_rejected_count": (sum(not v.supports for v in draft_report.verdicts)
+                                     if draft_report is not None else max(citation_parse_count - cited_count, 0)),
+        "parse_failure_count": _parse_failure_count(draft_report),
+        "multi_hop_attempts": int(result.get("multi_hop_attempts", 0) or 0),
+        "multi_hop_expansions": int(result.get("multi_hop_expansions", 0) or 0),
     }
 
 
@@ -349,6 +403,8 @@ def _classify_result(
 ) -> str:
     if _judge_invalid(judge):
         return "judge_invalid"
+    if result.get("stop_reason") == "evidence_judgment_failed":
+        return "evidence_judgment_failed"
     if result.get("synthesis_format_degraded"):
         if not answer.strip():
             return "synthesis_empty"
@@ -390,6 +446,9 @@ def _failure_class_counts(rows: list[EvalRow]) -> dict[str, int]:
 
 
 def _setup_langsmith_dataset(questions: list[GoldQuestion]) -> "_LangSmithState | None":
+    # Dataset writes are a separate opt-in from passive trace configuration.
+    if os.getenv("ARA_EVAL_LANGSMITH_EXPORT", "").lower() != "true":
+        return None
     try:
         settings = get_settings()
         api_key = settings.langsmith_api_key.get_secret_value() if settings.langsmith_api_key else None

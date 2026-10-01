@@ -12,6 +12,7 @@ EXPECTED_SQL_FILES = [
     "005_sessions.sql",
     "006_session_summaries.sql",
     "007_triggers.sql",
+    "008_versioned_indexes.sql",
 ]
 
 
@@ -23,7 +24,7 @@ def test_sql_files_present_in_lexical_order() -> None:
 def test_sql_files_are_idempotent_or_replace_safe() -> None:
     for path in SQL_DIR.glob("*.sql"):
         text = path.read_text()
-        assert "CREATE TABLE IF NOT EXISTS" in text or "CREATE OR REPLACE FUNCTION" in text
+        assert "CREATE TABLE IF NOT EXISTS" in text or "CREATE OR REPLACE FUNCTION" in text or "ALTER TABLE" in text
         for statement in ("CREATE INDEX", "DROP TRIGGER"):
             if statement in text:
                 assert f"{statement} IF " in text

@@ -75,19 +75,21 @@ def _is_section_header(line: str) -> bool:
         return False
     if any(ord(char) < 32 for char in line):
         return False
-    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9 ,:/()-]*$", line):
+    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9 .,+’':/()-]*$", line):
         return False
     if len(line) > 90 or line.endswith("."):
         return False
     normalized = _normalize_header(line).lower()
     if normalized in COMMON_SECTION_NAMES:
         return True
-    if line.isupper() and 3 <= len(line) <= 60:
-        if " " not in line:
-            return False
-        return True
-    return bool(re.match(r"^\d+(\.\d+)*\s+[A-Z][A-Za-z0-9 ,:/()-]{2,}$", line))
+    # Arbitrary uppercase text is often an example prompt, not a heading.
+    return bool(re.match(r"^(?:\d+(?:\.\d+)*\.?|[A-H])\s+[A-Z][A-Za-z0-9 .,+’':/()-]{2,}$", line))
 
 
 def _normalize_header(line: str) -> str:
-    return re.sub(r"^\d+(\.\d+)*\s+", "", line).strip()
+    title = re.sub(r"^\d+(?:\.\d+)*\.?\s+", "", line).strip()
+    compact = re.sub(r"[^a-z]", "", title.lower())
+    for name in COMMON_SECTION_NAMES:
+        if compact == name.replace(" ", "") and title.lower() != name:
+            return name.title()
+    return title

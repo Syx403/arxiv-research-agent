@@ -40,6 +40,32 @@ async def test_synthesize_degrades_when_compact_retry_still_hits_length(monkeypa
     assert updates["synthesis_finish_reason"] == "length"
 
 
+@pytest.mark.asyncio
+async def test_reasoning_only_truncation_recovers_without_repeating_thinking(monkeypatch):
+    from unittest.mock import AsyncMock
+    from src.graph.nodes.finalize import finalize_node
+    from src.core.types import CitationVerdict, VerificationReport
+
+    client = AsyncMock()
+    client.chat.side_effect = [
+        ChatResponse(content='', model='test', finish_reason='length'),
+        ChatResponse(content='MemGPT uses virtual context management [arxiv:2310.08560#1].',
+                     model='test', finish_reason='stop'),
+    ]
+    monkeypatch.setattr(synthesize, 'get_chat_client', lambda _: client)
+    updates = await synthesize.synthesize_node({'question': 'Explain the mechanism', 'evidence': [_hit()]})
+    assert 'thinking' not in client.chat.call_args_list[0].kwargs
+    assert client.chat.call_args_list[1].kwargs['thinking'] is False
+    assert client.chat.await_count == 2
+    assert updates['synthesis_format_degraded'] is False
+    assert len(updates['citations']) == 1
+    # Recovery restores generation, never skips the independent evidence check.
+    report = VerificationReport(passed=False, verdicts=[CitationVerdict(
+        citation=updates['citations'][0], supports=False, rationale='fixture rejected')])
+    final = await finalize_node({**updates, 'question': 'Explain the mechanism', 'verification': report})
+    assert 'MemGPT uses' not in final['answer']
+
+
 def _hit() -> Hit:
     return Hit(
         chunk_id=1,

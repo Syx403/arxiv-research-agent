@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5f0">
+  <title>ARA · 论文研究</title>
+  <link rel="icon" href="/static/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#question">跳到问题输入框</a>
+  <aside class="sidebar" id="sidebar" aria-label="研究会话">
+    <a class="brand" href="/" aria-label="ARA 首页"><img src="/static/mark.svg" alt="" width="30" height="30"><span>ARA<span class="brand-caption">RESEARCH NOTEBOOK</span></span></a>
+    <button id="new-chat" class="new-chat"><span aria-hidden="true">＋</span> 新的研究</button>
+    <div class="section-label">研究记录 <span>LOCAL</span></div>
+    <nav id="sessions" aria-label="历史会话"><p class="muted history-empty">你的研究会保存在这里。</p></nav>
+    <section class="budget" aria-label="API 使用预算">
+      <div class="section-label">共享测试预算 <span>USD</span></div>
+      <div class="budget-numbers"><strong id="budget-used">—</strong><span id="budget-limit">/ $2.00</span></div>
+      <meter id="budget-meter" min="0" max="2" value="0" aria-label="已占用的共享预算"></meter>
+      <p id="budget-note">正在读取用量…</p>
+      <p class="budget-hint">包含之前的测试；新会话不重置。</p>
+    </section>
+    <div class="local-note"><span class="status-dot"></span> 仅在本机运行</div>
+  </aside>
+  <main>
+    <header class="topbar">
+      <div class="topbar-title"><button class="icon-button menu-button" id="menu" aria-label="展开研究记录" aria-expanded="false">☰</button><span>论文研究 <span class="slash">/</span> <span id="conversation-title">新的研究</span></span></div>
+      <span class="corpus-label" id="corpus-label">arXiv 实时搜索</span>
+    </header>
+    <div id="notice" class="notice" role="alert" hidden></div>
+    <div id="scroll-area" class="scroll-area">
+      <section id="welcome" class="welcome">
+        <div class="eyebrow">ASK. EXPLORE. VERIFY.</div>
+        <h1>让每个结论，<br>都有出处。</h1>
+        <p class="intro">从你的研究需求开始，找到相关的 arXiv 论文。<br>先看摘要简析，再指定原文继续追问。</p>
+        <div class="starters" role="group" aria-label="试试这些问题">
+          <button class="starter" data-question="找几篇关于 Agent 长期记忆的近期论文，优先无需训练的方案，简单解释机制。"><span class="starter-index">01 / Agent 记忆</span><strong>有哪些无需训练的 Agent 记忆方案？</strong><span class="starter-arrow" aria-hidden="true">↗</span></button>
+          <button class="starter" data-question="寻找近期 MoE 专家路由与负载均衡的论文，简析各自解决什么问题。"><span class="starter-index">02 / MoE 架构</span><strong>MoE 路由与负载均衡有哪些进展？</strong><span class="starter-arrow" aria-hidden="true">↗</span></button>
+          <button class="starter" data-question="找 2024 年关于 KV cache 压缩的论文，解释量化与淘汰方法的区别。"><span class="starter-index">03 / 范围筛选</span><strong>KV cache 压缩有哪些不同机制？</strong><span class="starter-arrow" aria-hidden="true">↗</span></button>
+        </div>
+        <p class="welcome-note">支持连续追问 · 证据可展开查看 · 结果保存在本机</p>
+      </section>
+      <section id="messages" class="messages" aria-label="研究对话"></section>
+    </div>
+    <div class="composer-area">
+      <div id="activity" class="activity" role="status" aria-live="polite"></div>
+      <details class="thinking-settings" id="thinking-settings">
+        <summary>思考设置 <span id="thinking-summary">主任务 high · 轻量任务 low</span></summary>
+        <div class="thinking-options">
+          <label for="main-effort">主任务 / Pro <select id="main-effort"><option value="low">Low · 较少推理</option><option value="high" selected>High · 标准推理</option><option value="max">Max · 更深入推理</option></select></label>
+          <label for="fast-effort">轻量任务 / Fast <select id="fast-effort"><option value="low" selected>Low · 较少推理</option><option value="high">High · 标准推理</option><option value="max">Max · 更深入推理</option></select></label>
+        </div>
+        <p>默认搜索 arXiv，复用查询和筛选缓存；先提供论文与摘要简析，指定原文细节后才读取全文。两种档位均使用 DeepSeek Flash：主任务用于筛选分析，轻量任务用于理解需求和设计查询。发送时确定本轮档位；修改应用于下一轮。更深入的推理可能增加耗时与费用。</p>
+      </details>
+      <form id="composer" class="composer">
+        <label for="question" class="sr-only">输入研究问题</label>
+        <textarea id="question" rows="2" maxlength="8000" placeholder="输入问题，或接着上一轮追问…"></textarea>
+        <div class="composer-bottom"><span>Enter 发送 <span class="separator">·</span> Shift + Enter 换行</span><button id="stop" class="stop-button" type="button" hidden>停止本轮</button><button id="send" class="send-button" type="submit" aria-label="发送问题"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button></div>
+      </form>
+      <div class="composer-footnote"><span id="model-label">DeepSeek Flash</span><span>发送将使用已配置的 API · 用量为估算值</span></div>
+    </div>
+  </main>
+</body>
+</html>

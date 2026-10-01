@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from src.core.config import get_settings, require_secret
 from src.llm.errors import EmptyProviderResponseError, LLMInvalidRequestError, error_for_status
 from src.llm.retry import retry_transient_network, with_retry
+from src.llm.budget import admit_request
 
 
 class RerankedDoc(BaseModel):
@@ -82,12 +83,20 @@ class CohereRerankClient:
             await result
 
     async def _rerank_once(self, *, model: str, query: str, documents: list[str], top_n: int):
-        response = await self._client.rerank(
-            model=model,
-            query=query,
-            documents=documents,
-            top_n=top_n,
-        )
+        reservation = await admit_request(self.provider, model, {"query": query, "documents": documents})
+        try:
+            response = await self._client.rerank(
+                model=model, query=query, documents=documents, top_n=top_n,
+                request_options={"max_retries": 0},
+            )
+            if reservation:
+                meta = response.get("meta", {}) if isinstance(response, dict) else getattr(response, "meta", None)
+                units = meta.get("billed_units", {}) if isinstance(meta, dict) else getattr(meta, "billed_units", None)
+                count = units.get("search_units", 0) if isinstance(units, dict) else getattr(units, "search_units", 0)
+                reservation.settle({"search_units": count or 0})
+        finally:
+            if reservation:
+                reservation.uncertain()
         results = _get_attr(response, "results")
         if not results:
             raise EmptyProviderResponseError("Cohere rerank returned no results for non-empty documents")

@@ -1,4 +1,4 @@
-.PHONY: install fmt lint test ingest eval eval-preflight eval-sample eval-fresh ui ui-graph db-up db-down db-reset
+.PHONY: install fmt lint test ingest ui db-up db-down db-reset
 
 install:
 	uv sync
@@ -27,21 +27,5 @@ db-reset:
 ingest:
 	uv run python scripts/ingest_seed_corpus.py
 
-eval: ## Run or resume the gold evaluation harness.
-	uv run python scripts/eval_run.py
-
-eval-preflight: ## Run the cheap q-005 canary ($0.02-0.03) before eval-sample.
-	uv run python scripts/eval_run.py --question-ids q-005
-
-eval-sample: ## Run a 5-question pre-flight eval before the full eval.
-	uv run python scripts/eval_run.py --question-ids q-005,q-013,q-019,q-025,q-029
-
-eval-fresh: ## Delete the latest eval checkpoint and run from a clean CSV.
-	rm -rf data/eval_outputs/latest
-	$(MAKE) eval
-
 ui:
-	uv run chainlit run src/ui/app.py --host 127.0.0.1 --port 8000
-
-ui-graph:
-	uv run uvicorn src.ui.graph_view.server:app --host 127.0.0.1 --port 9000
+	uv run uvicorn src.ui.app:app --host 127.0.0.1 --port 8000

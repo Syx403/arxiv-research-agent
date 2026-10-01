@@ -1,0 +1,388 @@
+{
+  "version": "research-acceptance-1",
+  "checked_on": "2026-09-16",
+  "label_origin": "Assistant-authored from primary sources before this run; user calibration and independent human labels pending.",
+  "scope": "12 task scenarios, 15 turns. Four calibration tasks, eight acceptance tasks not used for current-round tuning. Papers can overlap historical tests. Reference lists are non-exhaustive; no population accuracy or exhaustive arXiv recall claim. No paid LLM judge.",
+  "cases": [
+    {
+      "id": "c1-ambiguous",
+      "split": "calibration",
+      "category": "boundary",
+      "turns": [
+        {
+          "question": "帮我找几篇这方面的新论文。",
+          "route": "clarify",
+          "rubric": [
+            "新会话没有研究主题，应只澄清主题；不得自行猜测为Agent或MoE。"
+          ],
+          "allowed_statuses": [
+            "needs_input"
+          ]
+        }
+      ],
+      "references": []
+    },
+    {
+      "id": "c2-exact-brief",
+      "split": "calibration",
+      "category": "discovery",
+      "turns": [
+        {
+          "question": "找到 arXiv:2408.15664 这篇论文，根据摘要用两句话介绍即可，不用读原文。",
+          "route": "discover",
+          "rubric": [
+            "必须是指定论文；准确说明按近期专家负载调整偏置，不应声称免除所有训练开销。"
+          ],
+          "required_ids": [
+            "2408.15664"
+          ],
+          "allowed_ids": [
+            "2408.15664"
+          ],
+          "min_results": 1,
+          "max_results": 1
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/html/2408.15664v1",
+          "check": "第3节、Algorithm 1：按历史负载调整专家偏置；负载高于平均时减少偏置，低于平均时增加。偏置不引入辅助损失的干扰梯度。"
+        }
+      ]
+    },
+    {
+      "id": "c3-recent-moe",
+      "split": "calibration",
+      "category": "discovery",
+      "turns": [
+        {
+          "question": "找两三篇2026年关于MoE专家路由和负载均衡的最新论文，根据摘要概括主要思路即可。",
+          "route": "discover",
+          "rubric": [
+            "须直接研究MoE路由或负载均衡；仅使用MoE模型的应用论文不合格。",
+            "以首次发表日期排序，说明原创机制或综述；不以旧论文修订冒充2026年新论文。"
+          ],
+          "min_results": 2,
+          "max_results": 3,
+          "date_from": "2026-01-01",
+          "date_to": "2026-09-16",
+          "recent_order": true
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/abs/2604.00801",
+          "check": "2026年Routing-Free MoE：分散专家激活与自适应负载均衡；相关性参考锚点，不是必须返回的唯一答案。"
+        },
+        {
+          "url": "https://arxiv.org/abs/2608.08650",
+          "check": "2026年MoE结构综述，覆盖路由和负载均衡；应区分综述与原创机制，不假定完整最新列表。"
+        }
+      ]
+    },
+    {
+      "id": "c4-bias-mechanism",
+      "split": "calibration",
+      "category": "reading",
+      "turns": [
+        {
+          "question": "阅读 arXiv:2408.15664v1 原文，说明专家负载高于或低于平均值时，偏置分别如何更新，是否通过辅助损失反向传播？只回答这几个点，并引用方法部分原文。",
+          "route": "read",
+          "rubric": [
+            "需说明高负载减偏置、低负载增偏置，并区分模型训练梯度与单独偏置更新。",
+            "应有Algorithm 1或第3节证据，不能仅以摘要替代更新规则。"
+          ],
+          "required_ids": [
+            "2408.15664v1"
+          ],
+          "allowed_ids": [
+            "2408.15664v1"
+          ]
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/html/2408.15664v1",
+          "check": "第3节、Algorithm 1：按历史负载调整专家偏置；负载高于平均时减少偏置，低于平均时增加。偏置不引入辅助损失的干扰梯度。"
+        }
+      ]
+    },
+    {
+      "id": "a1-named-title",
+      "split": "acceptance",
+      "category": "discovery",
+      "turns": [
+        {
+          "question": "只找《Switch Transformers》这篇原始论文，用两句话概括摘要即可。",
+          "route": "discover",
+          "rubric": [
+            "准确定位原始论文，不扩展为所有Transformer论文；不需要反问或阅读全文。"
+          ],
+          "required_ids": [
+            "2101.03961"
+          ],
+          "allowed_ids": [
+            "2101.03961"
+          ],
+          "min_results": 1,
+          "max_results": 1
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/html/2101.03961v3",
+          "check": "第2.1–2.2节：每token选择一个专家；溢出token跳过专家计算并沿残差连接传递；训练使用可微辅助负载均衡损失。"
+        }
+      ]
+    },
+    {
+      "id": "a2-broad-but-clear",
+      "split": "acceptance",
+      "category": "discovery",
+      "turns": [
+        {
+          "question": "找两三篇LLM Agent长期记忆方案的论文，我先了解各自主要机制，不需要实验细节。",
+          "route": "discover",
+          "rubric": [
+            "主题和介绍深度已经清楚，不应强制先选具体应用。",
+            "应提供不同记忆机制的有据概览，不捏造速度、成本或热门程度。"
+          ],
+          "min_results": 2,
+          "max_results": 3
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/abs/2310.08560",
+          "check": "摘要：分层记忆和虚拟上下文管理；不能据此断言实现成本低或开销已量化。"
+        },
+        {
+          "url": "https://arxiv.org/abs/2502.12110",
+          "check": "A-MEM作为另一种相关记忆机制的参考；不以此作为穷尽列表。"
+        }
+      ]
+    },
+    {
+      "id": "a3-family-followup",
+      "split": "acceptance",
+      "category": "conversation",
+      "turns": [
+        {
+          "question": "找2024年DeepSeek的MoE架构论文，不要只把DeepSeek当评测模型的应用论文，只需摘要介绍。",
+          "route": "discover",
+          "rubric": [
+            "至少命中一个已核实的直接架构论文；排除仅用作后端或评测模型的工作。"
+          ],
+          "required_ids": [],
+          "min_results": 1,
+          "date_from": "2024-01-01",
+          "date_to": "2024-12-31"
+        },
+        {
+          "question": "把范围缩小到DeepSeek-V2，只保留它本身的技术报告，仍然只需摘要介绍。",
+          "route": "discover",
+          "rubric": [
+            "应承接2024时间约束，同时服从当前明确缩小范围，不能继续罗列其他模型。"
+          ],
+          "required_ids": [
+            "2405.04434"
+          ],
+          "allowed_ids": [
+            "2405.04434"
+          ],
+          "min_results": 1,
+          "max_results": 1,
+          "date_from": "2024-01-01",
+          "date_to": "2024-12-31"
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/abs/2401.06066",
+          "check": "2024年首次发表；细粒度专家划分、共享专家隔离是直接的MoE架构研究。"
+        },
+        {
+          "url": "https://arxiv.org/abs/2405.04434",
+          "check": "2024年首次发表；DeepSeekMoE及MLA直接涉及模型架构。"
+        }
+      ]
+    },
+    {
+      "id": "a4-switch-details",
+      "split": "acceptance",
+      "category": "reading",
+      "turns": [
+        {
+          "question": "阅读 arXiv:2101.03961v3，解释每个token被送到几个专家，以及专家容量不足时溢出的token怎么处理。请用正文依据回答，不要只概括摘要。",
+          "route": "read",
+          "rubric": [
+            "应说明单专家路由及残差旁路，不能把溢出token说成从序列中删除。"
+          ],
+          "required_ids": [
+            "2101.03961v3"
+          ],
+          "allowed_ids": [
+            "2101.03961v3"
+          ]
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/html/2101.03961v3",
+          "check": "第2.1–2.2节：每token选择一个专家；溢出token跳过专家计算并沿残差连接传递；训练使用可微辅助负载均衡损失。"
+        }
+      ]
+    },
+    {
+      "id": "a5-compare-originals",
+      "split": "acceptance",
+      "category": "reading",
+      "turns": [
+        {
+          "question": "根据 arXiv:2101.03961v3 和 arXiv:2408.15664v1 的正文，比较它们如何实现专家负载均衡，以及是否向训练目标添加辅助损失。只比较这两个方面，分别给出两篇论文的依据。",
+          "route": "read",
+          "rubric": [
+            "两篇均须有证据；说明Switch辅助损失与Loss-Free历史负载偏置更新的区别。",
+            "不得把不同实验设置的结果说成已证明普遍性能优劣。"
+          ],
+          "required_ids": [
+            "2101.03961v3",
+            "2408.15664v1"
+          ],
+          "allowed_ids": [
+            "2101.03961v3",
+            "2408.15664v1"
+          ]
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/html/2101.03961v3",
+          "check": "第2.1–2.2节：每token选择一个专家；溢出token跳过专家计算并沿残差连接传递；训练使用可微辅助负载均衡损失。"
+        },
+        {
+          "url": "https://arxiv.org/html/2408.15664v1",
+          "check": "第3节、Algorithm 1：按历史负载调整专家偏置；负载高于平均时减少偏置，低于平均时增加。偏置不引入辅助损失的干扰梯度。"
+        }
+      ]
+    },
+    {
+      "id": "a6-first-paper",
+      "split": "acceptance",
+      "category": "conversation",
+      "turns": [
+        {
+          "question": "找到Voyager这个Minecraft Agent的论文，只根据摘要简单介绍，不用读原文。",
+          "route": "discover",
+          "rubric": [
+            "应找到具身Agent论文，而不是天文Voyager或同名系统。"
+          ],
+          "required_ids": [
+            "2305.16291"
+          ],
+          "allowed_ids": [
+            "2305.16291"
+          ],
+          "min_results": 1,
+          "max_results": 1
+        },
+        {
+          "question": "现在深入第一篇：它的技能库如何存储和检索技能？只解释这个机制，给出正文证据。",
+          "route": "read",
+          "rubric": [
+            "正确消解第一篇，不重复询问论文名称；应说明可执行技能代码、描述及相关检索机制。"
+          ],
+          "first_from_previous": true,
+          "allowed_ids": [
+            "2305.16291"
+          ]
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/abs/2305.16291",
+          "check": "摘要：自动课程、可执行代码技能库、迭代提示；通过GPT-4黑盒调用学习而非微调模型参数。"
+        },
+        {
+          "url": "https://arxiv.org/html/2305.16291v2",
+          "check": "技能库章节；需阅读该段以判断检索和存储细节。"
+        }
+      ]
+    },
+    {
+      "id": "a7-change-intent",
+      "split": "acceptance",
+      "category": "conversation",
+      "turns": [
+        {
+          "question": "我想了解Agent记忆，先找MemGPT这篇论文，摘要介绍就够了。",
+          "route": "discover",
+          "rubric": [
+            "只做指定论文概览，不因背景宽泛而误澄清。"
+          ],
+          "required_ids": [
+            "2310.08560"
+          ],
+          "allowed_ids": [
+            "2310.08560"
+          ],
+          "min_results": 1,
+          "max_results": 1
+        },
+        {
+          "question": "换个方向：找2024年不依赖辅助损失的MoE负载均衡论文，只要摘要介绍，别继续讨论Agent记忆。",
+          "route": "discover",
+          "rubric": [
+            "当前指令覆盖旧主题；应找到Loss-Free Balancing，不能延续MemGPT约束。"
+          ],
+          "required_ids": [
+            "2408.15664"
+          ],
+          "min_results": 1,
+          "max_results": 3,
+          "date_from": "2024-01-01",
+          "date_to": "2024-12-31"
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/abs/2310.08560",
+          "check": "摘要：分层记忆和虚拟上下文管理；不能据此断言实现成本低或开销已量化。"
+        },
+        {
+          "url": "https://arxiv.org/html/2408.15664v1",
+          "check": "第3节、Algorithm 1：按历史负载调整专家偏置；负载高于平均时减少偏置，低于平均时增加。偏置不引入辅助损失的干扰梯度。"
+        }
+      ]
+    },
+    {
+      "id": "a8-unsupported-premise",
+      "split": "acceptance",
+      "category": "boundary",
+      "turns": [
+        {
+          "question": "阅读 arXiv:2408.15664v1，核实“该论文证明了在任意数据分布下都能得到全局最优路由”这个说法。如果找到证明就给出原文，否则说明目前证据能支持什么、不能支持什么。",
+          "route": "read",
+          "rubric": [
+            "不得编造普适全局最优定理；应区分经验负载均衡、本文真实理论讨论和题设夸大。",
+            "不能仅凭有限检索宣称已经证明整篇没有该内容；应说明证据覆盖和不确定性。"
+          ],
+          "allowed_ids": [
+            "2408.15664v1"
+          ],
+          "allowed_statuses": [
+            "complete",
+            "partial",
+            "incomplete"
+          ]
+        }
+      ],
+      "references": [
+        {
+          "url": "https://arxiv.org/html/2408.15664v1",
+          "check": "第3节、Algorithm 1：按历史负载调整专家偏置；负载高于平均时减少偏置，低于平均时增加。偏置不引入辅助损失的干扰梯度。"
+        }
+      ]
+    }
+  ]
+}

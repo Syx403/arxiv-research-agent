@@ -2,28 +2,36 @@ from __future__ import annotations
 
 import inspect
 import importlib
+import hashlib
+from pathlib import Path
 from typing import Any
 
 from src.core.config import get_settings, require_secret
 from src.core.types import EMBEDDING_DIM
 from src.llm.errors import EmptyProviderResponseError, LLMProviderError, error_for_status
 from src.llm.retry import retry_transient_network, with_retry
+from src.llm.budget import admit_request
+from src.corpus.http import ResponseCache
+from src.core.trace import record_event
 
 
 class OpenAIEmbeddingClient:
     provider = "openai_native"
 
-    def __init__(self, *, api_key: str | None = None, client: Any | None = None) -> None:
+    def __init__(self, *, api_key: str | None = None, client: Any | None = None, cache=None) -> None:
         settings = get_settings()
         resolved_key = api_key or require_secret(
             settings.openai_api_key,
             env_var="OPENAI_API_KEY",
             provider=self.provider,
         )
+        self._cache = cache if cache is not None else (ResponseCache(
+            Path(__file__).resolve().parents[3] / 'data/cache/embeddings', ttl_s=86400 * 30
+        ) if client is None else None)
         self._client = client
         if self._client is None:
             openai_module = importlib.import_module("openai")
-            self._client = openai_module.AsyncOpenAI(api_key=resolved_key)
+            self._client = openai_module.AsyncOpenAI(api_key=resolved_key, max_retries=0)
         self.last_prompt_tokens = 0
 
     def _raise_for_status(self, status: int, body: str = "") -> None:
@@ -62,11 +70,37 @@ class OpenAIEmbeddingClient:
             await result
 
     async def _create_embedding_batch(self, *, model: str, batch: list[str]):
-        response = await self._client.embeddings.create(
-            model=model,
-            input=batch,
-            encoding_format="float",
-        )
+        keys = [hashlib.sha256(f'{self.provider}:{model}:{EMBEDDING_DIM}:{text}'.encode()).hexdigest() for text in batch]
+        found = {key: self._cache.get(key) if self._cache else None for key in keys}
+        found = {key: value for key, value in found.items()
+                 if isinstance(value, list) and len(value) == EMBEDDING_DIM
+                 and all(isinstance(x, (int, float)) for x in value)}
+        missing = list(dict.fromkeys(key for key in keys if key not in found))
+        if self._cache:
+            record_event('embedding_cache', requested=len(keys), reused=len(keys) - len(missing))
+        if not missing:
+            return {'data': [{'embedding': found[key]} for key in keys], 'usage': {'prompt_tokens': 0}}
+        texts = [batch[keys.index(key)] for key in missing]
+        response = await self._request_embedding_batch(model=model, batch=texts)
+        vectors = _vectors_from_response(response, provider=self.provider)
+        for key, vector in zip(missing, vectors, strict=True):
+            found[key] = vector
+            if self._cache:
+                self._cache.put(key, vector)
+        return {'data': [{'embedding': found[key]} for key in keys], 'usage': {'prompt_tokens': _prompt_tokens(response)}}
+
+    async def _request_embedding_batch(self, *, model: str, batch: list[str]):
+        reservation = await admit_request(self.provider, model, batch)
+        try:
+            response = await self._client.embeddings.create(
+                model=model, input=batch, encoding_format="float",
+            )
+            count = _prompt_tokens(response)
+            if reservation and count:
+                reservation.settle({"prompt_tokens": count})
+        finally:
+            if reservation:
+                reservation.uncertain()
         data = list(_get_attr(response, "data"))
         if len(data) != len(batch):
             raise EmptyProviderResponseError(

@@ -26,7 +26,7 @@ def test_hybrid_sql_parameter_order_is_stable() -> None:
     assert "embedding <=> $1::vector" in HYBRID_SEARCH_SQL
     assert "paper_id = ANY($2)" in HYBRID_SEARCH_SQL
     assert "LIMIT $3" in HYBRID_SEARCH_SQL
-    assert "plainto_tsquery('english', $4)" in HYBRID_SEARCH_SQL
+    assert "websearch_to_tsquery('english', $4)" in HYBRID_SEARCH_SQL
     assert "LIMIT $5" in HYBRID_SEARCH_SQL
     assert "$6::float + rnk" in HYBRID_SEARCH_SQL
     assert HYBRID_SEARCH_SQL.rstrip().endswith("LIMIT $7;")

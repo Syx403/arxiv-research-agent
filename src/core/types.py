@@ -23,15 +23,21 @@ SUFFICIENCY_EVIDENCE_CHARS_PER_CHUNK = 600
 MULTI_HOP_MAX_DEPTH = 2
 MULTI_HOP_FRONTIER_LIMIT = 5
 MULTI_HOP_MAX_CALLS = 1
+MULTI_HOP_MAX_ATTEMPTS = 5
+MULTI_HOP_MAX_EXPANSIONS = 3
 MULTI_HOP_WALL_CLOCK_BUDGET_S = 60
 PAPER_HINT_BOOST_FACTOR = 1.1
 MAX_SUB_QUESTIONS = 5
 SELF_RAG_MAX_RETRIES = 2
+SURVEY_COVERAGE_THRESHOLD = 0.6
+SURVEY_MAX_REQUERY_ROUNDS = 2
 EPISODIC_VERBATIM_TURNS = 6
 LLM_REQUEST_TIMEOUT_SECONDS = 60
 RETRY_MAX_ATTEMPTS = 4
 RETRY_WAIT_INITIAL_SECONDS = 1.0
 RETRY_WAIT_MAX_SECONDS = 30.0
+RETRY_AFTER_CAP_SECONDS = 60
+EMPTY_RESPONSE_RETRY_TEMPERATURE_FLOOR = 0.3
 
 
 class ToolCall(BaseModel):
@@ -44,6 +50,9 @@ class TokenUsage(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+    prompt_cache_hit_tokens: int = 0
+    prompt_cache_miss_tokens: int | None = None
+    completion_tokens_details: dict[str, int] = Field(default_factory=dict)
 
 
 class Message(BaseModel):
@@ -52,6 +61,7 @@ class Message(BaseModel):
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
     name: str | None = None
+    reasoning_content: str | None = Field(default=None, repr=False)
 
 
 class ChatResponse(BaseModel):
@@ -60,6 +70,7 @@ class ChatResponse(BaseModel):
     usage: TokenUsage | None = None
     model: str
     finish_reason: str
+    reasoning_content: str | None = Field(default=None, repr=False)
 
 
 class Citation(BaseModel):
@@ -76,12 +87,38 @@ class CitationVerdict(BaseModel):
     citation: Citation
     supports: bool
     rationale: str
+    status: Literal["ok", "error"] = "ok"
+    input_digest: str = ""
+    claim_kind: Literal["paper_fact", "engineering_inference", "evidence_limit", "unknown"] = "unknown"
+    scope_status: Literal["requested", "context_needed", "unrequested", "duplicate"] = "requested"
+    result_fields: dict | None = None
+    fields_status: Literal["complete", "unavailable", "invalid", "not_applicable"] = "unavailable"
+    fields_error: str = ""
+    context_claims: list[str] = Field(default_factory=list)
+    context_verified: bool = True
 
 
 class VerificationReport(BaseModel):
     verdicts: list[CitationVerdict]
     passed: bool
     rationale: str = ""
+    uncited_claims: list[str] = Field(default_factory=list)
+    omitted_uncited_claims: list[str] = Field(default_factory=list)
+    missing_aspects: list[str] = Field(default_factory=list)
+    coverage_status: Literal["ok", "error", "not_required"] = "not_required"
+
+
+class EvidenceChunk(BaseModel):
+    """The exact source identity and excerpt supplied to synthesis and checking."""
+
+    model_config = ConfigDict(frozen=True)
+    paper_id: str
+    chunk_id: int
+    text: str
+    source_spans: list[tuple[int, int]] = Field(default_factory=list)
+    title: str = ""
+    published_at: str | None = None
+    url: str = ""
 
 
 class SubQuestion(BaseModel):
@@ -89,6 +126,10 @@ class SubQuestion(BaseModel):
 
     text: str
     depends_on: list[int] = Field(default_factory=list)
+    paper_ids: list[str] | None = None
+    # Acquisition may use wider comparison context than this paper must establish.
+    # The complete user request is still checked against the synthesized answer.
+    sufficiency_question: str | None = None
 
 
 class Decomposition(BaseModel):
@@ -122,20 +163,40 @@ class SubQResult(BaseModel):
     route_decision: RouteDecision
     retries_used: int = 0
     multi_hop_used: bool = False
+    preemptive_multi_hop_requested: bool = False
+    next_subqueries: list[str] = Field(default_factory=list)
+    missing_aspects: list[str] = Field(default_factory=list)
+    stop_reason: str = ""
+    judgment_failures: list[int] = Field(default_factory=list)
+    unassessed_hits: list[Hit] = Field(default_factory=list)
 
 
 class RelevanceVerdict(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    relevant: bool
+    relevant: bool | None
     rationale: str
+    status: Literal["ok", "error"] = "ok"
+    error_code: str = ""
+    evidence_role: Literal["direct", "background", "irrelevant", "unknown"] = "unknown"
+    sentence_ids: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_status(self):
+        if self.status == "error" and self.relevant is not None:
+            raise ValueError("A failed judgment has no semantic relevance verdict")
+        if self.status == "ok" and self.relevant is None:
+            raise ValueError("A successful judgment must declare relevance")
+        return self
 
 
 class SufficiencyVerdict(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    sufficient: bool
+    sufficient: bool = Field(strict=True)
     missing_aspects: list[str] = Field(default_factory=list)
+    status: Literal["ok", "error"] = "ok"
+    error_code: str = ""
 
 
 class FrontierItem(BaseModel):
@@ -147,6 +208,8 @@ class FrontierItem(BaseModel):
 
 
 class WalkResult(BaseModel):
+    stop_reason: str = "complete"
+    errors: list[dict] = Field(default_factory=list)
     model_config = ConfigDict(frozen=True)
 
     visited_paper_ids: list[str]

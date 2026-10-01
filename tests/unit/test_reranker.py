@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
+import json
 
 from src.retrieval.index.types import Hit
 from src.retrieval.postprocess import reranker
@@ -17,7 +18,8 @@ class _RerankResult:
 class _FakeRerankClient:
     async def rerank(self, query: str, documents: list[str], *, top_n: int):
         assert query == "react"
-        assert documents == ["first", "second"]
+        assert [json.loads(doc)["content"] for doc in documents] == ["first", "second"]
+        assert all(json.loads(doc)["section"] == "S" for doc in documents)
         assert top_n == 2
         return [_RerankResult(index=1, score=0.91), _RerankResult(index=0, score=0.42)]
 

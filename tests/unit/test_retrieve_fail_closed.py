@@ -6,20 +6,18 @@ from src.core.types import (
     Decomposition,
     RelevanceVerdict,
     RouteDecision,
-    SELF_RAG_MAX_RETRIES,
     SubQuestion,
     SufficiencyVerdict,
 )
-from src.graph.edges import route_after_retrieve
 from src.graph.nodes import retrieve
 from src.retrieval.index.types import Hit
 
 
 @pytest.mark.asyncio
-async def test_fail_closed_sufficiency_exhausts_retries_then_routes_multi_hop(monkeypatch) -> None:
+async def test_no_new_evidence_stops_early_without_claiming_sufficiency(monkeypatch) -> None:
     _patch_common_retrieve_dependencies(monkeypatch)
 
-    async def fake_sufficient(subq: str, hits: list[Hit]) -> SufficiencyVerdict:
+    async def fake_sufficient(subq: str, hits: list[Hit], **kwargs) -> SufficiencyVerdict:
         return SufficiencyVerdict(
             sufficient=False,
             missing_aspects=["PARSE_FAILURE: sufficiency check returned invalid JSON; treating as insufficient."],
@@ -33,15 +31,15 @@ async def test_fail_closed_sufficiency_exhausts_retries_then_routes_multi_hop(mo
     result = next_state["subq_results"][0]
 
     assert result.sufficient is False
-    assert result.retries_used == SELF_RAG_MAX_RETRIES
-    assert route_after_retrieve(next_state) == "multi_hop"
+    assert result.retries_used == 1
+    assert result.stop_reason == "no_new_evidence"
 
 
 @pytest.mark.asyncio
 async def test_fail_closed_relevance_drops_hit_from_kept_hits(monkeypatch) -> None:
     _patch_common_retrieve_dependencies(monkeypatch, patch_judge=False)
 
-    async def fake_sufficient(subq: str, hits: list[Hit]) -> SufficiencyVerdict:
+    async def fake_sufficient(subq: str, hits: list[Hit], **kwargs) -> SufficiencyVerdict:
         return SufficiencyVerdict(sufficient=True, missing_aspects=[])
 
     monkeypatch.setattr(retrieve.relevance_judge, "get_chat_client", lambda name: _BrokenChatClient())
@@ -51,7 +49,11 @@ async def test_fail_closed_relevance_drops_hit_from_kept_hits(monkeypatch) -> No
     result = updates["subq_results"][0]
 
     assert result.hits == []
-    assert result.sufficient is True
+    assert result.sufficient is False
+    assert result.stop_reason == "relevance_judgment_failed"
+    assert result.judgment_failures == [1]
+    assert result.unassessed_hits[0].chunk_id == 1
+    assert result.retries_used == 0
 
 
 def _patch_common_retrieve_dependencies(monkeypatch, *, patch_judge: bool = True) -> None:
@@ -70,9 +72,7 @@ def _patch_common_retrieve_dependencies(monkeypatch, *, patch_judge: bool = True
     async def fake_judge_batch(subq: str, hits: list[Hit]) -> list[RelevanceVerdict]:
         return [RelevanceVerdict(relevant=True, rationale="ok") for _ in hits]
 
-    monkeypatch.setattr(retrieve.router, "route", fake_route)
     monkeypatch.setattr(retrieve.rewriter, "rewrite_for_retrieval", fake_rewrite)
-    monkeypatch.setattr(retrieve.rewriter, "should_use_hyde", lambda subq: False)
     monkeypatch.setattr(retrieve, "get_embedding_client", lambda name: _FakeEmbeddingClient())
     monkeypatch.setattr(retrieve, "hybrid_search", fake_hybrid_search)
     monkeypatch.setattr(retrieve.deduplicator, "dedupe", lambda hits: hits)
@@ -84,9 +84,14 @@ def _patch_common_retrieve_dependencies(monkeypatch, *, patch_judge: bool = True
 def _state() -> dict:
     return {
         "question": "How does Reflexion extend ReAct?",
+        "thread_id": "test-thread", "retrieval_paper_ids": ["arxiv:2210.03629v1"],
+        "question_type": "multi_hop",
         "decomposition": Decomposition(sub_questions=[SubQuestion(text="How does Reflexion extend ReAct?")]),
         "subq_results": {},
-        "multi_hop_calls": 0,
+        "multi_hop_attempts": 0,
+        "multi_hop_expansions": 0,
+        "multi_hop_preemptive_requested": False,
+        "multi_hop_preemptive_subqs": [0],
         "active_subq_index": None,
     }
 

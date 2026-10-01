@@ -1,0 +1,990 @@
+{
+  "schema_version": "ara-gold-review-1",
+  "created_on": "2026-09-17",
+  "sources": {
+    "rewoo": {
+      "paper_id": "2305.18323",
+      "version_id": "2305.18323v1",
+      "title": "ReWOO: Decoupling Reasoning from Observations for Efficient Augmented Language Models",
+      "first_submitted": "2023-05-23",
+      "metadata_url": "https://arxiv.org/abs/2305.18323v1",
+      "full_text_url": "https://arxiv.org/html/2305.18323v1",
+      "sections": [
+        "2.1 Overview",
+        "2.2 Prompt Redundancy Reduction",
+        "2.3 Parameter Efficiency by Specialization"
+      ],
+      "label_basis": "Planner builds plans with evidence placeholders; Worker obtains observations; Solver consumes plans and observations. Removing repeated observation-conditioned planning does not remove observations from the whole system. The prompt workflow and specialization experiments are distinct."
+    },
+    "llmcompiler": {
+      "paper_id": "2312.04511",
+      "version_id": "2312.04511v3",
+      "title": "An LLM Compiler for Parallel Function Calling",
+      "first_submitted": "2023-12-07",
+      "version_submitted": "2024-06-05",
+      "metadata_url": "https://arxiv.org/abs/2312.04511v3",
+      "full_text_url": "https://arxiv.org/html/2312.04511v3",
+      "sections": [
+        "3.1 Function Calling Planner",
+        "3.2 Task Fetching Unit",
+        "3.3 Executor",
+        "3.4 Replanning"
+      ],
+      "label_basis": "Plans encode task dependencies. Ready tasks can run concurrently; dependent arguments are resolved from predecessor outputs. Replanning can use intermediate results. Parallel execution does not mean launching every task simultaneously."
+    },
+    "gqa": {
+      "paper_id": "2305.13245",
+      "version_id": "2305.13245v3",
+      "title": "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints",
+      "first_submitted": "2023-05-22",
+      "version_submitted": "2023-12-23",
+      "metadata_url": "https://arxiv.org/abs/2305.13245v3",
+      "full_text_url": "https://arxiv.org/html/2305.13245v3",
+      "sections": [
+        "2.2 Grouped-query attention"
+      ],
+      "label_basis": "Each group of query heads shares one key head and one value head. Numerical examples in the cases are derived from this definition, not paper-reported performance experiments."
+    },
+    "agentless_v1": {
+      "paper_id": "2407.01489",
+      "version_id": "2407.01489v1",
+      "title": "Agentless: Demystifying LLM-based Software Engineering Agents",
+      "first_submitted": "2024-07-01",
+      "version_submitted": "2024-07-01",
+      "metadata_url": "https://arxiv.org/abs/2407.01489v1",
+      "full_text_url": "https://arxiv.org/html/2407.01489v1",
+      "sections": [
+        "2 Agentless Approach",
+        "2.1 Localization",
+        "2.2 Repair"
+      ],
+      "label_basis": "V1 names two top-level phases. Localization narrows files to code elements and then edit locations. Repair filters syntax/regression failures and selects by normalized-patch majority voting. Three localization steps are not three top-level phases."
+    },
+    "agentless_v2": {
+      "paper_id": "2407.01489",
+      "version_id": "2407.01489v2",
+      "title": "Agentless: Demystifying LLM-based Software Engineering Agents",
+      "first_submitted": "2024-07-01",
+      "version_submitted": "2024-10-29",
+      "metadata_url": "https://arxiv.org/abs/2407.01489v2",
+      "full_text_url": "https://arxiv.org/html/2407.01489v2",
+      "sections": [
+        "3 Agentless Approach",
+        "3.3 Patch Validation"
+      ],
+      "label_basis": "V2 separately names localization, repair and patch validation. This later organization must not replace the requested v1 description."
+    },
+    "mixtral": {
+      "paper_id": "2401.04088",
+      "version_id": "2401.04088v1",
+      "title": "Mixtral of Experts",
+      "first_submitted": "2024-01-08",
+      "metadata_url": "https://arxiv.org/abs/2401.04088v1",
+      "full_text_url": "https://arxiv.org/html/2401.04088v1",
+      "sections": [
+        "2 Architectural details, Table 1",
+        "2.1 Sparse Mixture of Experts"
+      ],
+      "label_basis": "The FFN MoE sub-block has eight experts and chooses two for each token at each layer; their outputs are weighted and combined. Experts here are feedforward blocks, not eight complete models whose outputs are uniformly averaged."
+    }
+  },
+  "label_author": "Codex assistant; primary-source checked; user approved calibration criteria on 2026-09-17. No independent blind human labeling. C03 input clarification/version constraints authored by the assistant on 2026-09-17; no separate blind calibration.",
+  "source_snapshot_status": "Versioned URLs checked; full source snapshots and content hashes must be materialized before controlled execution.",
+  "label_revision": 5,
+  "split": "calibration_not_holdout",
+  "evaluation_group": "structured",
+  "execution_status": "not_run",
+  "agent_input_policy": "Only question, public response_fields (if present), and ordinary conversation enter AgentRequest. Gold values, aliases, source label notes and rubrics remain grader-only.",
+  "scope": "6 single-turn structured tasks; 23 requested fields (22 facts plus 1 recommendation order), 21 fact groups. Field schemas are public; gold values/aliases remain private to the scorer. Strings use frozen aliases; unseen equivalents need review. Explanations remain subject to source review.",
+  "supersedes": "review_cases_v4.json",
+  "cases": [
+    {
+      "id": "s01-mechanism-ranking",
+      "purpose": "Public typed-output calibration; source-grounded values and explanations.",
+      "evaluation_scope": "structured_response_calibration",
+      "derived_from": "c03-explicit-mechanism-ranking",
+      "source_refs": [
+        "llmcompiler",
+        "rewoo",
+        "gqa"
+      ],
+      "turns": [
+        {
+          "question": "只比较 LLMCompiler（2312.04511v3）、ReWOO（2305.18323v1）、GQA（2305.13245v3，分组查询注意力）三篇原文。我用现成模型 API 执行多个外部工具，首要目标是按依赖关系并行调度、缩短等待。请按对这个目标的直接匹配程度排列这三篇，并简短解释各自机制；不优化模型权重。",
+          "expected_route": "read",
+          "expected_status": "complete",
+          "gold": {
+            "candidate_pool": [
+              "2312.04511",
+              "2305.18323",
+              "2305.13245"
+            ],
+            "required_primary_id": "2312.04511",
+            "relevance_grades": {
+              "2312.04511": 3,
+              "2305.18323": 1,
+              "2305.13245": 0
+            },
+            "grade_provenance": "Assistant editorial judgment for this stated priority; pending user calibration, not an experimental superiority claim.",
+            "required_facts": {
+              "LLMCompiler_dependency_aware_scheduling": true,
+              "GQA_changes_attention_KV_sharing": true
+            },
+            "forbidden_inferences": [
+              "ReWOO cannot represent dependent tools",
+              "LLMCompiler is universally more accurate or cheaper"
+            ],
+            "required_comparison_ids": [
+              "2312.04511",
+              "2305.18323",
+              "2305.13245"
+            ],
+            "required_version_ids": [
+              "2312.04511v3",
+              "2305.18323v1",
+              "2305.13245v3"
+            ],
+            "fact_rules": {
+              "LLMCompiler_dependency_aware_scheduling": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2312.04511v3",
+                    "names": [
+                      "dependency_aware_scheduling"
+                    ],
+                    "kind": "boolean",
+                    "expected": true
+                  }
+                ]
+              },
+              "GQA_changes_attention_KV_sharing": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2305.13245v3",
+                    "names": [
+                      "changes_attention_kv_sharing"
+                    ],
+                    "kind": "boolean",
+                    "expected": true
+                  }
+                ]
+              }
+            }
+          },
+          "programmatic_checks": [
+            "route",
+            "terminal_status",
+            "source_version_identity",
+            "evidence_location_validity",
+            "public_response_contract",
+            "typed_fact_match"
+          ],
+          "review_only": [
+            "机制解释与原文的对应；排序标注是针对用户优先级的判断。ReWOO 支持用证据变量表示依赖，不能为拉开排序而贬低它的能力。"
+          ],
+          "response_fields": [
+            {
+              "name": "recommendation_order",
+              "kind": "paper_order",
+              "description": "For the stated API-only, dependency-aware tool-latency goal, order all three papers from most to least directly applicable. Explain the collective comparison; do not claim universal superiority.",
+              "paper_ids": [
+                "arxiv:2312.04511v3",
+                "arxiv:2305.18323v1",
+                "arxiv:2305.13245v3"
+              ]
+            },
+            {
+              "name": "dependency_aware_scheduling",
+              "kind": "boolean",
+              "description": "Does the LLMCompiler execution mechanism schedule tasks according to dependencies?",
+              "paper_ids": [
+                "arxiv:2312.04511v3"
+              ]
+            },
+            {
+              "name": "changes_attention_kv_sharing",
+              "kind": "boolean",
+              "description": "Does GQA change how key/value heads are shared by query heads within attention?",
+              "paper_ids": [
+                "arxiv:2305.13245v3"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s02-gqa-derived-counts",
+      "purpose": "Public typed-output calibration; source-grounded values and explanations.",
+      "evaluation_scope": "structured_response_calibration",
+      "derived_from": "c06-ordered-followup",
+      "source_refs": [
+        "rewoo",
+        "gqa"
+      ],
+      "turns": [
+        {
+          "question": "严格读 GQA 2305.13245v3：假设 12 个 query heads 均分成 3 组，请用原文定义计算 key heads、value heads 总数和每组 query heads 数量。将其标注为推导例子。",
+          "expected_route": "read",
+          "expected_status": "complete",
+          "gold": {
+            "required_version_ids": [
+              "2305.13245v3"
+            ],
+            "required_facts": {
+              "key_heads_total": 3,
+              "value_heads_total": 3,
+              "query_heads_per_group": 4
+            },
+            "fact_basis": "derived_from_source_definition",
+            "minimum_evidence": "full_text_method_section",
+            "fact_rules": {
+              "key_heads_total": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2305.13245v3",
+                    "names": [
+                      "key_heads_total"
+                    ],
+                    "kind": "number",
+                    "expected": 3,
+                    "basis": [
+                      "derived"
+                    ]
+                  }
+                ]
+              },
+              "value_heads_total": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2305.13245v3",
+                    "names": [
+                      "value_heads_total"
+                    ],
+                    "kind": "number",
+                    "expected": 3,
+                    "basis": [
+                      "derived"
+                    ]
+                  }
+                ]
+              },
+              "query_heads_per_group": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2305.13245v3",
+                    "names": [
+                      "query_heads_per_group"
+                    ],
+                    "kind": "number",
+                    "expected": 4,
+                    "basis": [
+                      "derived"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "programmatic_checks": [
+            "route",
+            "terminal_status",
+            "source_version_identity",
+            "evidence_location_validity",
+            "public_response_contract",
+            "typed_fact_match"
+          ],
+          "review_only": [
+            "当前一轮顺序错误时，端到端场景失败；指代模块是否忠实于实际展示列表另行诊断。不得把推导例子说成论文报告的实验结果。"
+          ],
+          "response_fields": [
+            {
+              "name": "key_heads_total",
+              "kind": "number",
+              "description": "Total number of key heads in the stated example.",
+              "paper_ids": [
+                "arxiv:2305.13245v3"
+              ]
+            },
+            {
+              "name": "value_heads_total",
+              "kind": "number",
+              "description": "Total number of value heads in the stated example.",
+              "paper_ids": [
+                "arxiv:2305.13245v3"
+              ]
+            },
+            {
+              "name": "query_heads_per_group",
+              "kind": "number",
+              "description": "Number of query heads per group in the stated example.",
+              "paper_ids": [
+                "arxiv:2305.13245v3"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s03-mixtral-routing",
+      "purpose": "Public typed-output calibration; source-grounded values and explanations.",
+      "evaluation_scope": "structured_response_calibration",
+      "derived_from": "c07-topic-and-constraint-reset",
+      "source_refs": [
+        "llmcompiler",
+        "mixtral"
+      ],
+      "turns": [
+        {
+          "question": "严格读 Mixtral of Experts 2401.04088v1：说明每层可用专家数、每个 token 选择数、专家模块类型以及专家输出如何组合。给原文依据。",
+          "expected_route": "read",
+          "expected_status": "complete",
+          "gold": {
+            "required_version_ids": [
+              "2401.04088v1"
+            ],
+            "required_facts": {
+              "experts_available_per_moe_layer": 8,
+              "experts_selected_per_token_per_layer": 2,
+              "expert_module": "feedforward_block",
+              "combination": "router_weighted_sum"
+            },
+            "minimum_evidence": "full_text_method_section",
+            "fact_rules": {
+              "experts_available_per_moe_layer": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2401.04088v1",
+                    "names": [
+                      "experts_available_per_moe_layer"
+                    ],
+                    "kind": "number",
+                    "expected": 8
+                  }
+                ]
+              },
+              "experts_selected_per_token_per_layer": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2401.04088v1",
+                    "names": [
+                      "experts_selected_per_token_per_layer"
+                    ],
+                    "kind": "number",
+                    "expected": 2
+                  }
+                ]
+              },
+              "expert_module": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2401.04088v1",
+                    "names": [
+                      "expert_module"
+                    ],
+                    "kind": "text",
+                    "expected": "feedforward_block",
+                    "aliases": {
+                      "feedforward_block": [
+                        "feed_forward_network",
+                        "feedforward_network",
+                        "ffn",
+                        "mlp",
+                        "feed_forward_block"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "combination": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2401.04088v1",
+                    "names": [
+                      "combination"
+                    ],
+                    "kind": "text",
+                    "expected": "router_weighted_sum",
+                    "aliases": {
+                      "router_weighted_sum": [
+                        "weighted_sum_by_router",
+                        "gating_weighted_sum",
+                        "weighted_sum_with_router_weights",
+                        "router_weighted_linear_combination"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "programmatic_checks": [
+            "route",
+            "terminal_status",
+            "source_version_identity",
+            "evidence_location_validity",
+            "public_response_contract",
+            "typed_fact_match"
+          ],
+          "review_only": [
+            "不能把 8 个专家等同于 8 个完整语言模型；年份限制已经明确取消。"
+          ],
+          "response_fields": [
+            {
+              "name": "experts_available_per_moe_layer",
+              "kind": "number",
+              "description": "Number of available experts in each MoE layer.",
+              "paper_ids": [
+                "arxiv:2401.04088v1"
+              ]
+            },
+            {
+              "name": "experts_selected_per_token_per_layer",
+              "kind": "number",
+              "description": "Number of experts selected for one token at one layer.",
+              "paper_ids": [
+                "arxiv:2401.04088v1"
+              ]
+            },
+            {
+              "name": "expert_module",
+              "kind": "text",
+              "description": "What component is an expert? Use the concise English module name, not a whole-system description.",
+              "paper_ids": [
+                "arxiv:2401.04088v1"
+              ]
+            },
+            {
+              "name": "combination",
+              "kind": "text",
+              "description": "How are the selected expert outputs combined? Use a concise English mechanism phrase.",
+              "paper_ids": [
+                "arxiv:2401.04088v1"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s04-agentless-v1-pipeline",
+      "purpose": "Public typed-output calibration; source-grounded values and explanations.",
+      "evaluation_scope": "structured_response_calibration",
+      "derived_from": "c08-agentless-version-scope",
+      "source_refs": [
+        "agentless_v1",
+        "agentless_v2"
+      ],
+      "turns": [
+        {
+          "question": "严格阅读 Agentless 的 2407.01489v1，按表格列出它的顶层阶段和定位阶段的三个步骤，并说明修复阶段怎么筛选、选出最终补丁。不要拿后续版本代替。",
+          "expected_route": "read",
+          "expected_status": "complete",
+          "gold": {
+            "required_version_ids": [
+              "2407.01489v1"
+            ],
+            "forbidden_substitute_version_ids": [
+              "2407.01489v2"
+            ],
+            "required_facts": {
+              "top_level_phases": [
+                "localization",
+                "repair"
+              ],
+              "localization_steps": [
+                "files",
+                "code_elements",
+                "edit_locations"
+              ],
+              "filters": [
+                "syntax_errors",
+                "regression_test_failures"
+              ],
+              "selection": "normalized_patch_majority_vote"
+            },
+            "minimum_evidence": "full_text_method_section",
+            "fact_rules": {
+              "top_level_phases": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2407.01489v1",
+                    "names": [
+                      "top_level_phases"
+                    ],
+                    "kind": "sequence",
+                    "expected": [
+                      "localization",
+                      "repair"
+                    ]
+                  }
+                ]
+              },
+              "localization_steps": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2407.01489v1",
+                    "names": [
+                      "localization_steps"
+                    ],
+                    "kind": "sequence",
+                    "expected": [
+                      "files",
+                      "code_elements",
+                      "edit_locations"
+                    ],
+                    "aliases": {
+                      "files": [
+                        "file",
+                        "file_level_localization",
+                        "file_localization",
+                        "file_level",
+                        "suspicious_files"
+                      ],
+                      "code_elements": [
+                        "related_classes_and_functions",
+                        "classes_functions_variables",
+                        "classes_functions_and_variables",
+                        "classes_and_functions",
+                        "function_level_localization",
+                        "relevant_code_elements",
+                        "code_element_localization"
+                      ],
+                      "edit_locations": [
+                        "edit_location",
+                        "fine_grained_edit_locations",
+                        "line_level_localization",
+                        "edit_location_localization",
+                        "code_edit_locations",
+                        "edit_level_localization"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "filters": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2407.01489v1",
+                    "names": [
+                      "filters"
+                    ],
+                    "kind": "set",
+                    "expected": [
+                      "syntax_errors",
+                      "regression_test_failures"
+                    ],
+                    "aliases": {
+                      "syntax_errors": [
+                        "syntax_error",
+                        "invalid_syntax",
+                        "syntax_invalid_patches"
+                      ],
+                      "regression_test_failures": [
+                        "regression_test_failure",
+                        "failed_regression_tests",
+                        "failing_existing_tests",
+                        "failing_regression_tests",
+                        "existing_test_failures",
+                        "fails_existing_tests"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "selection": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2407.01489v1",
+                    "names": [
+                      "patches_normalized_before_selection"
+                    ],
+                    "kind": "boolean",
+                    "expected": true
+                  },
+                  {
+                    "paper_id": "arxiv:2407.01489v1",
+                    "names": [
+                      "selection"
+                    ],
+                    "kind": "text",
+                    "expected": "majority_vote",
+                    "aliases": {
+                      "majority_vote": [
+                        "majority_voting",
+                        "normalized_patch_majority_vote",
+                        "most_frequent_patch",
+                        "highest_frequency_patch"
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            "label_revision_note": "Removes v4 AST-specific implementation overconstraint: this task asks whether patches are normalized, plus the final selection rule. Preserves v4 scores rather than retrospectively relabeling."
+          },
+          "programmatic_checks": [
+            "route",
+            "terminal_status",
+            "source_version_identity",
+            "evidence_location_validity",
+            "public_response_contract",
+            "typed_fact_match"
+          ],
+          "review_only": [
+            "v1 也有补丁检查；不能因 v1 概括为两阶段就声称没有 validation。额外介绍 v2 不是本题必要内容，不能混用。"
+          ],
+          "response_fields": [
+            {
+              "name": "top_level_phases",
+              "kind": "sequence",
+              "description": "List the top-level phases in execution order, using concise English phase names.",
+              "paper_ids": [
+                "arxiv:2407.01489v1"
+              ]
+            },
+            {
+              "name": "localization_steps",
+              "kind": "sequence",
+              "description": "List the targets of the three localization steps in order, one concise English target level per item.",
+              "paper_ids": [
+                "arxiv:2407.01489v1"
+              ]
+            },
+            {
+              "name": "filters",
+              "kind": "set",
+              "description": "Which failure categories cause generated patches to be removed? Use one concise English failure category per item.",
+              "paper_ids": [
+                "arxiv:2407.01489v1"
+              ]
+            },
+            {
+              "name": "patches_normalized_before_selection",
+              "kind": "boolean",
+              "description": "Are remaining patches normalized to remove superficial differences before final selection?",
+              "paper_ids": [
+                "arxiv:2407.01489v1"
+              ]
+            },
+            {
+              "name": "selection",
+              "kind": "text",
+              "description": "What rule selects the final patch? Use a concise English mechanism name.",
+              "paper_ids": [
+                "arxiv:2407.01489v1"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s05-tool-dependency-example",
+      "purpose": "Public typed-output calibration; source-grounded values and explanations.",
+      "evaluation_scope": "structured_response_calibration",
+      "derived_from": "c09-dependency-example",
+      "source_refs": [
+        "llmcompiler"
+      ],
+      "turns": [
+        {
+          "question": "读 LLMCompiler 的 2312.04511v3 方法。假设 A、B 是互不依赖的查询，C 必须使用 A、B 的结果做计算。请列出依赖边、可并行的任务和 C 的启动条件，并解释上游输出如何传给 C；引用原文。",
+          "expected_route": "read",
+          "expected_status": "complete",
+          "gold": {
+            "required_version_ids": [
+              "2312.04511v3"
+            ],
+            "required_facts": {
+              "dependency_edges": [
+                [
+                  "A",
+                  "C"
+                ],
+                [
+                  "B",
+                  "C"
+                ]
+              ],
+              "parallelizable_groups": [
+                [
+                  "A",
+                  "B"
+                ]
+              ],
+              "C_start_condition": "A_and_B_outputs_ready",
+              "argument_resolution": "replace_placeholders_with_predecessor_outputs"
+            },
+            "fact_basis": "derived_example_from_source_mechanism",
+            "minimum_evidence": "full_text_method_section",
+            "fact_rules": {
+              "dependency_edges": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2312.04511v3",
+                    "names": [
+                      "dependency_edges"
+                    ],
+                    "kind": "relations",
+                    "expected": [
+                      [
+                        "A",
+                        "C"
+                      ],
+                      [
+                        "B",
+                        "C"
+                      ]
+                    ],
+                    "basis": [
+                      "derived"
+                    ]
+                  }
+                ]
+              },
+              "parallelizable_groups": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2312.04511v3",
+                    "names": [
+                      "parallelizable_groups"
+                    ],
+                    "kind": "relations",
+                    "expected": [
+                      [
+                        "A",
+                        "B"
+                      ]
+                    ],
+                    "basis": [
+                      "derived"
+                    ],
+                    "unordered_members": true
+                  }
+                ]
+              },
+              "C_start_condition": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2312.04511v3",
+                    "names": [
+                      "c_start_condition"
+                    ],
+                    "kind": "text",
+                    "expected": "A_and_B_outputs_ready",
+                    "aliases": {
+                      "A_and_B_outputs_ready": [
+                        "both_a_and_b_results_available",
+                        "a_and_b_completed",
+                        "all_predecessor_outputs_ready",
+                        "a_and_b_results_ready"
+                      ]
+                    },
+                    "basis": [
+                      "derived"
+                    ]
+                  }
+                ]
+              },
+              "argument_resolution": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2312.04511v3",
+                    "names": [
+                      "argument_resolution"
+                    ],
+                    "kind": "text",
+                    "expected": "replace_placeholders_with_predecessor_outputs",
+                    "aliases": {
+                      "replace_placeholders_with_predecessor_outputs": [
+                        "substitute_placeholders_with_upstream_outputs",
+                        "replace_dependency_placeholders_with_results",
+                        "substitute_predecessor_results_for_placeholders"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "programmatic_checks": [
+            "route",
+            "terminal_status",
+            "source_version_identity",
+            "evidence_location_validity",
+            "public_response_contract",
+            "typed_fact_match"
+          ],
+          "review_only": [
+            "不能把允许 A/B 并行等同于 A/B/C 全部同时启动；不要求示例节点名出现在原论文中。"
+          ],
+          "response_fields": [
+            {
+              "name": "dependency_edges",
+              "kind": "relations",
+              "description": "List directed task dependencies as [prerequisite,dependent] pairs; preserve example labels.",
+              "paper_ids": [
+                "arxiv:2312.04511v3"
+              ]
+            },
+            {
+              "name": "parallelizable_groups",
+              "kind": "relations",
+              "description": "List each group of tasks that may run in parallel; preserve example labels.",
+              "paper_ids": [
+                "arxiv:2312.04511v3"
+              ]
+            },
+            {
+              "name": "c_start_condition",
+              "kind": "text",
+              "description": "State when C may start in the example, using a concise English condition.",
+              "paper_ids": [
+                "arxiv:2312.04511v3"
+              ]
+            },
+            {
+              "name": "argument_resolution",
+              "kind": "text",
+              "description": "State how upstream outputs are supplied as downstream arguments, using a concise English mechanism phrase.",
+              "paper_ids": [
+                "arxiv:2312.04511v3"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "s06-rewoo-observation-scope",
+      "purpose": "Public typed-output calibration; source-grounded values and explanations.",
+      "evaluation_scope": "structured_response_calibration",
+      "derived_from": "c10-rewoo-observation-boundary",
+      "source_refs": [
+        "rewoo"
+      ],
+      "turns": [
+        {
+          "question": "严格读 ReWOO 2305.18323v1：Reasoning Without Observation 是不是说整个系统从不使用工具返回内容？请分别说明 Planner、Worker、Solver 是否以及如何接触真实 observation，并说明为什么能减少重复提示。",
+          "expected_route": "read",
+          "expected_status": "complete",
+          "gold": {
+            "required_version_ids": [
+              "2305.18323v1"
+            ],
+            "required_facts": {
+              "whole_system_ignores_observations": false,
+              "planner_initial_blueprint_uses_real_observations": false,
+              "worker_obtains_real_observations": true,
+              "solver_consumes_real_observations": true
+            },
+            "minimum_evidence": "full_text_method_section",
+            "fact_rules": {
+              "whole_system_ignores_observations": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2305.18323v1",
+                    "names": [
+                      "whole_system_ignores_observations"
+                    ],
+                    "kind": "boolean",
+                    "expected": false
+                  }
+                ]
+              },
+              "planner_initial_blueprint_uses_real_observations": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2305.18323v1",
+                    "names": [
+                      "planner_initial_blueprint_uses_real_observations"
+                    ],
+                    "kind": "boolean",
+                    "expected": false
+                  }
+                ]
+              },
+              "worker_obtains_real_observations": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2305.18323v1",
+                    "names": [
+                      "worker_obtains_real_observations"
+                    ],
+                    "kind": "boolean",
+                    "expected": true
+                  }
+                ]
+              },
+              "solver_consumes_real_observations": {
+                "all_of": [
+                  {
+                    "paper_id": "arxiv:2305.18323v1",
+                    "names": [
+                      "solver_consumes_real_observations"
+                    ],
+                    "kind": "boolean",
+                    "expected": true
+                  }
+                ]
+              }
+            }
+          },
+          "programmatic_checks": [
+            "route",
+            "terminal_status",
+            "source_version_identity",
+            "evidence_location_validity",
+            "public_response_contract",
+            "typed_fact_match"
+          ],
+          "review_only": [
+            "节省的是反复把计划/历史观察等输入模型的开销；不能把名称理解成完全忽略环境。布尔槽位正确还不足以证明整段成本解释正确。"
+          ],
+          "response_fields": [
+            {
+              "name": "whole_system_ignores_observations",
+              "kind": "boolean",
+              "description": "Does the entire ReWOO system ignore real tool observations?",
+              "paper_ids": [
+                "arxiv:2305.18323v1"
+              ]
+            },
+            {
+              "name": "planner_initial_blueprint_uses_real_observations",
+              "kind": "boolean",
+              "description": "Does the Planner use real observations while constructing its initial reasoning blueprint?",
+              "paper_ids": [
+                "arxiv:2305.18323v1"
+              ]
+            },
+            {
+              "name": "worker_obtains_real_observations",
+              "kind": "boolean",
+              "description": "Does the Worker obtain real observations from executing tools?",
+              "paper_ids": [
+                "arxiv:2305.18323v1"
+              ]
+            },
+            {
+              "name": "solver_consumes_real_observations",
+              "kind": "boolean",
+              "description": "Does the Solver consume real observations to produce the answer?",
+              "paper_ids": [
+                "arxiv:2305.18323v1"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "grading_contract_notes": [
+    "Missing requested fields and whole-response failures count as misses; never drop failed tasks from the denominator.",
+    "Booleans and numbers retain JSON types. Sequences preserve order; sets do not; graph relations preserve symbols and edge direction.",
+    "This is a development calibration set, not independent held-out evaluation. Ranking labels are editorial for the stated goal.",
+    "Structured generation and normal source verification belong to the agent; the scorer runs offline without an LLM. A matching value does not prove the accompanying explanation is fully correct."
+  ]
+}

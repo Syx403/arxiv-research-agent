@@ -10,9 +10,11 @@ from src.llm.registry import REGISTRY, get_route
 def test_registry_default_keys_only() -> None:
     assert set(REGISTRY) == {"main", "fast", "embed-small", "rerank"}
     assert REGISTRY["main"].provider == "deepseek_native"
-    assert REGISTRY["main"].vendor_model == "deepseek-v4-pro"
+    assert REGISTRY["main"].vendor_model == "deepseek-flash"
+    assert get_route("main").reasoning_effort == "high"
     assert REGISTRY["fast"].provider == "deepseek_native"
-    assert REGISTRY["fast"].vendor_model == "deepseek-v4-flash"
+    assert REGISTRY["fast"].vendor_model == "deepseek-flash"
+    assert get_route("fast").reasoning_effort == "low"
     assert REGISTRY["embed-small"].vendor_model == "text-embedding-3-small"
     assert REGISTRY["rerank"].vendor_model == "rerank-v4.0-pro"
 

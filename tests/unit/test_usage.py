@@ -22,6 +22,12 @@ def test_usage_record_snapshot_and_reset() -> None:
     assert snapshot["main"]["completion_tokens"] == 30
     assert snapshot["rerank"]["calls"] == 1
 
+    usage.record_provider_429("main")
+    usage.record_empty_retry("main")
+    snapshot = usage.snapshot()
+    assert snapshot["main"]["provider_429_count"] == 1
+    assert snapshot["main"]["provider_empty_retry_count"] == 1
+
     usage.reset()
 
     assert usage.snapshot() == {}
@@ -33,6 +39,12 @@ def test_estimated_cost_usd_math() -> None:
 
     cost = usage.estimated_cost_usd()
 
-    assert cost["main"] == pytest.approx(1.37)
-    assert cost["rerank"] == pytest.approx(0.002)
-    assert cost["total"] == pytest.approx(1.372)
+    assert cost["main"] == pytest.approx(1.5)
+    assert cost["rerank"] == 0.0  # User's Cohere Trial account.
+    assert cost["total"] == pytest.approx(1.5)
+
+
+def test_reasoning_is_already_in_completion_and_cache_is_discounted() -> None:
+    usage.record("main", prompt=1_000_000, completion=1_000_000,
+                 cached_prompt=500_000, reasoning=800_000)
+    assert usage.estimated_cost_usd()["main"] == pytest.approx(1.353)

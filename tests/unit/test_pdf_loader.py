@@ -46,3 +46,11 @@ def test_load_pdf_extracts_sections(monkeypatch, tmp_path: Path) -> None:
     assert "\x00" not in sections[1].text
     assert "\x03" not in sections[1].text
     assert "method text" in sections[2].text
+
+
+def test_numbered_dotted_and_small_caps_headers_are_recognized():
+    assert pdf_loader._is_section_header('1. Introduction')
+    assert pdf_loader._is_section_header('2.3. Function executor (handling of completion tokens)')
+    assert pdf_loader._normalize_header('1 I NTRODUCTION') == 'Introduction'
+    assert pdf_loader._normalize_header('2.3. Function executor (handling of completion tokens)') == 'Function executor (handling of completion tokens)'
+    assert not pdf_loader._is_section_header('DO NOT STOP SEARCHING UNTIL YOU VERIFY')

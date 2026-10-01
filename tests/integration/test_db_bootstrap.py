@@ -95,7 +95,7 @@ async def test_bootstrap_creates_schema_extensions_indexes_trigger_and_vector_ro
                 """
                 INSERT INTO chunks (paper_id, section, ord, text, token_count, embedding)
                 VALUES ('test:vector-roundtrip', 'Test', 1, 'Vector roundtrip text', 3, $1)
-                ON CONFLICT (paper_id, ord) DO UPDATE SET embedding = EXCLUDED.embedding
+                ON CONFLICT (paper_id, index_key, ord) DO UPDATE SET embedding = EXCLUDED.embedding
                 RETURNING chunk_id
                 """,
                 vector,

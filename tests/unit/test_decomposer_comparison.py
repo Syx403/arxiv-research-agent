@@ -12,6 +12,10 @@ def test_detects_common_comparison_entities() -> None:
         "ToolLLM",
     ]
     assert decomposer._detect_comparison_entities("Compare ReAct and Reflexion") == ["ReAct", "Reflexion"]
+    assert decomposer._detect_comparison_entities("How do RAG and Self-RAG differ in how they use retrieval?") == [
+        "RAG",
+        "Self-RAG",
+    ]
     assert decomposer._detect_comparison_entities("What is ReAct?") == []
 
 
@@ -24,10 +28,8 @@ async def test_comparison_decomposition_retries_then_falls_back_when_entity_miss
 
     assert client.calls == 2
     texts = [subq.text for subq in result.sub_questions]
-    assert "What is Toolformer?" in texts
-    assert "What is ToolLLM?" in texts
-    assert "How do Toolformer and ToolLLM compare?" in texts
-    assert result.sub_questions[-1].depends_on == [0, 1]
+    assert texts == ["What is Toolformer? Focus on: tool use?", "What is ToolLLM? Focus on: tool use?"]
+    assert all(not subq.depends_on for subq in result.sub_questions)
 
 
 class _MissingEntityClient:

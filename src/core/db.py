@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+import asyncio
 
 import asyncpg
 from pgvector.asyncpg import register_vector
@@ -14,6 +15,7 @@ from src.core.config import get_settings
 
 _asyncpg_pool: asyncpg.Pool | None = None
 _psycopg_pool: AsyncConnectionPool | None = None
+_app_init_lock = asyncio.Lock()
 
 
 def _asyncpg_dsn() -> str:
@@ -45,13 +47,14 @@ async def _init_asyncpg_connection(conn: asyncpg.Connection) -> None:
 
 async def get_asyncpg_pool() -> asyncpg.Pool:
     global _asyncpg_pool
-    if _asyncpg_pool is None:
-        _asyncpg_pool = await asyncpg.create_pool(
-            dsn=_asyncpg_dsn(),
-            min_size=1,
-            max_size=10,
-            init=_init_asyncpg_connection,
-        )
+    async with _app_init_lock:
+        if _asyncpg_pool is None:
+            _asyncpg_pool = await asyncpg.create_pool(
+                dsn=_asyncpg_dsn(),
+                min_size=1,
+                max_size=10,
+                init=_init_asyncpg_connection,
+            )
     return _asyncpg_pool
 
 

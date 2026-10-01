@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.core.types import ChatResponse, Citation, Message
+from src.core.types import ChatResponse, Citation, Message, EvidenceChunk
 from src.retrieval.self_rag import verifier
 
 
@@ -18,7 +18,9 @@ async def test_verifier_prompt_uses_sentence_claim_text(monkeypatch) -> None:
         claim_span=(0, len(sentence)),
     )
 
-    await verifier.verify_citations("answer text", [citation], {123: "ReAct evidence"})
+    await verifier.verify_citations(sentence, [citation], {
+        123: EvidenceChunk(paper_id="arxiv:2210.03629", chunk_id=123, text="ReAct evidence"),
+    })
 
     user_message = client.messages[1].content
     assert user_message is not None
@@ -33,7 +35,7 @@ class _CapturingVerifierClient:
     async def chat(self, messages: list[Message], **kwargs) -> ChatResponse:
         self.messages = messages
         return ChatResponse(
-            content='{"supports": true, "rationale": "ok"}',
+            content='{"claim_kind":"paper_fact","scope_status":"requested","all_assertions_supported":true,"no_unstated_assumptions":true,"all_citations_contribute":true,"supports": true, "rationale": "ok"}',
             model="fake",
             finish_reason="stop",
         )
