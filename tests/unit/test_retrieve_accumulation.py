@@ -80,3 +80,41 @@ def _hit(chunk_id: int) -> Hit:
 class _FakeEmbeddingClient:
     async def embed(self, texts: list[str], *, model: str | None = None) -> list[list[float]]:
         return [[0.01] * 1536 for _ in texts]
+
+
+@pytest.mark.asyncio
+async def test_multihop_reretrieval_keeps_previously_relevant_evidence(monkeypatch):
+    from src.core.types import Decomposition, GraphExpansion, SubQuestion, SubQResult
+
+    original = _hit(1)
+    route = RouteDecision(may_use_semantic_scholar_live=True)
+
+    async def pipeline(subq, *, subq_index, multi_hop_used, initial_hits):
+        assert multi_hop_used is True
+        assert list(initial_hits) == [original]
+        return SubQResult(
+            subq_index=0,
+            hits=list(initial_hits),
+            sufficient=False,
+            route_decision=route,
+            multi_hop_used=True,
+        ), GraphExpansion()
+
+    monkeypatch.setattr(retrieve, "_run_subquestion_pipeline", pipeline)
+    updates = await retrieve.retrieve_node(
+        {
+            "decomposition": Decomposition(sub_questions=[SubQuestion(text="Question")]),
+            "subq_results": {
+                0: SubQResult(
+                    subq_index=0,
+                    hits=[original],
+                    sufficient=False,
+                    route_decision=route,
+                    multi_hop_used=False,
+                )
+            },
+            "active_subq_index": 0,
+            "multi_hop_calls": 1,
+        }
+    )
+    assert updates["evidence"] == [original]

@@ -14,11 +14,18 @@ async def reflect_node(state: AgentState) -> dict:
         raise RuntimeError("reflect_node requires state.thread_id")
     answer = state.get("answer") or ""
     citations = state.get("citations", [])
+    verification = state.get("verification")
+    verified = bool(verification is not None and verification.passed)
     await session_store.append_message(
         thread_id,
         "assistant",
         answer,
-        metadata={"citations": [citation.model_dump() for citation in citations]},
+        metadata={
+            "citations": [citation.model_dump() for citation in citations],
+            "verification_passed": verified,
+        },
     )
+    if not verified:
+        return {"reflection": ReflectionReport()}
     report = await reflection.reflect_session(thread_id)
     return {"reflection": report}

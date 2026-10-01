@@ -84,8 +84,8 @@ def _patch_builder_nodes(monkeypatch) -> None:
     async def fake_synthesize(state):
         return {
             "answer": "ReAct interleaves reasoning and acting [arxiv:2210.03629#1].",
-            "citations": [Citation(paper_id="arxiv:2210.03629", chunk_id=1, claim_span=(40, 63))],
-            "evidence_lookup": {1: "ReAct interleaves reasoning and acting."},
+            "citations": [Citation(paper_id="arxiv:2210.03629", chunk_id=1, claim_span=(0, 39))],
+            "evidence_lookup": {"arxiv:2210.03629#1": "ReAct interleaves reasoning and acting."},
         }
 
     async def fake_self_rag(state):

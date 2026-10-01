@@ -42,6 +42,7 @@ async def retrieve_node(state: AgentState) -> dict:
             subq,
             subq_index=active_index,
             multi_hop_used=multi_hop_used,
+            initial_hits=subq_results[active_index].hits if multi_hop_used else (),
         )
         subq_results[active_index] = result
 
@@ -62,6 +63,7 @@ async def _run_subquestion_pipeline(
     *,
     subq_index: int,
     multi_hop_used: bool,
+    initial_hits: tuple[Hit, ...] | list[Hit] = (),
 ) -> tuple[SubQResult, GraphExpansion]:
     route_decision = await router.route(subq)
     graph_expansion = (
@@ -72,7 +74,7 @@ async def _run_subquestion_pipeline(
     rewritten = await rewriter.rewrite_for_retrieval(subq)
     embedding_text = await rewriter.hyde(subq) if rewriter.should_use_hyde(subq) else rewritten
 
-    accumulated_hits: dict[int, Hit] = {}
+    accumulated_hits: dict[int, Hit] = {hit.chunk_id: hit for hit in initial_hits}
     kept_hits: list[Hit] = []
     retries_used = 0
     sufficient = False

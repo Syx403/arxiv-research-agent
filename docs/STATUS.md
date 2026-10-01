@@ -1,5 +1,20 @@
 # Project Status
 
+## Current entry point and validation
+
+The single-question CLI is available via `uv run python -m src.cli`, with a
+credential-free `--example` preview. The browser chat and graph interfaces remain
+unimplemented; the Phase 11 row below still refers to those interfaces.
+
+The October 1, 2026 documentation/citation pass corrects claim spans, evidence
+identity, verification context, evidence retention across citation expansion,
+and failed-answer memory handling. See [the architecture note](architecture.md)
+for the exact changes. Offline regression checks pass; no new live-model score
+or 30-question benchmark is claimed. The historical Phase 10.5 citation-quality
+limitation remains pending a fresh evaluation.
+
+## Historical phases
+
 | Phase | Title | Status | Commit | Date | Owner handoff |
 |-------|-------|--------|--------|------|---------------|
 | 0 | Bootstrap | complete | 0d7530e | 2026-05-03 | H-1 confirmed 2026-05-03; H-2 confirmed 2026-05-03; H-3 confirmed 2026-05-03 |

@@ -37,9 +37,11 @@ async def test_verify_citations_fans_out_with_bounded_concurrency(monkeypatch) -
     client = _CountingChatClient(expected_calls=7)
     monkeypatch.setattr(verifier, "get_chat_client", lambda name: client)
     citations = [Citation(paper_id="p", chunk_id=index, claim_span=(0, 5)) for index in range(7)]
-    evidence_lookup = {index: f"evidence {index}" for index in range(7)}
+    evidence_lookup = {f"p#{index}": f"evidence {index}" for index in range(7)}
 
-    report = await asyncio.wait_for(verifier.verify_citations("claim text", citations, evidence_lookup), timeout=1)
+    report = await asyncio.wait_for(
+        verifier.verify_citations("claim text", citations, evidence_lookup), timeout=1
+    )
 
     assert report.passed is True
     assert client.calls == 7

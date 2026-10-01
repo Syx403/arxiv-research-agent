@@ -1,4 +1,4 @@
-.PHONY: install fmt lint test ingest eval eval-sample eval-fresh ui ui-graph db-up db-down db-reset
+.PHONY: install fmt lint test test-unit demo ask ingest eval eval-sample eval-fresh ui ui-graph db-up db-init db-down db-reset
 
 install:
 	uv sync
@@ -12,8 +12,20 @@ lint:
 test:
 	uv run pytest -q
 
+test-unit:
+	uv run pytest tests/unit -q
+
+demo:
+	uv run python -m src.cli --example
+
+ask:
+	uv run python -m src.cli $(ARGS)
+
 db-up:
-	docker compose -f docker/docker-compose.yml up -d
+	docker compose --env-file .env -f docker/docker-compose.yml up -d --wait
+
+db-init:
+	uv run python scripts/bootstrap_db.py
 
 db-down:
 	docker compose -f docker/docker-compose.yml down
@@ -38,7 +50,9 @@ eval-fresh: ## Delete the latest eval checkpoint and run from a clean CSV.
 	$(MAKE) eval
 
 ui:
-	uv run chainlit run src/ui/app.py --host 127.0.0.1 --port 8000
+	@echo 'The browser UI is not implemented. Use make demo or make ask ARGS="..."; see README.md.'
+	@exit 2
 
 ui-graph:
-	uv run uvicorn src.ui.graph_view.server:app --host 127.0.0.1 --port 9000
+	@echo 'The graph UI is not implemented. See docs/architecture.md for the implemented flow.'
+	@exit 2

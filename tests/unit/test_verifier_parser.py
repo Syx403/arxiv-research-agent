@@ -31,11 +31,13 @@ def test_verifier_parser_builds_citation_verdict() -> None:
 
 
 @pytest.mark.asyncio
-async def test_verify_citations_raises_when_evidence_missing() -> None:
+async def test_verify_citations_rejects_missing_evidence_without_provider() -> None:
     citation = Citation(paper_id="p", chunk_id=7, claim_span=(0, 5))
 
-    with pytest.raises(KeyError, match="chunk_id=7"):
-        await verifier.verify_citations("claim", [citation], {})
+    report = await verifier.verify_citations("claim", [citation], {})
+
+    assert report.passed is False
+    assert report.verdicts[0].rationale.startswith("UNKNOWN_EVIDENCE")
 
 
 @pytest.mark.asyncio
@@ -43,18 +45,18 @@ async def test_verify_citations_uses_evidence_lookup(monkeypatch) -> None:
     monkeypatch.setattr(verifier, "get_chat_client", lambda name: _FakeChatClient())
     citation = Citation(paper_id="p", chunk_id=7, claim_span=(0, 5))
 
-    report = await verifier.verify_citations("claim text", [citation], {7: "claim evidence"})
+    report = await verifier.verify_citations("claim text", [citation], {"p#7": "claim evidence"})
 
     assert report.passed is True
     assert report.verdicts[0].citation.chunk_id == 7
 
 
 @pytest.mark.asyncio
-async def test_verify_citations_keeps_citation_when_verifier_json_invalid(monkeypatch) -> None:
+async def test_verify_citations_marks_invalid_verifier_json_unverified(monkeypatch) -> None:
     monkeypatch.setattr(verifier, "get_chat_client", lambda name: _BrokenVerifierClient())
     citation = Citation(paper_id="p", chunk_id=7, claim_span=(0, 5))
 
-    report = await verifier.verify_citations("claim text", [citation], {7: "claim evidence"})
+    report = await verifier.verify_citations("claim text", [citation], {"p#7": "claim evidence"})
 
     assert report.passed is False
     assert report.verdicts[0].supports is False
@@ -70,7 +72,7 @@ async def test_verify_citations_parse_failure_makes_report_fail(monkeypatch) -> 
     report = await verifier.verify_citations(
         "claim text",
         [good, parse_failure],
-        {7: "claim evidence", 8: "claim evidence"},
+        {"p#7": "claim evidence", "p#8": "claim evidence"},
     )
 
     assert report.passed is False

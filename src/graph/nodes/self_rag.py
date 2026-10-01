@@ -37,6 +37,10 @@ async def self_rag_node(state: AgentState) -> dict:
             for verdict in failed
         ],
     }
+    if not failed:
+        updates["messages"] = [
+            SystemMessage(content=f"Citation check failed: {verification.rationale}")
+        ]
     if state.get("tool_iters", 0) < SELF_RAG_MAX_RETRIES:
         updates["tool_iters"] = state.get("tool_iters", 0) + 1
     return updates

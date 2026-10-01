@@ -21,6 +21,8 @@ async def reflect_session(session_id: str) -> ReflectionReport:
     linked_by_canonical: dict[str, int] = {}
 
     for message in messages:
+        if message.metadata.get("verification_passed") is False:
+            continue
         chunk_ids = _citation_chunk_ids(message.metadata)
         if not chunk_ids:
             continue

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import logging
-import re
 
+from src.core.citations import evidence_key, parse_citations as _parse_citations
 from src.core.diagnostics import log_raw_response
-from src.core.types import Citation, Message
+from src.core.types import Message
 from src.graph.state import AgentState
 from src.llm.client import EmptyProviderResponseError, get_chat_client
 
 
-CITATION_RE = re.compile(r"\[(?P<pid>[^\]#\s]+)#(?P<cid>\d+)\]")
 logger = logging.getLogger(__name__)
 
 
@@ -19,19 +18,30 @@ class SynthesizerError(RuntimeError):
 
 async def synthesize_node(state: AgentState) -> dict:
     evidence = state.get("evidence", [])
+    if not evidence:
+        return _degraded_update(
+            "I do not have enough retrieved evidence to answer this question with citations.",
+            evidence,
+        )
     failure_notes = _system_notes(state)
     question = state.get("question", "")
     try:
         answer = await _generate_answer(question, evidence, failure_notes=failure_notes)
     except EmptyProviderResponseError as exc:
-        logger.warning("synthesis_empty_provider_response", extra={"question": question[:160], "error": str(exc)})
+        logger.warning(
+            "synthesis_empty_provider_response",
+            extra={"question": question[:160], "error": str(exc)},
+        )
         return _degraded_update("", evidence)
     citations = _parse_citations(answer)
     if not citations:
         try:
             answer = await _fix_citation_format(answer, question, evidence)
         except EmptyProviderResponseError as exc:
-            logger.warning("synthesis_repair_empty_provider_response", extra={"question": question[:160], "error": str(exc)})
+            logger.warning(
+                "synthesis_repair_empty_provider_response",
+                extra={"question": question[:160], "error": str(exc)},
+            )
             return _degraded_update(answer, evidence)
         citations = _parse_citations(answer)
         if not citations:
@@ -40,7 +50,7 @@ async def synthesize_node(state: AgentState) -> dict:
     return {
         "answer": answer,
         "citations": citations,
-        "evidence_lookup": {hit.chunk_id: hit.text for hit in evidence},
+        "evidence_lookup": {evidence_key(hit.paper_id, hit.chunk_id): hit.text for hit in evidence},
         "synthesis_format_degraded": False,
     }
 
@@ -56,7 +66,9 @@ async def _generate_answer(question: str, evidence, *, failure_notes: list[str])
                     "Keep the answer concise: one paragraph, 4-6 sentences. "
                     "Use the bracketed [paper_id#chunk_id] identifier shown at the top of each evidence chunk as the inline citation. "
                     "For example, after a claim derived from the chunk headed [arxiv:2210.03629#123], end the sentence with [arxiv:2210.03629#123]. "
-                    "Never use [paper_id]-only or [chunk_id]-only citations."
+                    "Never use [paper_id]-only or [chunk_id]-only citations. "
+                    "Place each citation immediately after the sentence it supports. "
+                    "If the evidence is insufficient, state the gap instead of inventing a claim."
                 ),
             ),
             Message(
@@ -121,23 +133,11 @@ def _format_evidence(evidence) -> str:
     )
 
 
-def _parse_citations(answer: str) -> list[Citation]:
-    return [
-        Citation(
-            paper_id=match.group("pid"),
-            chunk_id=int(match.group("cid")),
-            claim_span=(match.start(), match.end()),
-            quote=None,
-        )
-        for match in CITATION_RE.finditer(answer)
-    ]
-
-
 def _degraded_update(answer: str, evidence) -> dict:
     return {
         "answer": answer,
         "citations": [],
-        "evidence_lookup": {hit.chunk_id: hit.text for hit in evidence},
+        "evidence_lookup": {evidence_key(hit.paper_id, hit.chunk_id): hit.text for hit in evidence},
         "synthesis_format_degraded": True,
     }
 
