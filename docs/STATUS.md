@@ -1,5 +1,15 @@
 # Project Status
 
+## Current runtime — 2026-10-02
+
+The FastAPI browser UI is implemented. `make start` installs locked dependencies, starts and waits for PostgreSQL, applies migrations, and serves http://127.0.0.1:8000. `make ui` starts only the web server. See [INTERVIEW_DEMO.md](INTERVIEW_DEMO.md).
+
+The remote CLI/offline example have been reconciled with the current project. Live CLI questions now use the same AgentRuntime, cost ledger and delivery contract as the browser; `--session` continues a conversation. `make demo` remains an explicitly hand-authored, credential-free output example.
+
+The current architecture performs arXiv discovery and on-demand original-text RAG. It no longer runs the old concept graph, citation walker, HyDE or reflection pipeline. September evaluation records are in [RESEARCH_EVALUATION.md](RESEARCH_EVALUATION.md); historical phase completion below does not describe the active architecture or its current accuracy.
+
+## Historical phases
+
 | Phase | Title | Status | Commit | Date | Owner handoff |
 |-------|-------|--------|--------|------|---------------|
 | 0 | Bootstrap | complete | 0d7530e | 2026-05-03 | H-1 confirmed 2026-05-03; H-2 confirmed 2026-05-03; H-3 confirmed 2026-05-03 |

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     langsmith_tracing: bool = Field(default=False, validation_alias="LANGSMITH_TRACING")
 
     postgres_host: str = Field(default="localhost", validation_alias="POSTGRES_HOST")
-    postgres_port: int = Field(default=5432, validation_alias="POSTGRES_PORT")
+    postgres_port: int = Field(default=5433, validation_alias="POSTGRES_PORT")
     postgres_db: str = Field(default="arxiv_agent", validation_alias="POSTGRES_DB")
     postgres_user: str = Field(default="arxiv_agent", validation_alias="POSTGRES_USER")
     postgres_password: SecretStr = Field(

@@ -523,18 +523,35 @@ def _log_non_stop_finish(event: str, finish_reason: str, question: str) -> None:
 
 def _parse_citations(answer: str) -> list[Citation]:
     result: list[Citation] = []
-    for match in CITATION_RE.finditer(answer):
-        sent_start, sent_end = _sentence_around(answer, match.start(), match.end())
+    token = r"\[[^\]#\s]+#\d+\]"
+    trailing_boundary = 0
+    for group in re.finditer(rf"{token}(?:[ \t]*[,;]?[ \t]*{token})*", answer):
+        sent_start, sent_end = _sentence_around(answer, group.start(), group.end())
+        prefix = answer[:group.start()].rstrip(" \t")
+        line_start = answer.rfind("\n", 0, group.start()) + 1
+        line_end = answer.find("\n", group.end())
+        line_end = len(answer) if line_end < 0 else line_end
+        # A same-line reference immediately after sentence punctuation belongs
+        # to that completed sentence, not to the following sentence. Grouped
+        # references must share exactly one span, including all their markers.
+        is_trailing = (prefix and prefix[-1] in ".!?。！？"
+                       and not _is_abbreviation_boundary(answer, len(prefix) - 1)
+                       and not table_cells(answer[line_start:line_end]))
+        if is_trailing:
+            sent_start = _find_sentence_start(answer, len(prefix) - 1) or 0
+            sent_end = group.end()
+        sent_start = max(sent_start, trailing_boundary)
+        if is_trailing:
+            trailing_boundary = sent_end
         sentence = answer[sent_start:sent_end].strip()
-        result.append(
-            Citation(
+        for match in CITATION_RE.finditer(answer, group.start(), group.end()):
+            result.append(Citation(
                 paper_id=match.group("pid"),
                 chunk_id=int(match.group("cid")),
                 claim_text=sentence,
                 claim_span=(sent_start, sent_end),
                 quote=None,
-            )
-        )
+            ))
     return result
 
 

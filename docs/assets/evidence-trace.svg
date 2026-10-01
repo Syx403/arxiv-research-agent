@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1000" viewBox="0 0 1200 1000" role="img" aria-labelledby="title desc"><title id="title">Read one citation back to its evidence</title><desc id="desc">An explicitly illustrative ReAct answer is connected to its actual claim, paper and chunk identity, and paraphrased evidence. The reference resolves, but model support is not evaluated in the offline example.</desc><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#6750ae" stroke-width="1.4"/></marker></defs><rect width="1200" height="1000" rx="16" fill="#fbfafc"/>
+<text x="56" y="52.0" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#6750ae">READING AN ANSWER / ANNOTATED EXAMPLE</text>
+<text x="56" y="112.0" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="700" fill="#202735">A reference is only the beginning.</text>
+<text x="56" y="157.0" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="400" fill="#566075">Inspect the claim, identify the source, and check the support verdict.</text>
+<rect x="56" y="213" width="664" height="290" rx="0" fill="#ffffff" stroke="#b8aecb" stroke-width="1.5"/>
+<text x="80" y="252.0" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" fill="#6750ae">QUESTION</text>
+<text x="80" y="295.0" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#202735">What is ReAct?</text>
+<text x="80" y="345" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" fill="#202735">ReAct alternates language-model reasoning</text>
+<text x="80" y="380" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" fill="#202735">with actions that obtain information from</text>
+<text x="80" y="415" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" fill="#202735">an external environment</text>
+<rect x="78" y="439" width="316" height="43" rx="4" fill="#f1edf9" stroke="#f1edf9" stroke-width="1.5"/>
+<text x="91" y="468.0" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#6750ae">[arxiv:2210.03629#1]</text>
+<text x="801" y="255.0" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#6750ae">01  THE CLAIM</text>
+<text x="801" y="300.0" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" fill="#202735">The sentence before the marker</text>
+<text x="801" y="330.8" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" fill="#202735">is what the verifier evaluates.</text>
+<text x="801" y="361.6" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" fill="#202735">The marker alone is not a claim.</text>
+<path d="M720 349 H758 V303 H784" fill="none" stroke="#6750ae" stroke-width="2" marker-end="url(#arrow)" />
+<text x="801" y="423.0" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#6750ae">02  THE SOURCE</text>
+<text x="801" y="468.0" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" fill="#202735">A paper ID + a chunk ID.</text>
+<text x="801" y="498.8" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" fill="#202735">Both must match the evidence</text>
+<text x="801" y="529.6" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" fill="#202735">supplied to this answer.</text>
+<path d="M397 460 H477 V520 H760 V470 H784" fill="none" stroke="#6750ae" stroke-width="2" marker-end="url(#arrow)" />
+<rect x="56" y="560" width="664" height="257" rx="0" fill="#f1edf9" stroke="#f1edf9" stroke-width="1.5"/>
+<text x="80" y="603.0" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" fill="#6750ae">EVIDENCE / ABSTRACT PARAPHRASE</text>
+<text x="80" y="648" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" fill="#202735">ReAct combines reasoning and action steps.</text>
+<text x="80" y="682" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" fill="#202735">Reasoning updates the plan, while actions</text>
+<text x="80" y="716" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" fill="#202735">consult external information or interact</text>
+<text x="80" y="750" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" fill="#202735">with an environment.</text>
+<text x="80" y="799.0" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#566075">Real paper: Yao et al. • arXiv:2210.03629</text>
+<text x="801" y="648.0" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#6750ae">03  THE SUPPORT CHECK</text>
+<text x="801" y="693.0" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#202735">Resolved source: yes</text>
+<text x="801" y="723.8" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#202735">Model verdict: not evaluated</text>
+<text x="801" y="764.0" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" fill="#566075">A resolved reference is not</text>
+<text x="801" y="794.8" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="400" fill="#566075">proof of a supported claim.</text>
+<path d="M720 694 H784" fill="none" stroke="#6750ae" stroke-width="2" marker-end="url(#arrow)" />
+<path d="M56 867 H1144" stroke="#b8aecb"/>
+<text x="56" y="909.0" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#6750ae">HAND-AUTHORED FIXTURE • ILLUSTRATIVE CHUNK ID • NO LIVE MODEL RUN</text>
+<text x="56" y="948.0" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="400" fill="#202735">Reproduce with: uv run python -m src.cli --example --json</text>
+</svg>

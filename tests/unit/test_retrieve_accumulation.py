@@ -76,3 +76,38 @@ def _hit(chunk_id: int) -> Hit:
 class _FakeEmbeddingClient:
     async def embed(self, texts: list[str], *, model: str | None = None) -> list[list[float]]:
         return [[0.01] * 1536 for _ in texts]
+
+
+@pytest.mark.asyncio
+async def test_empty_followup_retrieval_preserves_existing_evidence(monkeypatch):
+    calls = 0
+    original = _hit(1)
+
+    async def rewrite(question):
+        return question
+
+    async def search(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return [original] if calls == 1 else []
+
+    async def rerank(query, hits, **kwargs):
+        return hits
+
+    async def judge(query, hits):
+        return [RelevanceVerdict(relevant=True, rationale="Supported.") for hit in hits]
+
+    async def sufficient(query, hits, **kwargs):
+        return SufficiencyVerdict(sufficient=False, missing_aspects=["missing detail"])
+
+    monkeypatch.setattr(retrieve.rewriter, "rewrite_for_retrieval", rewrite)
+    monkeypatch.setattr(retrieve, "get_embedding_client", lambda _: _FakeEmbeddingClient())
+    monkeypatch.setattr(retrieve, "hybrid_search", search)
+    monkeypatch.setattr(retrieve.reranker, "rerank", rerank)
+    monkeypatch.setattr(retrieve.relevance_judge, "judge_batch", judge)
+    monkeypatch.setattr(retrieve.sufficiency_check, "is_sufficient", sufficient)
+    result, _ = await retrieve._run_subquestion_pipeline(
+        "Question", subq_index=0, multi_hop_used=False, max_retries=1)
+    assert calls == 2
+    assert [hit.chunk_id for hit in result.hits] == [original.chunk_id]
+    assert result.sufficient is False

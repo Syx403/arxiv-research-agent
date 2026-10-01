@@ -1,19 +1,71 @@
-# arxiv-research-agent
+# ARA — Agentic Research Assistant
 
 ARA is a conversational arXiv research agent. It discovers relevant papers from live arXiv searches, explains the matches using abstracts, and retrieves original evidence for deeper questions. One LangGraph controller admits actions, observes progress, and stops on evidence, time or cost limits.
 
 ## Start
 
-Python 3.11+, Docker, and `uv` are required. Configure the provider keys and local Postgres settings using `.env.example`. DeepSeek Flash supplies the main and fast roles; OpenAI embeddings and Cohere Trial are used only for original-text retrieval. The existing checkout can also load its configured macOS Keychain credentials.
+Python 3.11+, Docker Desktop (running), `uv`, and Make are required. Run commands from the repository root. The default local database is exposed on port **5433**, and the browser on **8000**.
+
+On a fresh clone, create `.env` from `.env.example` without overwriting an existing configuration:
+
+```sh
+test -f .env || cp .env.example .env
+```
+
+Set `DEEPSEEK_API_KEY` for discovery and analysis, plus `OPENAI_API_KEY` and a **Cohere Trial** `COHERE_API_KEY` for full-text retrieval. The application can also load the named ARA DeepSeek credential from the macOS Keychain; `uv run python -m scripts.configure_deepseek_key` provides the local secure setup dialog. OpenRouter and LangSmith are not required for the default workflow. Credentials stay in `.env`/Keychain, not in Git or the browser.
+
+Start the complete local demo:
+
+```sh
+make start
+```
+
+This installs the locked dependencies, waits for PostgreSQL readiness, applies idempotent schema migrations, and starts the browser server at **http://127.0.0.1:8000**. Keep the terminal running; Ctrl+C stops the web server. `make db-down` stops the database while retaining its volume. To use another browser port: `make start PORT=8001`.
+
+The individual steps remain available:
 
 ```sh
 make install
 make db-up
-uv run python -m scripts.bootstrap_db
+make db-init
 make ui
 ```
 
 Open http://127.0.0.1:8000. No seed-corpus ingestion is needed. The schema migration preserves existing paper records, chunks and checkpoints. Do not use `db-reset` to apply migrations: it deletes the Docker volume.
+
+## Interview demo
+
+Use **新的研究**, set Main and Fast to **Low** for the initial walkthrough, then try:
+
+1. `找到 Agentless（arXiv:2407.01489v1），只基于摘要，用两句话解释研究目标。`
+2. `阅读这篇论文的原文，解释它如何逐级定位需要修改的代码，再生成补丁；只讲方法，不报实验分数。`
+3. Expand the sources and **查看本轮过程** to show the resolved paper/version, retrieval, verification, stop reason, and cost.
+
+The first turn demonstrates discovery; the second demonstrates contextual reference resolution and full-text RAG. Previously indexed originals are reused. New papers can require downloads and embedding, and model/network latency varies. A completed search uses abstracts; it does not claim to have read the whole paper.
+
+The Chinese operator guide, including restart and failure checks, is in [docs/INTERVIEW_DEMO.md](docs/INTERVIEW_DEMO.md).
+
+## Command-line entry
+
+Live CLI questions use the **same AgentRuntime, checkpoints, and cumulative cost ledger as the browser**:
+
+```sh
+uv run python -m src.cli "Find Agentless and briefly explain its research goal using only the abstract."
+# Use the UUID printed by the previous command to continue that conversation:
+uv run python -m src.cli "Read this paper and explain its localization process." --session <session-uuid>
+```
+
+Both roles default to Low in the CLI; `--main-effort high --fast-effort low` changes them. `--json` emits structured output. Results and traces are saved in `data/cli/`. Exit codes: 0 for complete or a clarification question, 2 for partial/incomplete, 1 for a runtime/configuration error.
+
+For a **hand-authored offline output example**, requiring no database, network, or credentials:
+
+```sh
+make demo
+# Or machine-readable output:
+uv run python -m src.cli --example --json
+```
+
+The example is visibly labelled; it does not claim a live search or model verification. See [the fixture explanation](docs/evidence-example.md).
 
 ## Research flow
 
@@ -67,7 +119,7 @@ Changing the paper version creates a separate material record. Changing the proc
 
 Defaults: 8 search actions, 60 candidates, 3 semantic assessments, at most 5 result cards, and at most 3 read papers. Search acquisition/assessment shares a 90-second window; a whole deep-reading turn has a 300-second deadline and retains its $0.15 request-admission cost limit. Source checks reserve three seconds for checkpoint/delivery and preserve completed siblings when another check times out. Late semantic retries are not admitted. Individual indexing is capped at 75 seconds and 160 chunks. Original-evidence retrieval has bounded local recovery and answer verification permits at most two rewrites. These are execution bounds, not completeness guarantees.
 
-The UI uses the existing **cumulative US$2** ledger at `data/eval_outputs/round1-budget.json`, including all previous requests. Each search has an estimated US$0.05 admission ceiling, raised to US$0.15 when original reading is required; the cumulative ceiling always wins. Reservations happen before transmission, and concurrent calls/retries share the ledger. Unknown charges keep their reservations. Estimates are not provider invoices. Cohere is admitted under the configured Trial policy.
+The UI and CLI use the existing **cumulative US$2.50** ledger at `data/eval_outputs/round1-budget.json`, including all previous requests, with a 3,000-request guard. Each search has an estimated US$0.05 admission ceiling, raised to US$0.15 when original reading is required; the cumulative ceiling always wins. Reservations happen before transmission, and concurrent calls/retries share the ledger. Unknown charges keep their reservations. Estimates are not provider invoices. Cohere is admitted under the configured Trial policy. Do not delete the ledger to bypass limits; inspect remaining allowance before a live demo.
 
 Opening/reloading the page, creating a conversation and offline tests do not call a model. Main (Pro) and fast reasoning can each be changed in **思考设置**; both use Flash. Each turn freezes its settings. More thinking can cost more and need not improve an answer.
 
@@ -83,8 +135,8 @@ INTEGRATION_TESTS=1 uv run pytest tests/integration/test_db_bootstrap.py tests/i
 uv run ruff check src tests scripts
 ```
 
-The old fixed-corpus gold questions and metrics under `src/eval` are historical diagnostic assets, not a validated evaluation of this architecture. Their automatic CLI entry was removed. The new research-quality evaluation set will be designed separately; passing behavioral tests or a few live examples is not a claim of general research accuracy.
+The old fixed-corpus gold questions and metrics under `src/eval` are historical diagnostic assets, not an evaluation of this architecture. Their automatic CLI entry was removed. Current research evaluations include a **20-scenario / 26-turn** suite split into calibration and acceptance, plus targeted runtime/structured-output experiments. Passing behavioral checks or a few live examples is not a claim of general research accuracy.
 
 For a Chinese walkthrough, see [RUNTIME_WALKTHROUGH.md](docs/RUNTIME_WALKTHROUGH.md). Historical design/phase reports document earlier versions and do not override this runtime description. Legacy database tables and historical result files are retained; unused concept graph, reflection, citation-walk, HyDE, publisher-specific acquisition and local-corpus runtime branches have been removed.
 
-The source-backed 12-scenario task suite and budgeted local-API runner are described in [RESEARCH_EVALUATION.md](docs/RESEARCH_EVALUATION.md). Mechanical checks and semantic source review are separate; passing checks is not a research-accuracy score.
+The research suites and their actual execution results are described in [RESEARCH_EVALUATION.md](docs/RESEARCH_EVALUATION.md); the shared runtime and independent Python evaluation entry are described in [AGENT_RUNTIME.md](docs/AGENT_RUNTIME.md). Mechanical checks and semantic source review remain separate.
