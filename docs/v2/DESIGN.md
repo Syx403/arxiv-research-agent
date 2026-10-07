@@ -1,8 +1,8 @@
 # ARA v2 — Design
 
-Status: approved direction (2026-10-07). Sections marked **[proposal]** still need Ewan's confirmation
-before they are coded. Items marked **[verify at M0]** are external facts that must be re-checked
-when the code is written.
+Status: approved (2026-10-07). The model allocation and cache design (§6.2–6.3) were confirmed by
+Ewan on 2026-10-07 after the M0 verification of external facts (§16). A future section marked
+**[proposal]** needs Ewan's confirmation before it is coded.
 
 ARA is an arXiv research agent: it clarifies a research need, finds papers on arXiv, reads the
 chosen papers, and answers with sentence-level citations that were checked against the source.
@@ -69,15 +69,17 @@ Layering rule: LangGraph owns orchestration and state only. Retrieval, scoring a
 plain functions. The LLM gateway is a thin in-house layer over the official `openai` SDK
 (DeepSeek is OpenAI-compatible). The evaluation runner is plain Python, not a graph.
 
-Proposed package layout (finalised in M0):
+Package layout. A module is created in the milestone that first needs it (M0 created
+`settings.py`, `db/` and `llm/`):
 
 ```
 ara/
+  settings.py   keys from .env, database URL, budget caps, tracing
   graph/        app.py (top-level graph), discover.py, read.py, answer.py, routing.py, state.py
   rag/          sources.py (arxiv html/pdf, qasper), chunking.py, embed.py, search.py, rerank.py
-  llm/          gateway.py, prompts/ (versioned text files), stages.py, pricing.py, ledger.py
+  llm/          gateway.py, prompt.py, prompts/ (text files), stages.py, pricing.py, ledger.py
   memory/       store.py, extract.py
-  db/           migrations/*.sql, migrate.py, queries.py
+  db/           migrations/*.sql, migrate.py, pool.py
   arxiv/        client.py
   api/          server.py, events.py
 ui/             React + Vite + TypeScript
@@ -90,8 +92,8 @@ docs/v2/        DESIGN.md, DECISIONS.md, PROGRESS.md
 
 ## 4. LangGraph design
 
-LangGraph ≥ 1.2 **[verify at M0: exact API names]**. Each primitive below is used because the
-product needs it; nothing is added for decoration.
+LangGraph 1.2 (1.2.14 checked at M0; API names below were read from the installed package). Each
+primitive below is used because the product needs it; nothing is added for decoration.
 
 | Need | Primitive |
 |---|---|
@@ -100,9 +102,9 @@ product needs it; nothing is added for decoration.
 | Parallel per-candidate screening, per-paper reading, per-claim verification | `Send` fan-out + list reducers |
 | Phase isolation and per-phase evaluation | subgraphs with their own state schemas |
 | Bounded loops (tool calls, requery, repair) | conditional edges + counters + `recursion_limit` |
-| Transient failures and slow calls | node `RetryPolicy`, per-node timeouts, node error handlers (1.2) |
+| Transient failures and slow calls | `add_node(retry_policy=RetryPolicy(...), timeout=TimeoutPolicy(...), error_handler=...)` |
 | Cross-session memory | `AsyncPostgresStore` with a pgvector index |
-| Live progress in the UI | `astream(..., subgraphs=True)` (typed stream parts) + custom events |
+| Live progress in the UI | `astream(..., subgraphs=True, version="v2")` (typed `StreamPart`s) + custom events |
 | Per-run configuration and dependencies | `context_schema` / `Runtime` (no globals) |
 | Debugging and component replay | `get_state_history`, forking from a checkpoint |
 
@@ -171,8 +173,10 @@ def after_understand(s) -> Literal["clarify", "discover", "read", "answer", "res
 ### 4.4 Reliability
 
 - One retry layer: node `RetryPolicy` for transient network errors (SDK retries off).
-- Per-node timeouts (ingest 60 s, LLM nodes 45 s, arXiv tool 20 s) **[verify at M0]**.
-- Node error handlers turn failures into explicit partial results (`status="partial"`,
+- Per-node timeouts with `add_node(timeout=...)` (async nodes only): ingest 60 s, LLM nodes 45 s,
+  arXiv tool 20 s. A timeout raises `NodeTimeoutError`, which the default `RetryPolicy` retries.
+- Node error handlers (`add_node(error_handler=...)`; the handler receives a `NodeError` and
+  returns a `Command`) turn failures into explicit partial results (`status="partial"`,
   `stop_reason`), never into an exception the user sees.
 - Budget: the gateway raises `BudgetExceeded` before sending; the error handler finishes the turn
   with what is already verified.
@@ -202,8 +206,11 @@ Indexing
   never mixed into a search.
 
 Search (scoped to the selected paper versions, or to the user's library)
-- BM25 over `chunks.search_text` (ParadeDB `pg_search`) **[verify at M0; fallback: native
-  `ts_rank_cd`]**. Native full-text search stays available as an ablation arm (it has no IDF).
+- BM25 over `chunks.search_text` with ParadeDB `pg_search` 0.26: one ParadeDB index per table,
+  `CREATE INDEX ... USING paradedb (id, (search_text::pdb.unicode_words('stemmer=english')),
+  document_id)` (no `key_field` since 0.26; `document_id` is indexed so the scope filter is pushed
+  down), queried with `search_text ||| :query` and ordered by `pdb.score(id)`. Native full-text
+  search (`ts_rank_cd`) stays available as an ablation arm (it has no IDF).
 - Dense: exact cosine scan when scoped to ≤ 3 papers (a few hundred rows, exact and fast); HNSW
   for library-wide search (pgvector ≥ 0.8 iterative scans for filtered queries).
 - Reciprocal rank fusion, k = 60, top 50 from each list → Cohere rerank (`rerank-v4.0-pro`,
@@ -220,12 +227,12 @@ Search (scoped to the selected paper versions, or to the user's library)
 | Model | Input | Cached input | Cache write | Output | Notes |
 |---|---:|---:|---:|---:|---|
 | `gpt-6-luna` (OpenAI) | $0.10 | $0.01 | $0.125 | $0.50 | strict structured outputs; effort none…max; Batch API −50% |
-| `deepseek-flash` (V4.1 Flash) | $0.30 peak / $0.15 off | $0.006 / $0.003 | — | $1.20 / $0.60 | fast output; thinking mode; JSON output (strict schema support: verify at M0) |
+| `deepseek-flash` (V4.1 Flash) | $0.30 peak / $0.15 off | $0.006 / $0.003 | — | $1.20 / $0.60 | thinking mode (effort low / high / max); JSON output is `json_object` only (no schema); schema-enforced output only through strict tool calls (beta endpoint) |
 
 DeepSeek peak = 01:00–04:00 and 06:00–10:00 UTC on weekdays, i.e. 09:00–12:00 and 14:00–18:00
 Singapore time. Paid evaluation rounds should run off-peak.
 
-### 6.2 Stage allocation [proposal]
+### 6.2 Stage allocation (confirmed 2026-10-07, D10)
 
 Principles
 1. Machine-consumed decisions go to `gpt-6-luna` with strict JSON schemas: no repair code.
@@ -238,42 +245,68 @@ Principles
 | Stage | Model | Effort | Output | Fan-out |
 |---|---|---|---|---|
 | understand (intent, constraints, clarification) | gpt-6-luna | low | strict schema | 1 |
-| researcher (arXiv tool loop) | deepseek-flash | thinking | tool calls | ≤ 8 calls |
+| researcher (arXiv tool loop) | deepseek-flash | thinking, low | tool calls | ≤ 8 calls |
 | screen candidates | gpt-6-luna | medium | strict schema | batches of 8 |
 | select_evidence | gpt-6-luna | low | strict schema | per (paper, question) |
-| synthesize / repair | deepseek-flash | thinking | prose with `[E#]` citations | 1 (+1) |
+| synthesize / repair | deepseek-flash | thinking, high | prose with `[E#]` citations | 1 (+1) |
 | verify | gpt-6-luna | medium | strict schema | per claim, after prewarm |
 | remember | gpt-6-luna | low | strict schema | 1 |
 | judge: answers (written by DeepSeek) | gpt-6-luna, Batch API | medium | strict schema | offline |
-| judge: paper relevance (selected by Luna) | deepseek-flash, off-peak | thinking | JSON | offline |
+| judge: paper relevance (selected by Luna) | deepseek-flash, off-peak | thinking, high | `json_object` + Pydantic validation | offline |
+
+- DeepSeek accepts only low / high / max (medium maps to high). The researcher uses low because each
+  of its up to 8 steps thinks before acting; high would lengthen every turn (to be measured in M3).
+- The paper-relevance judge has no schema enforcement on DeepSeek. Its output is validated with
+  Pydantic; a parse failure is recorded as `judge_error` and counted in the report, never repaired.
+  Strict tool calls (beta) remain the fallback if the error rate is material (decided in M3).
+- Every stage has a fixed `max_output_tokens` (reasoning included): DeepSeek's default in thinking
+  mode is 64K, and the ledger reserves the maximum before sending (§6.5).
 
 Known trade-off: the answer judge and the in-product verifier are both Luna, so their blind spots
 may correlate. Mitigation: answer quality is graded against QASPER gold answers and gold evidence
 (reference-based), and the judge is calibrated on Ewan's labels (§11.4). The verifier model itself
 is chosen by measurement on the verifier suite (S5 compares Luna and DeepSeek, about $0.05).
 
-### 6.3 Cache-aware prompts
+### 6.3 Cache-aware prompts (confirmed 2026-10-07, D11)
 
 Every prompt is three ordered parts:
 
 ```python
 @dataclass(frozen=True)
 class Prompt:
-    static: list[Block]   # versioned instructions + schema; byte-stable
-    shared: list[Block]   # context shared by a group of calls: evidence pack, request, transcript
-    item: list[Block]     # the part that differs per call
+    instructions: Instructions  # static: one versioned prompt file (the schema goes in text.format)
+    shared: tuple[Block, ...]   # context shared by a group of calls: evidence pack, request, transcript
+    item: tuple[Block, ...]     # the part that differs per call
 ```
 
-- The renderer puts static → shared → item, inserts OpenAI explicit cache breakpoints after
-  `static` and after `shared` (Responses API) **[verify at M0]**, serialises JSON with sorted keys
-  and stable ordering, and never puts timestamps or run ids before the item part.
-- Fan-outs warm the shared prefix first: OpenAI `prompt_cache_options.prewarm` **[verify at M0]**;
-  DeepSeek: send the first item, then the rest. (DeepSeek builds its cache within seconds, so
-  simultaneous requests would miss it.)
+- The renderer puts static → shared → item, one message per block, serialises JSON with sorted
+  keys and stable ordering, and never puts timestamps or run ids before the item part. Static
+  instructions go into a developer message, because the top-level `instructions` field cannot
+  carry a cache breakpoint.
+- OpenAI calls always use `prompt_cache_options.mode = "explicit"`. The stage table lists which
+  parts end with a breakpoint (`"prompt_cache_breakpoint": {"mode": "explicit"}` on the last
+  `input_text` block of that part): static and shared for fan-out stages (screen, select_evidence,
+  verify); static, shared and item for understand, whose new message is part of the next turn's
+  prefix. Reason: the default implicit mode writes every request's tail to the cache at 1.25× the
+  input price, which is waste for fan-out items that are used once.
+- Fan-outs warm the shared prefix first with a separate OpenAI request carrying
+  `prompt_cache_options.prewarm = true` (no output; written tokens billed at the cache-write rate).
+  It uses exactly the model, schema (`text.format`) and effort of the calls that follow, otherwise
+  the prefix differs. Prewarm only when the fan-out has ≥ 2 calls and the shared prefix is
+  ≥ 1,024 tokens: one write at 1.25× plus N reads at 0.1× beats N full reads from N = 2.
+- DeepSeek has no warm-up step. Under V4.1 caching a request creates cache units at the end of its
+  input and of its output, and a later request hits only by fully matching a unit; a common prefix
+  is stored on its own only after two requests share it (long inputs also get fixed-interval
+  units). Sending one item first would therefore not warm the others. DeepSeek stages are
+  sequential and append-only (researcher loop, synthesize → repair), which hit naturally; the
+  offline DeepSeek judge accepts misses (off-peak input is $0.15 per 1M).
 - Conversations stay append-only. Compaction happens only at a turn boundary, by appending a
   summary note, never by rewriting earlier messages.
 - Each stage keeps a fixed tool list, schema and reasoning effort; changing any of them breaks
   the cached prefix.
+- OpenAI cache lifetime is 30 minutes after the last write or reuse (`ttl: "30m"`, the only value).
+  `prompt_cache_key` is not used: from GPT-5.6 on, routing is automatic and the key only separates
+  cache accounting.
 
 | Stage | Shared prefix that should hit |
 |---|---|
@@ -282,17 +315,24 @@ class Prompt:
 | screen | instructions + the research request (all batches) |
 | verify | instructions + the answer's evidence pack (all claims) |
 
-The gateway records `cached_tokens` / `cache_write_tokens` (OpenAI) and
-`prompt_cache_hit_tokens` (DeepSeek). The UI and the eval report show cache-hit rate per stage.
-OpenAI caches only prefixes of ≥ 1,024 tokens; short prompts are not padded.
+The gateway records `usage.input_tokens_details.cached_tokens` / `cache_write_tokens` (OpenAI)
+and `usage.prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` (DeepSeek). The UI and the eval
+report show cache-hit rate per stage. OpenAI caches only prefixes of ≥ 1,024 tokens; short prompts
+are not padded.
 
 ### 6.4 Gateway
 
-- `gateway.structured(stage, prompt, Schema)` and `gateway.text(stage, prompt)`; the stage table
-  decides model, effort and schema. `gateway.tool_loop(...)` serves the researcher.
+- `gateway.structured(stage, prompt, Schema)`, `gateway.text(stage, prompt)` and
+  `gateway.prewarm(stage, prompt)`; the stage table decides model, effort, output cap and cache
+  breakpoints, and each call site always passes the same schema. `gateway.tool_loop(...)` serves the
+  researcher (added in M3).
 - Luna: Responses API with strict `json_schema` from the Pydantic model.
-  DeepSeek: Chat Completions; tool arguments are validated by Pydantic.
-- Prompts are files under `ara/llm/prompts/`, each with a version tag recorded in traces.
+  DeepSeek: Chat Completions; tool arguments are validated by Pydantic. With tools in thinking mode
+  DeepSeek requires every earlier `reasoning_content` to be sent back (HTTP 400 otherwise), which
+  also keeps its cached prefix intact.
+- SDK retries are off (`max_retries=0`); the node `RetryPolicy` is the only retry layer.
+- Prompts are files under `ara/llm/prompts/`. The version tag recorded in traces and in the ledger
+  is the file name plus a short hash of its content, so it cannot go stale.
 
 ### 6.5 Budget ledger
 
@@ -300,7 +340,9 @@ OpenAI caches only prefixes of ≥ 1,024 tokens; short prompts are not padded.
   after: settle with reported usage; unknown outcomes keep the reservation (v1 rule).
 - Caps: global $10, per eval round (`--max-usd`), per turn (default $0.05). A transaction-scoped
   advisory lock serialises reservations across processes.
-- Prices live in `ara/llm/pricing.py` with the date they were checked.
+- Prices live in `ara/llm/pricing.py` with the date they were checked. DeepSeek bills this account
+  in CNY; the ledger uses its USD price list, so DeepSeek costs are close estimates. Peak hours are
+  applied to every weekday (Chinese public holidays are off-peak in reality), which errs high.
 
 ---
 
@@ -321,7 +363,8 @@ OpenAI caches only prefixes of ≥ 1,024 tokens; short prompts are not padded.
 
 ## 8. Database
 
-PostgreSQL 17+ with pgvector ≥ 0.8 and BM25 (ParadeDB image) **[verify at M0]**. One database:
+PostgreSQL 18.6 with pgvector 0.8.6 and pg_search 0.26.0: image `paradedb/paradedb:0.26.0-pg18`,
+pinned (verified at M0). One database (`ara`; unit tests use `ara_test` on the same server):
 
 | Table | Purpose / key points |
 |---|---|
@@ -334,10 +377,12 @@ PostgreSQL 17+ with pgvector ≥ 0.8 and BM25 (ParadeDB image) **[verify at M0]*
 | `eval_runs`, `eval_results`, `labels` | evaluation outputs and Ewan's labels |
 | LangGraph tables | checkpoints, store (created by `setup()`) |
 
-Indexes: HNSW on `chunks.embedding`; BM25 on `chunks.search_text`; GIN on `chunks.tsv`;
-btree on `chunks(document_id)`, `llm_calls(turn_id)`, `eval_results(run_id)`.
+Indexes: HNSW on `chunks.embedding`; the ParadeDB (BM25) index on `chunks(id, search_text,
+document_id)`; GIN on `chunks.tsv`; btree on `chunks(document_id)`, `llm_calls(turn_id)`,
+`llm_calls(run_id)`, `eval_results(run_id)`.
 Ingestion takes a per-paper advisory lock and writes a document in one transaction.
-Migrations: numbered SQL files and a ~30-line runner.
+Migrations: numbered SQL files and a ~30-line runner. Each table arrives with the milestone that
+first uses it (M0: `llm_calls`).
 
 ---
 
@@ -466,7 +511,7 @@ testing starts only after the architecture review.
 
 | Milestone | Scope | Done when |
 |---|---|---|
-| M0 Foundation | v2 skeleton (v1 code removed from this branch), Docker DB, migrations, settings, gateway (both providers, prompt rendering, usage, ledger), LangSmith, CI (ruff, mypy, pytest) | unit tests pass; one live call per provider shows cache tokens on the repeated call |
+| M0 Foundation | v2 skeleton (v1 code and documents removed from this branch), Docker DB, migrations, settings, gateway (both providers, prompt rendering, usage, ledger), LangSmith, CI (ruff, mypy, pytest) | unit tests pass; one live call per provider shows cache tokens on the repeated call |
 | M1 RAG + S1 | sources (arXiv, QASPER), chunking, embeddings, BM25 + dense + RRF + rerank; eval runner + datasets + S1 | S1 runs end to end on 2 papers (live, approved) |
 | M2 Read + answer | read and answer subgraphs, prewarmed verification, finalize; S2, S5 | two live questions answered with verified citations |
 | M3 Understand + discover | understand, clarify interrupt, researcher loop, screen, choose_papers; S3, S4 | a live discover → read turn and a clarify turn |
@@ -489,15 +534,36 @@ testing starts only after the architecture review.
 
 ---
 
-## 16. Verify at M0
+## 16. Verified at M0 (2026-10-07)
 
-1. ParadeDB image: bundled pgvector version, `pg_search` syntax; else pgvector image + native FTS.
-2. `gpt-6-luna` works with the existing OpenAI key; Responses API explicit breakpoints and
-   `prompt_cache_options.prewarm` parameter names.
-3. DeepSeek model id `deepseek-flash` and thinking-mode parameters.
-4. LangGraph 1.2 names for node timeouts, error handlers and typed streaming.
-5. Cohere trial: remaining monthly calls (1,000 per month, 10 rerank calls per minute).
-6. QASPER loading format on Hugging Face.
+1. ParadeDB: `paradedb/paradedb:0.26.0-pg18` (arm64 and amd64) bundles PostgreSQL 18.6,
+   pgvector 0.8.6 and pg_search 0.26.0. BM25 (`USING paradedb`, `|||`, `pdb.score`), exact and
+   HNSW vector search (`hnsw.iterative_scan`) and native `ts_rank_cd` were run in a throwaway
+   container. `key_field` is deprecated and ignored since 0.26.0.
+2. `gpt-6-luna` is listed for the existing OpenAI key (`GET /v1/models/gpt-6-luna`). Parameter
+   names, from SDK 3.26 types and the caching guide: `prompt_cache_options.{mode, prewarm, ttl}`,
+   `prompt_cache_breakpoint: {"mode": "explicit"}` on `input_text` blocks (up to 4 written per
+   request), usage `input_tokens_details.{cached_tokens, cache_write_tokens}`. The guide says
+   "GPT-5.6 and later" without naming Luna; the M0 live check confirmed it: a prewarm wrote 2,690
+   tokens and the following call read 2,690 of its 2,710 input tokens from the cache. A breakpoint
+   before the 1,024-token minimum (the short static part) is accepted without error.
+3. DeepSeek: `deepseek-flash` is V4.1-Flash (released 2026-09-10), listed for the key. Thinking:
+   `extra_body={"thinking": {"type": "enabled"}}` (default on) and `reasoning_effort` low / high /
+   max. `response_format` supports only `json_object`; strict tool calls need
+   `https://api.deepseek.com/beta`. M0 live check: an appended second turn read 2,560 of its 2,795
+   input tokens from the cache. 2,560 is a multiple of 256 below the first turn's 2,754-token input,
+   so the hit most likely came from a fixed-interval cache unit (inferred, not documented).
+4. LangGraph 1.2.14: `add_node(timeout=float | TimeoutPolicy(run_timeout, idle_timeout))`
+   raising `NodeTimeoutError`; `add_node(error_handler=...)` with `NodeError(node, error)`;
+   `astream(..., version="v2")` yielding `StreamPart`; `RunControl` / `GraphDrained` for shutdown.
+5. Cohere: the trial key is valid and lists `rerank-v4.0-pro`. Responses carry
+   `x-endpoint-monthly-call-limit: 1000` but no remaining count; the remaining monthly calls are
+   visible only on the Cohere dashboard (to be checked by Ewan before M1).
+6. QASPER: the Hugging Face repo holds only a loading script (`qasper.py`, v0.3). The data is read
+   from the auto-converted Parquet (`refs/convert/parquet`, validation = 281 papers, 4.7 MB) with
+   pyarrow. Fields: `id` (arXiv id), `full_text.{section_name, paragraphs}`,
+   `qas.answers[].answer[].{unanswerable, extractive_spans, yes_no, free_form_answer, evidence,
+   highlighted_evidence}`. The original AllenAI S3 archive is still online as a fallback.
 
 ---
 
@@ -511,8 +577,16 @@ testing starts only after the architecture review.
   https://developers.openai.com/api/docs/guides/prompt-caching
 - DeepSeek pricing, models `deepseek-flash` and `deepseek-v4-pro`, peak hours.
   https://api-docs.deepseek.com/quick_start/pricing
-- DeepSeek context caching (default on, best effort, built within seconds).
-  https://api-docs.deepseek.com/guides/kv_cache
+- DeepSeek context caching (default on, best effort, built within seconds; V4.1 cache units must
+  be matched in full). https://api-docs.deepseek.com/guides/kv_cache
+- DeepSeek V4.1-Flash release, 2026-09-10 (`deepseek-v4-pro` now routes to V4.1-Flash).
+  https://api-docs.deepseek.com/news/news260910
+- DeepSeek thinking mode, JSON output, strict tool calls (beta).
+  https://api-docs.deepseek.com/guides/thinking_mode, https://api-docs.deepseek.com/guides/json_mode,
+  https://api-docs.deepseek.com/guides/tool_calls
+- ParadeDB 0.26.0 (2026-10-03; `key_field` requirement removed; `USING paradedb`).
+  https://github.com/paradedb/paradedb/releases/tag/v0.26.0,
+  https://www.paradedb.com/docs/reference/indexing/create-index
 - LangGraph 1.1 (typed streaming, 2026-03-10) and 1.2 (node timeouts, error handlers, graceful
   shutdown, 2026-05-12). https://docs.langchain.com/oss/python/releases/changelog.md
 - arXiv API: at most one request every three seconds, one connection.
