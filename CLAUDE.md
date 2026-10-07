@@ -49,5 +49,8 @@ Read first: `docs/v2/DESIGN.md` (spec), `docs/v2/DECISIONS.md` (why), `docs/v2/P
   (`.github/workflows/ci.yml`, on pushes to `v2`).
 - `make test-live` — billable (rule 1): real model calls, recorded in `llm_calls` and traced in
   LangSmith project `ara-v2`. Each live test module sets a run cap equal to its approval.
-- Spend so far: `docker exec ara-v2-db psql -U ara -d ara -c "SELECT run_id, count(*), sum(cost_usd) FROM llm_calls GROUP BY 1"`.
+- Spend so far (`charge_usd` is what counts against the caps; it includes open reservations):
+  `docker exec ara-v2-db psql -U ara -d ara -c "SELECT run_id, count(*), sum(cost_usd) AS spent, sum(charge_usd) AS charged FROM llm_calls GROUP BY 1 ORDER BY min(created_at)"`.
+- Run a single live test module with `uv run pytest -m live <path>`; `make test-live` runs all of
+  them, and each run needs its own approval when it exceeds the rule-1 threshold.
 - API server, UI and eval runner: added in M1–M5.

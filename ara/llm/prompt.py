@@ -70,16 +70,16 @@ def openai_input(prompt: Prompt, breakpoints: frozenset[Part]) -> list[ResponseI
     messages: list[ResponseInputItemParam] = []
     for part, blocks in prompt.parts():
         inputs = [i for i, block in enumerate(blocks) if block.role != "assistant"]
-        mark = inputs[-1] if part in breakpoints and inputs else None
-        messages += [_openai_message(block, i == mark) for i, block in enumerate(blocks)]
+        last = inputs[-1] if part in breakpoints and inputs else None
+        messages += [_openai_message(block, mark=i == last) for i, block in enumerate(blocks)]
     return messages
 
 
-def _openai_message(block: Block, breakpoint: bool) -> EasyInputMessageParam:
+def _openai_message(block: Block, *, mark: bool) -> EasyInputMessageParam:
     if block.role == "assistant":
         return {"role": "assistant", "content": block.text}
     text: ResponseInputTextParam = {"type": "input_text", "text": block.text}
-    if breakpoint:
+    if mark:
         text["prompt_cache_breakpoint"] = {"mode": "explicit"}
     return {"role": block.role, "content": [text]}
 

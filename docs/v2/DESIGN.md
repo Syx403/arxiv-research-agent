@@ -206,11 +206,12 @@ Indexing
   never mixed into a search.
 
 Search (scoped to the selected paper versions, or to the user's library)
-- BM25 over `chunks.search_text` with ParadeDB `pg_search` 0.26: one ParadeDB index per table,
-  `CREATE INDEX ... USING paradedb (id, (search_text::pdb.unicode_words('stemmer=english')),
-  document_id)` (no `key_field` since 0.26; `document_id` is indexed so the scope filter is pushed
-  down), queried with `search_text ||| :query` and ordered by `pdb.score(id)`. Native full-text
-  search (`ts_rank_cd`) stays available as an ablation arm (it has no IDF).
+- BM25 over `chunks.search_text` with ParadeDB `pg_search` 0.26 (syntax verified at M0): one
+  ParadeDB index per table, `CREATE INDEX ... USING paradedb (id, search_text, document_id)` (no
+  `key_field` since 0.26; `document_id` is indexed so the scope filter is pushed down), queried
+  with `search_text ||| :query` and ordered by `pdb.score(id)`. The tokenizer (for example English
+  stemming, `search_text::pdb.unicode_words('stemmer=english')`) is chosen in M1 on S1. Native
+  full-text search (`ts_rank_cd`) stays available as an ablation arm (it has no IDF).
 - Dense: exact cosine scan when scoped to ≤ 3 papers (a few hundred rows, exact and fast); HNSW
   for library-wide search (pgvector ≥ 0.8 iterative scans for filtered queries).
 - Reciprocal rank fusion, k = 60, top 50 from each list → Cohere rerank (`rerank-v4.0-pro`,
@@ -293,7 +294,8 @@ class Prompt:
   `prompt_cache_options.prewarm = true` (no output; written tokens billed at the cache-write rate).
   It uses exactly the model, schema (`text.format`) and effort of the calls that follow, otherwise
   the prefix differs. Prewarm only when the fan-out has ≥ 2 calls and the shared prefix is
-  ≥ 1,024 tokens: one write at 1.25× plus N reads at 0.1× beats N full reads from N = 2.
+  ≥ 1,024 tokens (`worth_prewarming`): one write at 1.25× plus N reads at 0.1× is cheaper than
+  paying for the prefix N times (at 1×, or 1.25× when every concurrent call writes it) from N = 2.
 - DeepSeek has no warm-up step. Under V4.1 caching a request creates cache units at the end of its
   input and of its output, and a later request hits only by fully matching a unit; a common prefix
   is stored on its own only after two requests share it (long inputs also get fixed-interval
@@ -322,10 +324,12 @@ are not padded.
 
 ### 6.4 Gateway
 
-- `gateway.structured(stage, prompt, Schema)`, `gateway.text(stage, prompt)` and
-  `gateway.prewarm(stage, prompt)`; the stage table decides model, effort, output cap and cache
-  breakpoints, and each call site always passes the same schema. `gateway.tool_loop(...)` serves the
-  researcher (added in M3).
+- `gateway.structured(stage, prompt, Schema, scope=...)`, `gateway.text(stage, prompt, scope=...)`
+  and `gateway.prewarm(stage, prompt, Schema, scope=...)`. The stage table decides model, effort,
+  output cap and cache breakpoints; each call site always passes the same schema (prewarm needs it
+  because `text.format` is part of the cached prefix); `scope` names the evaluation run and the
+  turn whose budget caps apply. `worth_prewarming(prompt, Schema, calls)` applies the §6.3 rule.
+  `gateway.tool_loop(...)` serves the researcher (added in M3).
 - Luna: Responses API with strict `json_schema` from the Pydantic model.
   DeepSeek: Chat Completions; tool arguments are validated by Pydantic. With tools in thinking mode
   DeepSeek requires every earlier `reasoning_content` to be sent back (HTTP 400 otherwise), which

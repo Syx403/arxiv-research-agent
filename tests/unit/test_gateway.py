@@ -1,10 +1,28 @@
-"""Provider usage objects, built by the SDK from the JSON each provider returns."""
+"""The gateway's deterministic parts: the prewarm rule (D11) and the providers' usage objects,
+built by the SDK from the JSON each provider returns."""
 
 from openai.types import CompletionUsage
 from openai.types.responses import ResponseUsage
+from pydantic import BaseModel
 
-from ara.llm.gateway import deepseek_usage, openai_usage
+from ara.llm.gateway import deepseek_usage, openai_usage, worth_prewarming
 from ara.llm.pricing import Usage
+from ara.llm.prompt import Block, Instructions, Prompt
+
+INSTRUCTIONS = Instructions("verify", "Check the claim against the evidence.")
+LONG = "evidence " * 1_200  # about 1,200 tokens
+
+
+class Verdict(BaseModel):
+    supported: bool
+
+
+def test_prewarm_needs_two_calls_and_a_cacheable_shared_prefix() -> None:
+    long_shared = Prompt(INSTRUCTIONS, shared=(Block("user", LONG),))
+    long_item = Prompt(INSTRUCTIONS, shared=(Block("user", "short"),), item=(Block("user", LONG),))
+    assert worth_prewarming(long_shared, Verdict, calls=2)
+    assert not worth_prewarming(long_shared, Verdict, calls=1)
+    assert not worth_prewarming(long_item, Verdict, calls=8)  # only the shared prefix counts
 
 
 def test_openai_usage_keeps_cache_reads_and_writes_apart() -> None:

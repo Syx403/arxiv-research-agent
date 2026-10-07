@@ -27,6 +27,7 @@ from ara.settings import Settings
 
 DEEPSEEK_URL = "https://api.deepseek.com"
 ESTIMATE_MARGIN = 1.2  # providers tokenise differently from cl100k; reservations err high
+CACHE_MINIMUM = 1_024  # OpenAI caches only prefixes of at least this many tokens
 MESSAGE_OVERHEAD = 8  # tokens of role and framing per message
 
 
@@ -61,14 +62,15 @@ class Gateway:
         self, stage: Stage, prompt: Prompt, schema: type[BaseModel], *, scope: Scope
     ) -> None:
         """Write the static and shared parts to the cache before a fan-out; nothing is generated.
-        It sends the model, schema and effort of the calls that follow, so their prefix matches."""
+        It sends the model, schema and effort of the calls that follow, so their prefix matches.
+        Fan-outs call it only when `worth_prewarming` says so (D11)."""
         await self._respond(stage, replace(prompt, item=()), schema, scope, prewarm=True)
 
     async def _respond[T: BaseModel](
         self, stage: Stage, prompt: Prompt, schema: type[T], scope: Scope, *, prewarm: bool
     ) -> ParsedResponse[T]:
         messages = openai_input(prompt, stage.breakpoints)
-        input_tokens = _estimate(prompt, json.dumps(schema.model_json_schema()))
+        input_tokens = _estimate(prompt, schema)
         output_tokens = 0 if prewarm else stage.max_output_tokens
         async with self._metered(
             stage, prompt, scope, messages, input_tokens, output_tokens
@@ -212,8 +214,19 @@ def _encoding() -> tiktoken.Encoding:
     return tiktoken.get_encoding("cl100k_base")
 
 
-def _estimate(prompt: Prompt, extra: str = "") -> int:
+def worth_prewarming(prompt: Prompt, schema: type[BaseModel], calls: int) -> bool:
+    """D11: prewarm only a fan-out of at least two calls whose shared prefix (instructions, shared
+    blocks and output schema) reaches the cache minimum; otherwise the write cannot pay off."""
+    return calls >= 2 and _tokens(replace(prompt, item=()), schema) >= CACHE_MINIMUM
+
+
+def _tokens(prompt: Prompt, schema: type[BaseModel] | None = None) -> int:
+    """cl100k count of a prompt and its output schema; providers count slightly differently."""
+    text = prompt.text() + (json.dumps(schema.model_json_schema()) if schema else "")
+    return len(_encoding().encode_ordinary(text))
+
+
+def _estimate(prompt: Prompt, schema: type[BaseModel] | None = None) -> int:
     """An upper estimate of input tokens, used only for the reservation."""
-    tokens = len(_encoding().encode_ordinary(prompt.text() + extra))
     messages = sum(len(blocks) for _, blocks in prompt.parts())
-    return round(tokens * ESTIMATE_MARGIN) + MESSAGE_OVERHEAD * messages
+    return round(_tokens(prompt, schema) * ESTIMATE_MARGIN) + MESSAGE_OVERHEAD * messages

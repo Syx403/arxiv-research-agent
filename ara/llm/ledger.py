@@ -45,10 +45,12 @@ SET status = 'settled', settled_at = now(), cost_usd = %(cost)s,
     response_id = %(response_id)s
 WHERE id = %(id)s
 """
+# Only a released call is settled (at $0); an unknown outcome stays an open reservation.
 FAIL = """
 UPDATE llm_calls
-SET error = %(error)s, settled_at = now(),
-    status = CASE WHEN %(released)s THEN 'released' ELSE status END
+SET error = %(error)s,
+    status = CASE WHEN %(released)s THEN 'released' ELSE status END,
+    settled_at = CASE WHEN %(released)s THEN now() ELSE settled_at END
 WHERE id = %(id)s
 """
 
@@ -106,7 +108,7 @@ class Ledger:
 
     async def fail(self, call_id: int, error: str, *, released: bool) -> None:
         """Record a failed request. `released` means the provider rejected it, so nothing was
-        billed; otherwise the outcome is unknown and the reservation stays charged."""
+        billed; otherwise the outcome is unknown and the row stays an open, charged reservation."""
         async with self.pool.connection() as conn:
             await conn.execute(FAIL, {"error": error, "released": released, "id": call_id})
 

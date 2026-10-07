@@ -2,6 +2,7 @@ import asyncio
 from decimal import Decimal
 
 import pytest
+from psycopg.rows import DictRow
 
 from ara.db.pool import Pool
 from ara.llm.ledger import BudgetExceeded, Ledger, Scope
@@ -27,19 +28,27 @@ async def reserve(ledger: Ledger, usd: str, scope: Scope = TURN) -> int:
     )
 
 
-async def charges(pool: Pool) -> list[tuple[str, Decimal]]:
+async def rows(pool: Pool) -> list[DictRow]:
     async with pool.connection() as conn:
-        cursor = await conn.execute("SELECT status, charge_usd FROM llm_calls ORDER BY id")
-        return [(row["status"], row["charge_usd"]) for row in await cursor.fetchall()]
+        return await (await conn.execute("SELECT * FROM llm_calls ORDER BY id")).fetchall()
 
 
 async def test_a_reservation_counts_until_the_call_is_settled(pool: Pool) -> None:
     ledger = make_ledger(pool)
     call = await reserve(ledger, "0.004")
-    assert await charges(pool) == [("reserved", Decimal("0.004"))]
+    [reserved] = await rows(pool)
+    assert (reserved["status"], reserved["charge_usd"]) == ("reserved", Decimal("0.004"))
 
     await ledger.settle(call, USAGE, Decimal("0.0001"), latency_ms=900, response_id="resp_1")
-    assert await charges(pool) == [("settled", Decimal("0.0001"))]
+    [settled] = await rows(pool)
+    assert (settled["status"], settled["charge_usd"]) == ("settled", Decimal("0.0001"))
+    assert (settled["input_tokens"], settled["cached_tokens"], settled["output_tokens"]) == (
+        1_000,
+        600,
+        200,
+    )
+    assert (settled["latency_ms"], settled["response_id"]) == (900, "resp_1")
+    assert settled["settled_at"] is not None
 
 
 async def test_a_rejected_call_is_released_but_an_unknown_outcome_stays_charged(
@@ -47,9 +56,13 @@ async def test_a_rejected_call_is_released_but_an_unknown_outcome_stays_charged(
 ) -> None:
     ledger = make_ledger(pool)
     rejected, unknown = await reserve(ledger, "0.004"), await reserve(ledger, "0.004")
-    await ledger.fail(rejected, "APIStatusError(400)", released=True)
+    await ledger.fail(rejected, "BadRequestError(400)", released=True)
     await ledger.fail(unknown, "APITimeoutError()", released=False)
-    assert await charges(pool) == [("released", Decimal("0")), ("reserved", Decimal("0.004"))]
+    released, still_open = await rows(pool)
+    assert (released["status"], released["charge_usd"]) == ("released", Decimal("0"))
+    assert released["settled_at"] is not None
+    assert (still_open["status"], still_open["charge_usd"]) == ("reserved", Decimal("0.004"))
+    assert (still_open["settled_at"], still_open["error"]) == (None, "APITimeoutError()")
 
 
 async def test_turn_cap_applies_per_turn(pool: Pool) -> None:

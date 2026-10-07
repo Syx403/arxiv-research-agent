@@ -1,10 +1,9 @@
 """Prices in US$ per 1M tokens, checked 2026-10-07 (DESIGN §6.1), and the cost of a call."""
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
-CHECKED = date(2026, 10, 7)
 MILLION = Decimal(1_000_000)
 
 

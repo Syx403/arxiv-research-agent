@@ -90,14 +90,20 @@ decision gets a new entry that names the one it replaces.
   pgvector 0.8.6 and pg_search 0.26.0; BM25, pgvector (exact and HNSW) and native FTS all ran.
 - Decision: pin `paradedb/paradedb:0.26.0-pg18`. Use `USING paradedb` without `key_field`, the
   `|||` operator and `pdb.score(id)`. The v2 database runs in its own container on
-  127.0.0.1:5434 with its own volume; v1's container (port 5433) is left untouched.
+  127.0.0.1:5434 with its own volume; v1's container (port 5433) is left untouched. ParadeDB's
+  memory auto-tuning is off (`PDB_TUNE=false`), so the dev database, CI and later measurements all
+  run on stock PostgreSQL settings instead of values sized from each host's RAM.
+- Alternatives: the pgvector image with native full-text search only (no IDF, the §16 fallback);
+  ParadeDB 0.25 with the older `bm25` / `key_field` syntax.
 - Consequence: upgrading ParadeDB is a deliberate change (syntax moved between 0.25 and 0.26).
 
 ## D13 — M0 sequencing (2026-10-07)
+- Context: M0's done-criteria need only the ledger, the gateway and their tests.
 - Decision: migrations add tables in the milestone that first uses them (M0: `llm_calls`);
   `gateway.tool_loop` arrives with the researcher in M3 and fault hooks in M5, as DESIGN §14
   assigns them. v1 code and v1 documents are removed from this branch (Ewan approved); both stay
   at tag `baseline-2026-10-07`.
+- Alternatives: create every DESIGN §8 table in 0001 (one migration, but tables with no code yet).
 - Consequence: no empty placeholder modules; every module on the branch is exercised by a test.
 
 ## D14 — Prompt version = file name + content hash (2026-10-07)
@@ -105,5 +111,7 @@ decision gets a new entry that names the one it replaces.
 - Decision: the version is `<name>@<first 8 hex of sha256(text)>`, computed when the file is loaded.
   The static part of a `Prompt` is therefore one `Instructions` object (a prompt file) rather than a
   list of blocks, as first sketched in DESIGN §6.3; the output schema travels in `text.format`.
-- Consequence: a trace or ledger row always identifies the exact prompt text, and a prompt cannot
-  be built from an inline string; renaming a prompt is the only way to change its name.
+- Alternatives: a hand-written version tag in each file (goes stale when someone forgets it).
+- Consequence: every call carries a version that identifies its exact instruction text (in traces
+  and in the ledger). Product prompts are loaded from files with `Instructions.load`; the type does
+  not forbid an inline `Instructions(name, text)`, which the unit tests use.
