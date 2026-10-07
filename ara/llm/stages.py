@@ -8,15 +8,22 @@ from typing import Literal
 
 from ara.llm.prompt import Part
 
-type Provider = Literal["openai", "deepseek"]
+type Provider = Literal["openai", "deepseek", "cohere"]
 type Effort = Literal["none", "low", "medium", "high", "xhigh", "max"]
 
 LUNA, FLASH = "gpt-6-luna", "deepseek-flash"
-PROVIDERS: dict[str, Provider] = {LUNA: "openai", FLASH: "deepseek"}
+EMBEDDING_MODEL, RERANK_MODEL = "text-embedding-3-small", "rerank-v4.0-pro"
+PROVIDERS: dict[str, Provider] = {
+    LUNA: "openai",
+    FLASH: "deepseek",
+    EMBEDDING_MODEL: "openai",
+    RERANK_MODEL: "cohere",
+}
 # Efforts each provider accepts (DESIGN §16); DeepSeek maps any other value to one of these.
 EFFORTS: dict[Provider, frozenset[Effort]] = {
     "openai": frozenset({"none", "low", "medium", "high", "xhigh", "max"}),
     "deepseek": frozenset({"low", "high", "max"}),
+    "cohere": frozenset(),
 }
 
 

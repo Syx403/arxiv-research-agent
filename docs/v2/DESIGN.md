@@ -69,18 +69,19 @@ Layering rule: LangGraph owns orchestration and state only. Retrieval, scoring a
 plain functions. The LLM gateway is a thin in-house layer over the official `openai` SDK
 (DeepSeek is OpenAI-compatible). The evaluation runner is plain Python, not a graph.
 
-Package layout. A module is created in the milestone that first needs it (M0 created
-`settings.py`, `db/` and `llm/`):
+Package layout. A module is created in the milestone that first needs it (M0: `settings.py`,
+`db/`, `llm/`; M1: `tokens.py`, `rag/`, `arxiv/`, `evals/`):
 
 ```
 ara/
   settings.py   keys from .env, database URL, budget caps, tracing
+  tokens.py     cl100k token counting (chunk sizes, cost estimates)
   graph/        app.py (top-level graph), discover.py, read.py, answer.py, routing.py, state.py
-  rag/          sources.py (arxiv html/pdf, qasper), chunking.py, embed.py, search.py, rerank.py
+  rag/          sources.py (arxiv html/pdf, qasper), chunking.py, embed.py, ingest.py, search.py
   llm/          gateway.py, prompt.py, prompts/ (text files), stages.py, pricing.py, ledger.py
   memory/       store.py, extract.py
   db/           migrations/*.sql, migrate.py, pool.py
-  arxiv/        client.py
+  arxiv/        client.py (metadata, HTML/PDF fetch; search API in M3)
   api/          server.py, events.py
 ui/             React + Vite + TypeScript
 evals/          datasets/, suites/, graders/, judges/, runner.py, report.py
@@ -206,14 +207,14 @@ Indexing
   never mixed into a search.
 
 Search (scoped to the selected paper versions, or to the user's library)
-- BM25 over `chunks.search_text` with ParadeDB `pg_search` 0.26 (syntax verified at M0): one
-  ParadeDB index per table, `CREATE INDEX ... USING paradedb (id, search_text, document_id)` (no
-  `key_field` since 0.26; `document_id` is indexed so the scope filter is pushed down), queried
-  with `search_text ||| :query` and ordered by `pdb.score(id)`. The tokenizer (for example English
-  stemming, `search_text::pdb.unicode_words('stemmer=english')`) is chosen in M1 on S1. Native
-  full-text search (`ts_rank_cd`) stays available as an ablation arm (it has no IDF).
-- Dense: exact cosine scan when scoped to ≤ 3 papers (a few hundred rows, exact and fast); HNSW
-  for library-wide search (pgvector ≥ 0.8 iterative scans for filtered queries).
+- BM25 over `chunks.search_text` with ParadeDB `pg_search` 0.26: one ParadeDB index per table
+  holding `id`, `document_id` (so the scope filter is pushed down) and the text tokenised twice,
+  plain words and English stemming (alias `search_text_stemmed`, D15); queried with `|||` (any
+  query token) and ordered by `pdb.score(id)`. The product uses the stemmed field (D15). Native
+  full-text search (`ts_rank_cd`, query terms OR-ed) stays as an ablation arm (it has no IDF).
+- Dense: exact cosine scan when scoped to ≤ 3 papers (a MATERIALIZED scope keeps the planner off
+  any vector index); HNSW for library-wide search (pgvector ≥ 0.8 iterative scans for filtered
+  queries), added with library questions (M4).
 - Reciprocal rank fusion, k = 60, top 50 from each list → Cohere rerank (`rerank-v4.0-pro`,
   trial key) top 30 → top 8.
 - `select_evidence` (LLM) returns sentence ids from those chunks plus missing aspects; this merges
@@ -329,7 +330,9 @@ are not padded.
   output cap and cache breakpoints; each call site always passes the same schema (prewarm needs it
   because `text.format` is part of the cached prefix); `scope` names the evaluation run and the
   turn whose budget caps apply. `worth_prewarming(prompt, Schema, calls)` applies the §6.3 rule.
-  `gateway.tool_loop(...)` serves the researcher (added in M3).
+  `gateway.tool_loop(...)` serves the researcher (added in M3). `gateway.embed(texts)` and
+  `gateway.rerank(query, documents, top_n)` (Cohere v2 REST, calls spaced 6 s for the trial's
+  10 per minute) go through the same metering, so embeddings and reranks are in the ledger too.
 - Luna: Responses API with strict `json_schema` from the Pydantic model.
   DeepSeek: Chat Completions; tool arguments are validated by Pydantic. With tools in thinking mode
   DeepSeek requires every earlier `reasoning_content` to be sent back (HTTP 400 otherwise), which
@@ -373,7 +376,7 @@ pinned (verified at M0). One database (`ara`; unit tests use `ara_test` on the s
 | Table | Purpose / key points |
 |---|---|
 | `papers` | arXiv id, version, metadata; `source` ∈ {arxiv, qasper} |
-| `documents` | one parsed edition per (paper version, `PIPELINE_VERSION`); unique; status |
+| `documents` | one parsed edition per (paper version, `PIPELINE_VERSION`); unique; written with its chunks in one transaction, so a row means complete (D16) |
 | `chunks` | `document_id`, `ord`, `heading_path`, `text`, `search_text`, sentence offsets, `embedding vector(1536)`, `tsv` (generated) |
 | `embedding_cache` | content hash → vector |
 | `library_items` | user, paper version, status, note |
@@ -381,12 +384,12 @@ pinned (verified at M0). One database (`ara`; unit tests use `ara_test` on the s
 | `eval_runs`, `eval_results`, `labels` | evaluation outputs and Ewan's labels |
 | LangGraph tables | checkpoints, store (created by `setup()`) |
 
-Indexes: HNSW on `chunks.embedding`; the ParadeDB (BM25) index on `chunks(id, search_text,
-document_id)`; GIN on `chunks.tsv`; btree on `chunks(document_id)`, `llm_calls(turn_id)`,
+Indexes: HNSW on `chunks.embedding` (M4); the ParadeDB (BM25) index on `chunks(id, document_id,
+search_text ×2 tokenizers)`; GIN on `chunks.tsv`; btree on `chunks(document_id)`, `llm_calls(turn_id)`,
 `llm_calls(run_id)`, `eval_results(run_id)`.
 Ingestion takes a per-paper advisory lock and writes a document in one transaction.
 Migrations: numbered SQL files and a ~30-line runner. Each table arrives with the milestone that
-first uses it (M0: `llm_calls`).
+first uses it (M0: `llm_calls`; M1: corpus tables, `embedding_cache`, `eval_runs`, `eval_results`).
 
 ---
 

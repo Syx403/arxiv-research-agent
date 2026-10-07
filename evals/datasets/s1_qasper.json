@@ -1,0 +1,161 @@
+{
+  "suite": "s1",
+  "dataset": {
+    "name": "allenai/qasper",
+    "split": "validation",
+    "sha256": "089781b91c337d348dd9e8b57cc8adc100ed2d9cab84a6127402bcccf1559222"
+  },
+  "seed": 20261007,
+  "items": [
+    {
+      "id": "4c18081ae3b676cc7831403d11bc070c10120f8e",
+      "paper": "1712.00991",
+      "split": "dev"
+    },
+    {
+      "id": "61652a3da85196564401d616d251084a25ab4596",
+      "paper": "1712.00991",
+      "split": "dev"
+    },
+    {
+      "id": "e025061e199b121f2ac8f3d9637d9bf987d65cd5",
+      "paper": "1712.00991",
+      "split": "dev"
+    },
+    {
+      "id": "cf171fad0bea5ab985c53d11e48e7883c23cdc44",
+      "paper": "2001.01269",
+      "split": "dev"
+    },
+    {
+      "id": "0d34c0812f1e69ea33f76ca8c24c23b0415ebc8d",
+      "paper": "2001.01269",
+      "split": "dev"
+    },
+    {
+      "id": "81d193672090295e687bc4f4ac1b7a9c76ea35df",
+      "paper": "2001.01269",
+      "split": "dev"
+    },
+    {
+      "id": "4ef11518b40cc55d86c485f14e24732123b0d907",
+      "paper": "2001.07820",
+      "split": "dev"
+    },
+    {
+      "id": "395b61d368e8766014aa960fde0192e4196bcb85",
+      "paper": "2001.07820",
+      "split": "dev"
+    },
+    {
+      "id": "92bb41cf7bd1f7886784796a8220ed5aa07bc49b",
+      "paper": "2001.07820",
+      "split": "dev"
+    },
+    {
+      "id": "06cc8fcafc0880cf69a2514bb7341642b9833041",
+      "paper": "1809.06537",
+      "split": "dev"
+    },
+    {
+      "id": "41b70699514703820435b00efbc3aac4dd67560a",
+      "paper": "1809.06537",
+      "split": "dev"
+    },
+    {
+      "id": "d9412dda3279729e95fcb35cbed09e61577a896e",
+      "paper": "1809.06537",
+      "split": "dev"
+    },
+    {
+      "id": "2f901dab6b757e12763b23ae8b37ae2e517a2271",
+      "paper": "1611.01576",
+      "split": "test"
+    },
+    {
+      "id": "a130306c6662ff489df13fb3f8faa7cba8c52a21",
+      "paper": "1611.01576",
+      "split": "test"
+    },
+    {
+      "id": "b591853e938984e6069d738371500ebdec50d256",
+      "paper": "1611.01576",
+      "split": "test"
+    },
+    {
+      "id": "b08f88d1facefceb87e134ba2c1fa90035018e83",
+      "paper": "1806.00738",
+      "split": "test"
+    },
+    {
+      "id": "c37f65c9f0d543a35c784263b79236ccf1c44fac",
+      "paper": "1806.00738",
+      "split": "test"
+    },
+    {
+      "id": "584af673429c7f8621c6bf83362a37048daa0e5d",
+      "paper": "1806.00738",
+      "split": "test"
+    },
+    {
+      "id": "1bdc990c7e948724ab04e70867675a334fdd3051",
+      "paper": "1909.00105",
+      "split": "test"
+    },
+    {
+      "id": "9bfebf8e5bc0bacf0af96a9a951eb7b96b359faa",
+      "paper": "1909.00105",
+      "split": "test"
+    },
+    {
+      "id": "34dc0838632d643f33c8dbfe7bd4b656586582a2",
+      "paper": "1909.00105",
+      "split": "test"
+    },
+    {
+      "id": "2c7e94a65f5f532aa31d3e538dcab0468a43b264",
+      "paper": "1909.02027",
+      "split": "test"
+    },
+    {
+      "id": "27de1d499348e17fec324d0ef00361a490659988",
+      "paper": "1909.02027",
+      "split": "test"
+    },
+    {
+      "id": "cfcdd73e712caf552ba44d0aa264d8dace65a589",
+      "paper": "1909.02027",
+      "split": "test"
+    },
+    {
+      "id": "357eb9f0c07fa45e482d998a8268bd737beb827f",
+      "paper": "1910.08293",
+      "split": "test"
+    },
+    {
+      "id": "f0b1d8c0a44dbe8d444a5dbe2d9c3d51e048a6f6",
+      "paper": "1910.08293",
+      "split": "test"
+    },
+    {
+      "id": "808f0ad46ca4eb4ea5492f9e14ca043fe1e206cc",
+      "paper": "1910.08293",
+      "split": "test"
+    },
+    {
+      "id": "6844683935d0d8f588fa06530f5068bf3e1ed0c0",
+      "paper": "1908.06941",
+      "split": "test"
+    },
+    {
+      "id": "d46c0ea1ba68c649cc64d2ebb6af20202a74a3c7",
+      "paper": "1908.06941",
+      "split": "test"
+    },
+    {
+      "id": "bc4dca3e1e83f3b4bbb53a31557fc5d8971603b2",
+      "paper": "1908.06941",
+      "split": "test"
+    }
+  ]
+}

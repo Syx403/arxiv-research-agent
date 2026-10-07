@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     openai_api_key: SecretStr
     deepseek_api_key: SecretStr
+    cohere_api_key: SecretStr
     langsmith_api_key: SecretStr | None = None
     langsmith_tracing: bool = False
 

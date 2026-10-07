@@ -115,3 +115,34 @@ decision gets a new entry that names the one it replaces.
 - Consequence: every call carries a version that identifies its exact instruction text (in traces
   and in the ledger). Product prompts are loaded from files with `Instructions.load`; the type does
   not forbid an inline `Instructions(name, text)`, which the unit tests use.
+
+## D15 — BM25 tokenizer: English stemming, measured against plain words (2026-10-08, Ewan)
+- Context: DESIGN §5 left the tokenizer to M1. ParadeDB can tokenise one field twice, so both
+  variants live in one index and S1 compares them at no cost.
+- Decision: S1 keeps both arms (`bm25`, `bm25_stemmed`); the product and the RRF arm use the
+  stemmed field. In the M1 check (6 items) stemming was equal or better on every metric
+  (recall@8 1.00 vs 0.83, nDCG@10 0.64 vs 0.57), but the intervals overlap, so the choice is
+  re-checked on the full S1 round.
+- Alternatives: plain words only (exact terms; misses "eviction" for "evicting").
+- Consequence: one index carries both fields; switching is a query change, not a re-index.
+
+## D16 — M1 implementation choices (2026-10-08)
+- One chunk per paragraph (a long paragraph split at sentences, an overlong sentence by words, all
+  ≤ 400 cl100k tokens). Gold evidence in QASPER is per paragraph, so metrics are exact; the
+  heading path gives each chunk its context. Alternative: merging short paragraphs (more context,
+  but paragraph-level grading would credit unretrieved neighbours).
+- `documents` has no `status` column (DESIGN §8 listed one): a document and its chunks are written
+  in one transaction, so a row exists only when complete. A failure status comes back if M2 needs
+  to remember unreadable papers.
+- The HNSW index is deferred to M4: scoped search is an exact scan, and nothing searches the whole
+  library yet.
+- Embeddings and Cohere reranks go through the gateway and the ledger (stages `embed`, `rerank`);
+  Cohere is called over REST with a Pydantic-validated response instead of its SDK. The trial is
+  free, so reranks cost $0 in the ledger but are counted against the 1,000-calls-a-month quota.
+- S1 items: 10 QASPER validation papers × 3 questions drawn with seed 20261007 from questions whose
+  every answering annotator cites text paragraphs; the first 4 papers are dev, the rest test. Each
+  metric takes the best annotator (as QASPER's evidence score does). The manifest is committed; the
+  Parquet file stays in `data/` and is checked by sha256.
+- The runner uploads the S1 items once to a LangSmith dataset (`ara-s1-<manifest hash>`; QASPER is
+  CC BY 4.0) because `aevaluate` reads examples from a dataset. Query embeddings are batched before
+  the per-item runs, so each item costs one rerank call and no embedding request.

@@ -53,4 +53,8 @@ Read first: `docs/v2/DESIGN.md` (spec), `docs/v2/DECISIONS.md` (why), `docs/v2/P
   `docker exec ara-v2-db psql -U ara -d ara -c "SELECT run_id, count(*), sum(cost_usd) AS spent, sum(charge_usd) AS charged FROM llm_calls GROUP BY 1 ORDER BY min(created_at)"`.
 - Run a single live test module with `uv run pytest -m live <path>`; `make test-live` runs all of
   them, and each run needs its own approval when it exceeds the rule-1 threshold.
-- API server, UI and eval runner: added in M1–M5.
+- Evaluation: `uv run ara eval prepare` (QASPER into `data/datasets/qasper/`, S1 manifest), `uv run
+  ara eval plan s1 [--papers N]` (free dry run: requests and cost), `uv run ara eval run s1 --papers N
+  --execute --max-usd X` (billable, needs approval), `uv run ara eval report <run_id>` (also written
+  to `data/eval_reports/`).
+- API server and UI: added in M5.

@@ -23,6 +23,9 @@ LUNA = _rates(input="0.10", cached="0.01", cache_write="0.125", output="0.50")
 # DeepSeek has no cache-write charge: a cache miss is billed at the input rate.
 FLASH_PEAK = _rates(input="0.30", cached="0.006", cache_write="0.30", output="1.20")
 FLASH_OFF_PEAK = _rates(input="0.15", cached="0.003", cache_write="0.15", output="0.60")
+EMBEDDING = _rates(input="0.02", cached="0.02", cache_write="0.02", output="0")
+# Cohere trial keys are free but capped at 1,000 calls a month; the ledger still counts each call.
+RERANK_TRIAL = _rates(input="0", cached="0", cache_write="0", output="0")
 # DeepSeek peak: 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday. Chinese public holidays are
 # off-peak in reality; counting them as peak errs high.
 PEAK_HOURS_UTC = frozenset({1, 2, 3, 6, 7, 8, 9})
@@ -37,6 +40,10 @@ def rates(model: str, at: datetime) -> Rates:
             utc = at.astimezone(UTC)
             peak = utc.weekday() < 5 and utc.hour in PEAK_HOURS_UTC
             return FLASH_PEAK if peak else FLASH_OFF_PEAK
+        case "text-embedding-3-small":
+            return EMBEDDING
+        case "rerank-v4.0-pro":
+            return RERANK_TRIAL
     raise KeyError(f"no price for model {model!r}")
 
 

@@ -9,7 +9,7 @@ Update this file at the end of every working session: what was done, what was sp
 | Design | done (2026-10-07) | `DESIGN.md`, `DECISIONS.md`, root `CLAUDE.md` |
 | Data: PaSa query sets | done (2026-10-07) | `data/datasets/pasa/` (git-ignored, checksums in its README) |
 | M0 Foundation | done (2026-10-07), reviewed | §16 verified; §6.2–6.3 confirmed (D10, D11); 29 unit tests on real Postgres; live checks passed (cache hits on both providers; a rejected request is released) |
-| M1 RAG + S1 | not started | |
+| M1 RAG + S1 | done (2026-10-08) | sources (arXiv HTML/PDF, QASPER), chunking, cached embeddings, ingestion, BM25 ×2 / FTS / dense / RRF / rerank, eval runner + S1; S1 live on 2 papers (6 items) |
 | M2 Read + answer | not started | |
 | M3 Understand + discover | not started | |
 | M4 Memory | not started | |
@@ -25,7 +25,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-07 | M0 verification | free metadata endpoints only (model lists, key checks, balance) | 0 | 0.00 | — |
 | 2026-10-07 | M0 live check | Luna prewarm + call; DeepSeek turn + appended turn (`m0-live-20261007T125043`) | 4 | 0.0009 | Ewan (≤ 4 requests, ≤ US$0.005) |
 | 2026-10-07 | M0 review | one request rejected by OpenAI (HTTP 400), released at $0 (`m0-reject-20261007T131416`) | 1 | 0.00 | rule-1 threshold, reported |
-| | | **Total so far** | 5 | **0.0009** | |
+| 2026-10-08 | M1 live check | S1 on 2 papers × 3 questions (`s1-20261007T161240`): 3 embedding requests, 6 Cohere reranks | 9 | 0.0002 | Ewan (≈ 9 requests, ≤ US$0.002) |
+| | | **Total so far** | 14 | **0.0011** | |
 
 ## Session log
 
@@ -66,3 +67,16 @@ Update this file at the end of every working session: what was done, what was sp
   unused `pricing.CHECKED` removed; a parameter shadowing `breakpoint` renamed; ledger tests
   check stored usage; the CLAUDE.md spend query also shows `charge_usd`. Added a live check that
   a rejected request is released (1 request, HTTP 400, US$0).
+- 2026-10-08 — M1. Ewan approved `PDB_TUNE=false`, the S1 selection (seeded draw), measuring both
+  BM25 tokenizers, and the live check. Built `ara/rag` (sources: arXiv LaTeXML HTML with math as
+  LaTeX, PDF fallback, QASPER; one chunk per paragraph ≤ 400 tokens with sentence offsets;
+  content-addressed embedding cache; idempotent ingestion under a per-paper advisory lock; BM25
+  plain/stemmed, OR-ed native FTS, exact scoped dense, RRF), `ara/arxiv/client.py` (one connection,
+  3 s spacing, HTML then PDF), gateway `embed` and `rerank` (metered), migrations 0002–0003, and
+  `evals` (QASPER download + sha256, S1 manifest committed, retrieval graders, bootstrap CIs,
+  LangSmith `aevaluate` runner, markdown report, `ara eval prepare|plan|run|report`). ReAct
+  (2210.03629v3) parsed from real HTML: 65 paragraphs, 66 chunks, headings and math intact. S1 live
+  (6 items, US$0.0002): rrf_rerank best (MRR 0.69, nDCG@10 0.77), stemmed BM25 ≥ plain on every
+  metric (D15, provisional). Cohere rerank p95 latency 23 s (provider side). Deviations recorded in
+  D16 (no `documents.status`, HNSW deferred to M4). 43 unit tests. Open: Cohere monthly quota still
+  unchecked; next is M2 (read + answer).

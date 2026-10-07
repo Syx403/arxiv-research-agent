@@ -1,8 +1,9 @@
-"""The async connection pool, shared by the ledger and later by LangGraph's checkpointer."""
+"""The async connection pool, shared by the ledger, ingestion and search (and later LangGraph)."""
 
 from collections.abc import Mapping
 from typing import Any, LiteralString
 
+from pgvector.psycopg import register_vector_async
 from psycopg import AsyncConnection
 from psycopg.rows import DictRow, dict_row
 from psycopg_pool import AsyncConnectionPool
@@ -19,6 +20,7 @@ def make_pool(url: str, max_size: int = 10) -> Pool:
         open=False,
         connection_class=AsyncConnection[DictRow],
         kwargs={"autocommit": True, "row_factory": dict_row},
+        configure=register_vector_async,  # vector columns <-> numpy arrays
     )
 
 

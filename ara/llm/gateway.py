@@ -1,17 +1,19 @@
-"""LLM gateway (DESIGN §6.4): renders a prompt for its provider, meters the call in the ledger and
-traces it in LangSmith. Retries belong to the graph's RetryPolicy, so SDK retries are off."""
+"""Model gateway (DESIGN §6.4): every billable model call (LLM, embedding, rerank) passes here.
+It renders the request for its provider, meters it in the ledger and traces it in LangSmith.
+Retries belong to the graph's RetryPolicy, so SDK retries are off."""
 
+import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
-from functools import cache
+from typing import Any
 
+import httpx
 import langsmith
-import tiktoken
 from langsmith.run_trees import RunTree
 from langsmith.schemas import ExtractedUsageMetadata
 from openai import APIStatusError, AsyncOpenAI
@@ -22,17 +24,30 @@ from pydantic import BaseModel
 from ara.llm.ledger import Ledger, Scope
 from ara.llm.pricing import Rates, Usage, rates, upper_bound
 from ara.llm.prompt import Prompt, deepseek_messages, openai_input
-from ara.llm.stages import Stage
+from ara.llm.stages import EMBEDDING_MODEL, PROVIDERS, RERANK_MODEL, Stage
 from ara.settings import Settings
+from ara.tokens import count_tokens
 
 DEEPSEEK_URL = "https://api.deepseek.com"
+COHERE_URL = "https://api.cohere.com"
 ESTIMATE_MARGIN = 1.2  # providers tokenise differently from cl100k; reservations err high
 CACHE_MINIMUM = 1_024  # OpenAI caches only prefixes of at least this many tokens
 MESSAGE_OVERHEAD = 8  # tokens of role and framing per message
+RERANK_INTERVAL_S = 6.0  # Cohere trial keys allow 10 rerank calls per minute
 
 
 class InvalidOutput(Exception):
     """The provider answered, but not with what the stage needs."""
+
+
+class RerankResult(BaseModel):
+    index: int
+    relevance_score: float
+
+
+class RerankResponse(BaseModel):
+    id: str
+    results: list[RerankResult]
 
 
 class Gateway:
@@ -44,10 +59,18 @@ class Gateway:
             base_url=DEEPSEEK_URL,
             max_retries=0,
         )
+        self.cohere = httpx.AsyncClient(
+            base_url=COHERE_URL,
+            headers={"Authorization": f"Bearer {settings.cohere_api_key.get_secret_value()}"},
+            timeout=60,
+        )
+        self._rerank_slot = asyncio.Lock()
+        self._last_rerank = 0.0
 
     async def aclose(self) -> None:
         await self.openai.close()
         await self.deepseek.close()
+        await self.cohere.aclose()
 
     async def structured[T: BaseModel](
         self, stage: Stage, prompt: Prompt, schema: type[T], *, scope: Scope
@@ -70,10 +93,15 @@ class Gateway:
         self, stage: Stage, prompt: Prompt, schema: type[T], scope: Scope, *, prewarm: bool
     ) -> ParsedResponse[T]:
         messages = openai_input(prompt, stage.breakpoints)
-        input_tokens = _estimate(prompt, schema)
-        output_tokens = 0 if prewarm else stage.max_output_tokens
         async with self._metered(
-            stage, prompt, scope, messages, input_tokens, output_tokens
+            stage.name,
+            stage.model,
+            prompt.instructions.version,
+            scope,
+            inputs={"messages": messages},
+            input_tokens=_estimate(prompt, schema),
+            output_tokens=0 if prewarm else stage.max_output_tokens,
+            metadata={"effort": stage.effort, "prewarm": prewarm},
         ) as call:
             response = await self.openai.responses.parse(
                 model=stage.model,
@@ -91,7 +119,14 @@ class Gateway:
         """A DeepSeek stage in thinking mode (Chat Completions); returns the final answer."""
         messages = deepseek_messages(prompt)
         async with self._metered(
-            stage, prompt, scope, messages, _estimate(prompt), stage.max_output_tokens
+            stage.name,
+            stage.model,
+            prompt.instructions.version,
+            scope,
+            inputs={"messages": messages},
+            input_tokens=_estimate(prompt),
+            output_tokens=stage.max_output_tokens,
+            metadata={"effort": stage.effort},
         ) as call:
             response = await self.deepseek.chat.completions.create(
                 model=stage.model,
@@ -108,46 +143,100 @@ class Gateway:
             )
         return choice.message.content
 
+    async def embed(self, texts: Sequence[str], *, scope: Scope) -> list[list[float]]:
+        """One embeddings request; callers batch and cache (ara.rag.embed)."""
+        tokens = sum(count_tokens(text) for text in texts)
+        async with self._metered(
+            "embed",
+            EMBEDDING_MODEL,
+            EMBEDDING_MODEL,
+            scope,
+            inputs={"texts": len(texts), "tokens": tokens},
+            input_tokens=round(tokens * ESTIMATE_MARGIN),
+            output_tokens=0,
+        ) as call:
+            response = await self.openai.embeddings.create(model=EMBEDDING_MODEL, input=list(texts))
+            usage = Usage(response.usage.prompt_tokens, 0, 0, 0, 0)
+            await call.settle(usage, f"embed:{len(texts)}", f"{len(response.data)} vectors")
+        return [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
+
+    async def rerank(
+        self, query: str, documents: Sequence[str], *, top_n: int, scope: Scope
+    ) -> list[RerankResult]:
+        """Cohere rerank, results in descending relevance. Calls are spaced for the trial limit."""
+        async with self._rerank_slot:
+            await asyncio.sleep(max(0.0, self._last_rerank + RERANK_INTERVAL_S - time.monotonic()))
+            async with self._metered(
+                "rerank",
+                RERANK_MODEL,
+                RERANK_MODEL,
+                scope,
+                inputs={"query": query, "documents": len(documents)},
+                input_tokens=0,
+                output_tokens=0,
+            ) as call:
+                response = await self.cohere.post(
+                    "/v2/rerank",
+                    json={
+                        "model": RERANK_MODEL,
+                        "query": query,
+                        "documents": list(documents),
+                        "top_n": top_n,
+                    },
+                )
+                response.raise_for_status()
+                body = RerankResponse.model_validate_json(response.content)
+                await call.settle(Usage(0, 0, 0, 0, 0), body.id, f"{len(body.results)} results")
+            self._last_rerank = time.monotonic()
+        return body.results
+
     @asynccontextmanager
     async def _metered(
         self,
-        stage: Stage,
-        prompt: Prompt,
+        name: str,
+        model: str,
+        version: str,
         scope: Scope,
-        messages: object,
+        *,
+        inputs: Mapping[str, Any],
         input_tokens: int,
         output_tokens: int,
+        metadata: Mapping[str, Any] | None = None,
     ) -> AsyncIterator["Call"]:
         """Reserve before sending. A request the provider rejected (4xx) releases the reservation;
         any other failure keeps it, because the request may have been billed."""
-        r = rates(stage.model, datetime.now(UTC))
+        r = rates(model, datetime.now(UTC))
         call_id = await self.ledger.reserve(
-            stage=stage.name,
-            model=stage.model,
-            prompt_version=prompt.instructions.version,
+            stage=name,
+            model=model,
+            prompt_version=version,
             scope=scope,
             usd=upper_bound(input_tokens, output_tokens, r),
         )
-        metadata = {
-            "stage": stage.name,
-            "prompt_version": prompt.instructions.version,
-            "effort": stage.effort,
-            "ls_provider": stage.provider,
-            "ls_model_name": stage.model,
+        trace_metadata = {
+            "stage": name,
+            "prompt_version": version,
+            "ls_provider": PROVIDERS[model],
+            "ls_model_name": model,
             "run_id": scope.run_id,
             "turn_id": scope.turn_id,
+            **(metadata or {}),
         }
-        with langsmith.trace(
-            stage.name, "llm", inputs={"messages": messages}, metadata=metadata
-        ) as run:
+        with langsmith.trace(name, "llm", inputs=dict(inputs), metadata=trace_metadata) as run:
             try:
                 yield Call(self.ledger, call_id, r, run, time.perf_counter())
-            except APIStatusError as error:
-                await self.ledger.fail(call_id, repr(error), released=error.status_code < 500)
-                raise
             except Exception as error:
-                await self.ledger.fail(call_id, repr(error), released=False)
+                await self.ledger.fail(call_id, repr(error), released=_rejected(error))
                 raise
+
+
+def _rejected(error: Exception) -> bool:
+    """A 4xx answer means the provider refused the request before doing (and billing) any work."""
+    if isinstance(error, APIStatusError):
+        return error.status_code < 500
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code < 500
+    return False
 
 
 @dataclass(frozen=True)
@@ -209,11 +298,6 @@ def _usage_metadata(usage: Usage, cost: Decimal) -> ExtractedUsageMetadata:
     }
 
 
-@cache
-def _encoding() -> tiktoken.Encoding:
-    return tiktoken.get_encoding("cl100k_base")
-
-
 def worth_prewarming(prompt: Prompt, schema: type[BaseModel], calls: int) -> bool:
     """D11: prewarm only a fan-out of at least two calls whose shared prefix (instructions, shared
     blocks and output schema) reaches the cache minimum; otherwise the write cannot pay off."""
@@ -222,8 +306,7 @@ def worth_prewarming(prompt: Prompt, schema: type[BaseModel], calls: int) -> boo
 
 def _tokens(prompt: Prompt, schema: type[BaseModel] | None = None) -> int:
     """cl100k count of a prompt and its output schema; providers count slightly differently."""
-    text = prompt.text() + (json.dumps(schema.model_json_schema()) if schema else "")
-    return len(_encoding().encode_ordinary(text))
+    return count_tokens(prompt.text() + (json.dumps(schema.model_json_schema()) if schema else ""))
 
 
 def _estimate(prompt: Prompt, schema: type[BaseModel] | None = None) -> int:
