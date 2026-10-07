@@ -55,9 +55,10 @@ async def _report(run_id: str) -> str:
     settings = get_settings()
     migrate(settings.database_url)
     async with make_pool(settings.database_url) as pool:
-        text = await report(pool, run_id)
+        text, export = await report(pool, run_id)
     REPORTS.mkdir(parents=True, exist_ok=True)
     (REPORTS / f"{run_id}.md").write_text(text)
+    (REPORTS / f"{run_id}.jsonl").write_text(export)
     return text
 
 

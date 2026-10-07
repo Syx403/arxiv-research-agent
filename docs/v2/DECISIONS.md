@@ -156,3 +156,35 @@ decision gets a new entry that names the one it replaces.
 - Also measured: rerank is the one step with a clear gain over RRF (recall@8 +0.18, CI [+0.07,
   +0.33]; nDCG@10 +0.11, CI [+0.005, +0.23]); RRF ties dense alone.
 - Consequence: the M2 read pipeline uses stemmed BM25 + dense → RRF → rerank as designed.
+
+## D18 — M1 review: S1 reported by split and paired; D17 restated; review fixes (2026-10-08)
+- Context: the M1 review found that the S1 report pooled dev and test items (§11.1: tune on dev,
+  report on held-out) and compared arms through separate intervals rather than paired differences
+  (D6); D17's figures pool all 30 items. recall@k also counted de-duplicated paragraphs rather than
+  the top k chunks the product passes on.
+- Decision: `ara eval report` prints held-out (test, 18 items) and dev (12) separately, each with
+  paired differences (bootstrap of per-item Δ, items better/worse) for the suite's pairs. Ranks
+  count chunks; a paragraph split into several chunks counts once, at its first chunk. In the full
+  round no paragraph was split (463 chunks, 463 paragraphs), so its stored metrics are unchanged.
+- Restated from the regenerated report (`docs/v2/eval/s1-20261007T162246.md`):
+  - Tokenizer, chosen on dev: stemmed − plain recall@8 +0.083 [+0.000, +0.250], 1 better / 0
+    worse; MRR −0.014 (2/4); nDCG@10 +0.018 (3/3). Held-out agrees: recall@8 +0.028 (1/0), MRR
+    +0.077 [−0.027, +0.208] (5/5). Stemming stays (it never lost top-8 recall in either split), but
+    the evidence is two items and no effect on ordering is shown.
+  - Rerank: on dev a clear gain over RRF (MRR +0.225 [+0.081, +0.397], nDCG@10 +0.193 [+0.062,
+    +0.337]); on held-out only top-8 recall improved (+0.139 [+0.000, +0.306], 3/0, reaching 1.00),
+    with no ordering gain (MRR −0.004 [−0.178, +0.189], nDCG@10 +0.060 [−0.090, +0.229]). D17's
+    ordering gain holds on dev only.
+  - Held-out first stage: dense alone is the strongest arm (MRR 0.69, recall@8 0.86); RRF ties it
+    and beats stemmed BM25 (MRR +0.132 [+0.038, +0.248], 9/0).
+- Other review fixes: every provider client gets a 120 s request timeout instead of the SDK's
+  600 s (a backstop for callers outside the graph; long enough for 8K DeepSeek thinking tokens;
+  node timeouts stay as §4.4 in M5). The S1 LangSmith dataset is named by a hash of its examples,
+  gold references included, instead of the manifest hash (D16), so a change in gold derivation
+  cannot grade against stale references. The PDF fallback regroups pypdf's lines into paragraphs
+  (a sentence-final line well short of full width ends one; running headers, page numbers and
+  undecodable text dropped); before, a whole PDF became one paragraph (checked on 2210.03629v3:
+  1 → 449 paragraphs).
+- Alternatives: keep pooled figures (larger n, but choices and reported numbers on the same items).
+- Consequence: the M2 pipeline is unchanged (stemmed BM25 + dense → RRF → rerank → top 8), on the
+  strength of top-8 recall; whether rerank's ordering gain is real is re-measured in S2.

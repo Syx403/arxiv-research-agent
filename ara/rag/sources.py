@@ -2,6 +2,7 @@
 Each source yields a ParsedPaper: metadata plus paragraphs in reading order with heading paths."""
 
 import re
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
@@ -11,6 +12,8 @@ from bs4 import BeautifulSoup, Tag
 from pypdf import PdfReader
 
 SEPARATOR = " › "
+PARAGRAPH_END = 0.9  # a sentence-final line shorter than this share of a full line ends a paragraph
+UNDECODED = re.compile(r"[\x00-\x08\x0b-\x1f]")
 
 
 @dataclass(frozen=True)
@@ -105,11 +108,10 @@ def arxiv_pdf_paper(
     pdf: bytes, arxiv_id: str, version: int, *, title: str, abstract: str
 ) -> ParsedPaper:
     """The fallback when a version has no HTML. PDFs carry no section tree, so every paragraph sits
-    under the title; paragraphs are blocks of text separated by blank lines."""
-    text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
-    blocks = [_clean(block) for block in re.split(r"\n\s*\n", text)]
+    under the title; paragraphs are recovered from the line layout (`_pdf_paragraphs`)."""
+    pages = [(page.extract_text() or "").splitlines() for page in PdfReader(BytesIO(pdf)).pages]
     paragraphs = [Paragraph(f"{title}{SEPARATOR}Abstract", abstract)] if abstract else []
-    paragraphs += [Paragraph(title, block) for block in blocks if block]
+    paragraphs += [Paragraph(title, text) for text in _pdf_paragraphs(pages)]
     if len(paragraphs) <= 1:
         raise ValueError(f"{arxiv_id}v{version}: no text could be extracted from the PDF")
     return ParsedPaper(
@@ -122,6 +124,33 @@ def arxiv_pdf_paper(
         format="pdf",
         paragraphs=tuple(paragraphs),
     )
+
+
+def _pdf_paragraphs(pages: list[list[str]]) -> list[str]:
+    """pypdf yields lines with no blank line between paragraphs. A paragraph ends at a line that
+    ends a sentence well short of the full line width. Running headers (a line on most pages), page
+    numbers and undecodable text (control characters, from fonts without a Unicode map) are dropped;
+    a line ending in a hyphen joins the next without a space."""
+    seen = Counter(line.strip() for lines in pages for line in set(lines))
+    lines = [
+        line
+        for page in pages
+        for line in map(str.strip, page)
+        if line
+        and not line.isdigit()
+        and seen[line] <= max(2, len(pages) // 2)
+        and not UNDECODED.search(line)
+    ]
+    if not lines:
+        return []
+    full = sorted(map(len, lines))[int(0.9 * (len(lines) - 1))]
+    paragraphs, current = [], ""
+    for line in lines:
+        current = current + line if current.endswith("-") else f"{current} {line}".lstrip()
+        if line.endswith((".", "!", "?")) and len(line) < PARAGRAPH_END * full:
+            paragraphs.append(current)
+            current = ""
+    return [_clean(text) for text in [*paragraphs, current] if text]
 
 
 def _text(node: object) -> str:

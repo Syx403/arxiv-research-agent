@@ -11,17 +11,18 @@ from ara.rag.embed import Vector
 POOL = 50  # candidates taken from each list before fusion
 RRF_K = 60
 
-# `|||` matches any query token, tokenised like the field; pdb.score is the BM25 score.
+# `|||` matches any query token, tokenised like the field; pdb.score is the BM25 score. Every
+# ranking breaks ties by id, so a run is reproducible.
 BM25_PLAIN = """
 SELECT id FROM chunks
 WHERE search_text ||| %(query)s AND document_id = ANY(%(documents)s)
-ORDER BY pdb.score(id) DESC LIMIT %(limit)s
+ORDER BY pdb.score(id) DESC, id LIMIT %(limit)s
 """
 BM25_STEMMED = """
 SELECT id FROM chunks
 WHERE search_text::pdb.alias('search_text_stemmed') ||| %(query)s
   AND document_id = ANY(%(documents)s)
-ORDER BY pdb.score(id) DESC LIMIT %(limit)s
+ORDER BY pdb.score(id) DESC, id LIMIT %(limit)s
 """
 # plainto_tsquery joins the terms with AND; turning them into OR matches BM25's any-token query.
 FTS = """

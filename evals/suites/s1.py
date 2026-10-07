@@ -20,6 +20,14 @@ from evals import qasper
 MANIFEST = Path(__file__).parents[1] / "datasets" / "s1_qasper.json"
 SEED, PAPERS, PER_PAPER, DEV_PAPERS = 20261007, 10, 3, 4
 ARMS = ("bm25", "bm25_stemmed", "fts", "dense", "rrf", "rrf_rerank")
+# Paired comparisons in the report, (a, b) read as a - b: the tokenizer (D15), fusion against each
+# of its inputs, and what reranking adds.
+PAIRS = (
+    ("bm25_stemmed", "bm25"),
+    ("rrf", "bm25_stemmed"),
+    ("rrf", "dense"),
+    ("rrf_rerank", "rrf"),
+)
 RERANK_POOL = 30  # RRF candidates sent to the reranker
 
 
@@ -50,6 +58,11 @@ def build_manifest() -> dict[str, Any]:
 
 def manifest_hash() -> str:
     return sha256(MANIFEST.read_bytes()).hexdigest()[:12]
+
+
+def splits() -> dict[str, str]:
+    """Item id → "dev" or "test", from the committed manifest."""
+    return {e["id"]: e["split"] for e in json.loads(MANIFEST.read_text())["items"]}
 
 
 def load(papers: int | None = None) -> tuple[list[Item], dict[str, ParsedPaper]]:
@@ -100,7 +113,7 @@ class S1:
                 self.chunks[row["id"]] = ChunkInfo(row["paragraph"], row["search_text"])
 
     async def rankings(self, item: Item) -> dict[str, list[int]]:
-        """Each arm's ranking of the paper's paragraphs, best first."""
+        """Each arm's ranking: the source paragraph of each retrieved chunk, best first."""
         documents = [self.documents[item.paper]]
         [vector] = await self._embed([item.question])
         async with self.pool.connection() as conn:
@@ -123,7 +136,7 @@ class S1:
         return {arm: self._paragraphs(chunk_lists[arm]) for arm in ARMS}
 
     def _paragraphs(self, chunk_ids: Sequence[int]) -> list[int]:
-        return list(dict.fromkeys(self.chunks[c].paragraph for c in chunk_ids))
+        return [self.chunks[c].paragraph for c in chunk_ids]
 
     async def _embed(self, texts: list[str]) -> list[Vector]:
         return await embed(texts, pool=self.pool, gateway=self.gateway, scope=self.scope)

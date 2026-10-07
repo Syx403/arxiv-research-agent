@@ -34,6 +34,10 @@ ESTIMATE_MARGIN = 1.2  # providers tokenise differently from cl100k; reservation
 CACHE_MINIMUM = 1_024  # OpenAI caches only prefixes of at least this many tokens
 MESSAGE_OVERHEAD = 8  # tokens of role and framing per message
 RERANK_INTERVAL_S = 6.0  # Cohere trial keys allow 10 rerank calls per minute
+# Backstop for one HTTP request to any provider, instead of the SDK's 600 s. It must outlast the
+# slowest legitimate call (8K thinking tokens on DeepSeek); callers outside the graph, such as the
+# eval runner, rely on it, and graph nodes add their own, tighter timeouts in M5 (§4.4).
+REQUEST_TIMEOUT_S = 120.0
 
 
 class InvalidOutput(Exception):
@@ -53,16 +57,21 @@ class RerankResponse(BaseModel):
 class Gateway:
     def __init__(self, settings: Settings, ledger: Ledger) -> None:
         self.ledger = ledger
-        self.openai = AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value(), max_retries=0)
+        self.openai = AsyncOpenAI(
+            api_key=settings.openai_api_key.get_secret_value(),
+            max_retries=0,
+            timeout=REQUEST_TIMEOUT_S,
+        )
         self.deepseek = AsyncOpenAI(
             api_key=settings.deepseek_api_key.get_secret_value(),
             base_url=DEEPSEEK_URL,
             max_retries=0,
+            timeout=REQUEST_TIMEOUT_S,
         )
         self.cohere = httpx.AsyncClient(
             base_url=COHERE_URL,
             headers={"Authorization": f"Bearer {settings.cohere_api_key.get_secret_value()}"},
-            timeout=60,
+            timeout=REQUEST_TIMEOUT_S,
         )
         self._rerank_slot = asyncio.Lock()
         self._last_rerank = 0.0
@@ -166,28 +175,35 @@ class Gateway:
         """Cohere rerank, results in descending relevance. Calls are spaced for the trial limit."""
         async with self._rerank_slot:
             await asyncio.sleep(max(0.0, self._last_rerank + RERANK_INTERVAL_S - time.monotonic()))
-            async with self._metered(
-                "rerank",
-                RERANK_MODEL,
-                RERANK_MODEL,
-                scope,
-                inputs={"query": query, "documents": len(documents)},
-                input_tokens=0,
-                output_tokens=0,
-            ) as call:
-                response = await self.cohere.post(
-                    "/v2/rerank",
-                    json={
-                        "model": RERANK_MODEL,
-                        "query": query,
-                        "documents": list(documents),
-                        "top_n": top_n,
-                    },
-                )
-                response.raise_for_status()
-                body = RerankResponse.model_validate_json(response.content)
-                await call.settle(Usage(0, 0, 0, 0, 0), body.id, f"{len(body.results)} results")
-            self._last_rerank = time.monotonic()
+            try:
+                return await self._rerank(query, documents, top_n, scope)
+            finally:  # a failed call counts against the rate limit too
+                self._last_rerank = time.monotonic()
+
+    async def _rerank(
+        self, query: str, documents: Sequence[str], top_n: int, scope: Scope
+    ) -> list[RerankResult]:
+        async with self._metered(
+            "rerank",
+            RERANK_MODEL,
+            RERANK_MODEL,
+            scope,
+            inputs={"query": query, "documents": len(documents)},
+            input_tokens=0,
+            output_tokens=0,
+        ) as call:
+            response = await self.cohere.post(
+                "/v2/rerank",
+                json={
+                    "model": RERANK_MODEL,
+                    "query": query,
+                    "documents": list(documents),
+                    "top_n": top_n,
+                },
+            )
+            response.raise_for_status()
+            body = RerankResponse.model_validate_json(response.content)
+            await call.settle(Usage(0, 0, 0, 0, 0), body.id, f"{len(body.results)} results")
         return body.results
 
     @asynccontextmanager

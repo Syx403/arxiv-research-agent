@@ -78,7 +78,8 @@ Update this file at the end of every working session: what was done, what was sp
   LangSmith `aevaluate` runner, markdown report, `ara eval prepare|plan|run|report`). ReAct
   (2210.03629v3) parsed from real HTML: 65 paragraphs, 66 chunks, headings and math intact. S1 live
   (6 items, US$0.0002): rrf_rerank best (MRR 0.69, nDCG@10 0.77), stemmed BM25 ≥ plain on every
-  metric (D15, provisional). Cohere rerank p95 latency 23 s (provider side). Deviations recorded in
+  metric (D15, provisional). Cohere rerank p95 latency 23 s (corrected in the M1 review: one cold call
+  of 27.8 s among 6; the full round's p50 / p95 are 0.5 s / 1.9 s). Deviations recorded in
   D16 (no `documents.status`, HNSW deferred to M4). 43 unit tests. Open: Cohere monthly quota still
   unchecked; next is M2 (read + answer).
 - 2026-10-08 — S1 full round (`s1-20261007T162246`, 30 items, 0 failed, US$0.00086). rrf_rerank
@@ -86,3 +87,15 @@ Update this file at the end of every working session: what was done, what was sp
   0.55; plain BM25 0.51. Paired: stemming never loses top-8 recall but is neutral on ordering;
   rerank is the only clear gain; RRF ties dense. D15 confirmed as D17. Report and paired table in
   `docs/v2/eval/`. Cohere: Ewan reports the trial quota unused this month (1,000 calls); 36 used.
+- 2026-10-08 — M1 strict review (严格审核), then fixes approved by Ewan. Fixed: the S1 report
+  pooled dev and test and had no paired comparison (now split, paired bootstrap Δ with items
+  better/worse; D17 restated as D18: the tokenizer choice holds on dev and held-out, rerank's
+  ordering gain holds on dev only, dense is the strongest single arm on held-out); the request
+  timeout promised in the M0 review (120 s on all provider clients); rerank spacing skipped after a
+  failed call; the LangSmith dataset could keep stale gold (now named by an examples hash); the
+  dry-run plan matched papers by arXiv id across sources; BM25 had no tie-break; results were
+  written only after the whole run (now per item); the PDF fallback made one paragraph per paper
+  (now line-based paragraphs, checked on 2210.03629v3); recall@k counted paragraphs, not chunks;
+  the 23 s rerank latency claim; DESIGN §3, §10, §11.5, §17 (embedding price and limits, Cohere v2
+  rerank, checked 2026-10-08); JSONL export added. 47 unit tests. No billable calls (the arXiv
+  PDF fetch is free). The Cohere quota is resolved (Ewan: unused this month before M1).

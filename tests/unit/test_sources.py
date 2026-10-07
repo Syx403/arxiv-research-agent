@@ -1,6 +1,6 @@
 from typing import Any
 
-from ara.rag.sources import arxiv_html_paper, qasper_paper
+from ara.rag.sources import _pdf_paragraphs, arxiv_html_paper, qasper_paper
 
 HTML = """
 <html><body><article class="ltx_document">
@@ -57,4 +57,18 @@ def test_qasper_keeps_paragraphs_verbatim_with_subsection_paths() -> None:
         ("Cross-lingual Transfer › Introduction", "First paragraph."),
         ("Cross-lingual Transfer › Approach › Pre-training", "Second."),
         ("Cross-lingual Transfer", "Orphan."),
+    ]
+
+
+def test_pdf_lines_regroup_into_paragraphs() -> None:
+    header, full = "Published at ICLR", "x" * 60
+    pages = [
+        [header, f"{full} chain-of-", "thought is", f"{full} end.", "Short last line.", "1"],
+        [header, "\x14\x03garbled figure text", f"{full} goes on", "and ends here.", "2"],
+        [header, "Final words.", "3"],
+    ]
+    assert _pdf_paragraphs(pages) == [
+        f"{full} chain-of-thought is {full} end. Short last line.",
+        f"{full} goes on and ends here.",
+        "Final words.",
     ]

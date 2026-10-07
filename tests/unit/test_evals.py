@@ -4,7 +4,7 @@ import pytest
 
 from evals.graders.retrieval import ndcg_at, recall_at, reciprocal_rank, score
 from evals.qasper import questions, select
-from evals.stats import mean_ci
+from evals.stats import mean_ci, paired
 
 
 def test_retrieval_metrics() -> None:
@@ -14,6 +14,18 @@ def test_retrieval_metrics() -> None:
     assert reciprocal_rank(ranking, {7}) == 0.0
     assert ndcg_at([2, 5], {2}, 10) == 1.0
     assert ndcg_at([5, 2], {2}, 10) == pytest.approx(1 / 1.5849625)
+
+
+def test_a_paragraph_split_into_chunks_counts_once_at_its_first_chunk() -> None:
+    ranking = [4, 4, 2]  # paragraph 4 was split into two chunks
+    assert recall_at(ranking, {2}, 2) == 0.0  # k counts chunks
+    assert ndcg_at(ranking, {4}, 10) == 1.0
+
+
+def test_paired_difference_counts_items() -> None:
+    d = paired([1.0, 0.5, 1.0, 0.0], [1.0, 0.0, 0.5, 0.5])
+    assert (d.mean, d.better, d.worse) == (0.125, 2, 1)
+    assert d.low <= d.mean <= d.high
 
 
 def test_score_takes_the_best_annotator() -> None:

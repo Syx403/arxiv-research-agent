@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from hashlib import sha256
 from typing import Any
 
 from langsmith import Client
@@ -12,7 +13,7 @@ from langsmith.evaluation import aevaluate
 from langsmith.schemas import Example
 
 from ara.db.migrate import migrate
-from ara.db.pool import Pool, make_pool
+from ara.db.pool import Connection, Pool, make_pool
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
 from ara.llm.pricing import EMBEDDING, MILLION
@@ -51,12 +52,10 @@ async def plan(pool: Pool, items: list[Item], papers: dict[str, ParsedPaper]) ->
     """What a run would send, from the local database alone: no API calls."""
     async with pool.connection() as conn:
         cursor = await conn.execute(
-            "SELECT p.arxiv_id FROM documents d JOIN papers p ON p.id = d.paper_id"
-            " WHERE d.pipeline_version = %s",
-            (PIPELINE_VERSION,),
+            "SELECT paper_id FROM documents WHERE pipeline_version = %s", (PIPELINE_VERSION,)
         )
-        ingested = {row["arxiv_id"] for row in await cursor.fetchall()}
-        new = [paper for arxiv_id, paper in papers.items() if arxiv_id not in ingested]
+        ingested = {row["paper_id"] for row in await cursor.fetchall()}
+        new = [paper for paper in papers.values() if paper.id not in ingested]
         texts = {c.search_text for p in new for c in chunk(p.paragraphs)}
         texts |= {item.question for item in items}
         cursor = await conn.execute(
@@ -127,7 +126,15 @@ async def _evaluate(
         by_id = {item.id: item for item in items}
 
         async def target(inputs: dict[str, Any]) -> dict[str, Any]:
-            return {"rankings": await suite.rankings(by_id[inputs["item_id"]])}
+            """Rank, then store this item's results at once, so an interrupted run keeps them."""
+            item = by_id[inputs["item_id"]]
+            rankings = await suite.rankings(item)
+            async with pool.connection() as conn:
+                for arm, ranking in rankings.items():
+                    await _store(
+                        conn, run_id, item.id, arm, score(ranking, item.references), ranking
+                    )
+            return {"rankings": rankings}
 
         def grade(outputs: dict[str, Any], reference_outputs: dict[str, Any]) -> dict[str, Any]:
             references = [set(gold) for gold in reference_outputs["references"]]
@@ -139,12 +146,13 @@ async def _evaluate(
                 ]
             }
 
+        dataset = _dataset(client)
         results = await aevaluate(
             target,
-            data=_examples(client, set(by_id)),
+            data=[e for e in client.list_examples(dataset_name=dataset) if _item(e) in by_id],
             evaluators=[grade],
             experiment_prefix=run_id,
-            metadata=config,
+            metadata={**config, "dataset": dataset},
             max_concurrency=1,
             client=client,
         )
@@ -155,44 +163,54 @@ async def _evaluate(
                 (results.experiment_name, run_id),
             )
             async for row in results:
-                item = by_id[(row["example"].inputs or {})["item_id"]]
-                outputs, error = row["run"].outputs or {}, row["run"].error
-                failed += error is not None
-                for arm in s1.ARMS:
-                    ranking = outputs.get("rankings", {}).get(arm, [])
-                    metrics = score(ranking, item.references) if error is None else {}
-                    await conn.execute(
-                        "INSERT INTO eval_results (run_id, item_id, arm, metrics, output, error)"
-                        " VALUES (%s, %s, %s, %s, %s, %s)",
-                        (run_id, item.id, arm, json.dumps(metrics), json.dumps(ranking), error),
-                    )
+                if (error := row["run"].error) is not None:
+                    failed += 1
+                    for arm in s1.ARMS:
+                        await _store(conn, run_id, _item(row["example"]), arm, {}, [], error)
         return "partial" if failed else "complete"
     finally:
         await gateway.aclose()
 
 
-def _examples(client: Client, wanted: set[str]) -> list[Example]:
-    """The suite's LangSmith dataset, created once per manifest version (QASPER is CC BY 4.0)."""
-    name = f"ara-s1-{s1.manifest_hash()}"
-    if not client.has_dataset(dataset_name=name):
-        items, _ = s1.load()
-        dataset = client.create_dataset(name, description="ARA S1 retrieval: QASPER validation")
-        client.create_examples(
-            dataset_id=dataset.id,
-            examples=[
-                {
-                    "inputs": {"item_id": i.id, "paper": i.paper, "question": i.question},
-                    "outputs": {"references": [sorted(gold) for gold in i.references]},
-                    "metadata": {"split": i.split},
-                }
-                for i in items
-            ],
-        )
-    return [
-        e
-        for e in client.list_examples(dataset_name=name)
-        if (e.inputs or {}).get("item_id") in wanted
+def _dataset(client: Client) -> str:
+    """The suite's LangSmith dataset (QASPER is CC BY 4.0). Its name hashes the examples
+    themselves, gold references included, so a change to how gold is derived makes a new dataset
+    instead of grading against stale references."""
+    items, _ = s1.load()
+    examples = [
+        {
+            "inputs": {"item_id": i.id, "paper": i.paper, "question": i.question},
+            "outputs": {"references": [sorted(gold) for gold in i.references]},
+            "metadata": {"split": i.split},
+        }
+        for i in items
     ]
+    digest = sha256(json.dumps(examples, sort_keys=True).encode()).hexdigest()[:12]
+    name = f"ara-s1-{digest}"
+    if not client.has_dataset(dataset_name=name):
+        dataset = client.create_dataset(name, description="ARA S1 retrieval: QASPER validation")
+        client.create_examples(dataset_id=dataset.id, examples=examples)
+    return name
+
+
+def _item(example: Example) -> str:
+    return str((example.inputs or {})["item_id"])
+
+
+async def _store(
+    conn: Connection,
+    run_id: str,
+    item_id: str,
+    arm: str,
+    metrics: dict[str, float],
+    ranking: list[int],
+    error: str | None = None,
+) -> None:
+    await conn.execute(
+        "INSERT INTO eval_results (run_id, item_id, arm, metrics, output, error)"
+        " VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+        (run_id, item_id, arm, json.dumps(metrics), json.dumps(ranking), error),
+    )
 
 
 async def _start(pool: Pool, run_id: str, config: dict[str, Any]) -> None:

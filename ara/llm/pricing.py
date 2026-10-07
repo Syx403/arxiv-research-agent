@@ -23,6 +23,7 @@ LUNA = _rates(input="0.10", cached="0.01", cache_write="0.125", output="0.50")
 # DeepSeek has no cache-write charge: a cache miss is billed at the input rate.
 FLASH_PEAK = _rates(input="0.30", cached="0.006", cache_write="0.30", output="1.20")
 FLASH_OFF_PEAK = _rates(input="0.15", cached="0.003", cache_write="0.15", output="0.60")
+# text-embedding-3-small, checked 2026-10-08 (DESIGN §17); embeddings have no cache.
 EMBEDDING = _rates(input="0.02", cached="0.02", cache_write="0.02", output="0")
 # Cohere trial keys are free but capped at 1,000 calls a month; the ledger still counts each call.
 RERANK_TRIAL = _rates(input="0", cached="0", cache_write="0", output="0")

@@ -84,7 +84,8 @@ ara/
   arxiv/        client.py (metadata, HTML/PDF fetch; search API in M3)
   api/          server.py, events.py
 ui/             React + Vite + TypeScript
-evals/          datasets/, suites/, graders/, judges/, runner.py, report.py
+evals/          datasets/, suites/, graders/, judges/, qasper.py, stats.py, runner.py, report.py,
+                cli.py (`ara eval`)
 tests/          unit (deterministic code, real Postgres) and live (opt-in, small)
 docs/v2/        DESIGN.md, DECISIONS.md, PROGRESS.md
 ```
@@ -428,7 +429,9 @@ pre-ingested papers so a live demo turn stays short.
 - LangSmith tracing for graph runs and gateway calls (project `ara-v2`); metadata on every LLM
   span: stage, model, prompt version, cached / written / uncached tokens, cost.
 - Free plan: 5k traces per month, 14-day retention. Evaluation results are therefore stored
-  locally (Postgres + JSONL export); LangSmith is for inspection and experiment comparison.
+  locally (Postgres, plus a JSONL export and a markdown report per run in `data/eval_reports/`;
+  reports cited by a decision are copied to `docs/v2/eval/`); LangSmith is for inspection and
+  experiment comparison.
 
 ---
 
@@ -475,7 +478,8 @@ labels. Search uses the query's `published_time` as the date cutoff.
 - `ara eval plan <suites>`: dry run; prints item counts, expected requests and estimated cost.
 - `ara eval run <suites> --execute --max-usd 1.0`: runs through LangSmith `aevaluate`, writes
   `eval_runs` / `eval_results`, stops at the cap and reports what was not run.
-- `ara eval report <run>`: markdown report + the UI evaluation page.
+- `ara eval report <run>`: markdown report (held-out and dev items separately, each with paired
+  differences between arms, D18) + JSONL export + the UI evaluation page.
 - Datasets: manifests (item ids, seed, source hash) are committed under `evals/datasets/`;
   raw data stays in git-ignored `data/datasets/` (PaSa is gated, CC BY-NC-SA 4.0; QASPER is
   CC BY 4.0).
@@ -600,6 +604,13 @@ testing starts only after the architecture review.
   https://info.arxiv.org/help/api/tou.html
 - Cohere rerank trial: 10 calls per minute; trial keys 1,000 calls per month.
   https://docs.cohere.com/docs/rate-limits
+- Cohere rerank v2 (checked 2026-10-08): `POST /v2/rerank` with `model`, `query`, `documents`
+  (strings), optional `top_n`; results carry `index` and `relevance_score`.
+  https://docs.cohere.com/reference/rerank
+- text-embedding-3-small (checked 2026-10-08): $0.02 per 1M input tokens; one request takes at most
+  2,048 inputs, 8,192 tokens each and 300,000 tokens in total.
+  https://developers.openai.com/api/docs/models/text-embedding-3-small,
+  https://developers.openai.com/api/docs/api-reference/embeddings/create
 - LangSmith Developer plan: 5k traces per month, 14-day retention.
   https://www.zenml.io/blog/langsmith-pricing
 - QASPER (CC BY 4.0; arXiv ids; paragraph and sentence evidence).
