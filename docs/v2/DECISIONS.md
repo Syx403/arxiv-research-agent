@@ -146,3 +146,13 @@ decision gets a new entry that names the one it replaces.
 - The runner uploads the S1 items once to a LangSmith dataset (`ara-s1-<manifest hash>`; QASPER is
   CC BY 4.0) because `aevaluate` reads examples from a dataset. Query embeddings are batched before
   the per-item runs, so each item costs one rerank call and no embedding request.
+
+## D17 — D15 confirmed by the full S1 round (2026-10-08, Ewan approved the run)
+- Context: D15 chose stemmed BM25 on 6 items. The full S1 round (`s1-20261007T162246`, 30 items,
+  US$0.00086) gives paired differences, recorded in `docs/v2/eval/s1-20261007T162246.md`.
+- Decision: keep English stemming. Against plain words it never lost top-8 recall (+0.05,
+  CI [+0.00, +0.13], 2 better / 0 worse) and was neutral on ordering (MRR and nDCG@10 CIs include
+  0). The top 8 is what reranking and evidence selection receive, so recall is the deciding metric.
+- Also measured: rerank is the one step with a clear gain over RRF (recall@8 +0.18, CI [+0.07,
+  +0.33]; nDCG@10 +0.11, CI [+0.005, +0.23]); RRF ties dense alone.
+- Consequence: the M2 read pipeline uses stemmed BM25 + dense → RRF → rerank as designed.

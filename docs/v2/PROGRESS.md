@@ -26,7 +26,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-07 | M0 live check | Luna prewarm + call; DeepSeek turn + appended turn (`m0-live-20261007T125043`) | 4 | 0.0009 | Ewan (≤ 4 requests, ≤ US$0.005) |
 | 2026-10-07 | M0 review | one request rejected by OpenAI (HTTP 400), released at $0 (`m0-reject-20261007T131416`) | 1 | 0.00 | rule-1 threshold, reported |
 | 2026-10-08 | M1 live check | S1 on 2 papers × 3 questions (`s1-20261007T161240`): 3 embedding requests, 6 Cohere reranks | 9 | 0.0002 | Ewan (≈ 9 requests, ≤ US$0.002) |
-| | | **Total so far** | 14 | **0.0011** | |
+| 2026-10-08 | S1 full round | 10 papers × 3 questions (`s1-20261007T162246`): 9 embedding requests, 30 reranks | 39 | 0.0009 | Ewan |
+| | | **Total so far** | 53 | **0.0020** | |
 
 ## Session log
 
@@ -80,3 +81,8 @@ Update this file at the end of every working session: what was done, what was sp
   metric (D15, provisional). Cohere rerank p95 latency 23 s (provider side). Deviations recorded in
   D16 (no `documents.status`, HNSW deferred to M4). 43 unit tests. Open: Cohere monthly quota still
   unchecked; next is M2 (read + answer).
+- 2026-10-08 — S1 full round (`s1-20261007T162246`, 30 items, 0 failed, US$0.00086). rrf_rerank
+  recall@8 1.00, MRR 0.71 [0.60, 0.82], nDCG@10 0.79 [0.70, 0.87]; dense MRR 0.61; stemmed BM25
+  0.55; plain BM25 0.51. Paired: stemming never loses top-8 recall but is neutral on ordering;
+  rerank is the only clear gain; RRF ties dense. D15 confirmed as D17. Report and paired table in
+  `docs/v2/eval/`. Cohere: Ewan reports the trial quota unused this month (1,000 calls); 36 used.
