@@ -1,53 +1,37 @@
-.PHONY: install fmt lint test test-unit start demo ask ingest ui db-up db-init db-down db-reset
+.PHONY: install db-up db-down migrate fmt lint typecheck test check test-live
 
-PORT ?= 8000
-COMPOSE = docker compose $(if $(wildcard .env),--env-file .env) -f docker/docker-compose.yml
+COMPOSE = docker compose -f docker/compose.yml
 
 install:
 	uv sync --locked
 
-fmt:
-	uv run ruff format src tests scripts
-
-lint:
-	uv run ruff check src tests scripts
-
-test:
-	uv run pytest -q
-
-test-unit:
-	uv run pytest tests/unit -q
-
-# Local browser demo: preserve the database volume and run migrations before serving.
-start:
-	$(MAKE) install
-	$(MAKE) db-up
-	$(MAKE) db-init
-	$(MAKE) ui
-
-# The remote repository's credential-free example remains explicitly offline.
-demo:
-	uv run python -m src.cli --example
-
-ask:
-	uv run python -m src.cli $(ARGS)
-
+# PostgreSQL 18 + pgvector + pg_search on 127.0.0.1:5434 (databases `ara` and `ara_test`).
 db-up:
-	$(COMPOSE) up -d --wait --wait-timeout 60
-
-db-init:
-	uv run python -m scripts.bootstrap_db
+	$(COMPOSE) up -d --wait
 
 db-down:
 	$(COMPOSE) down
 
-db-reset:
-	$(COMPOSE) down -v
-	$(MAKE) db-up
-	$(MAKE) db-init
+migrate:
+	uv run python -m ara.db.migrate
 
-ingest:
-	uv run python scripts/ingest_seed_corpus.py
+fmt:
+	uv run ruff format .
+	uv run ruff check --fix .
 
-ui:
-	uv run uvicorn src.ui.app:app --host 127.0.0.1 --port $(PORT)
+lint:
+	uv run ruff format --check .
+	uv run ruff check .
+
+typecheck:
+	uv run mypy
+
+# Unit tests: deterministic code against the real `ara_test` database (needs `make db-up`).
+test:
+	uv run pytest
+
+check: lint typecheck test
+
+# Billable: real model calls, recorded in the ledger. Needs approval (CLAUDE.md rule 1).
+test-live:
+	uv run pytest -m live -v

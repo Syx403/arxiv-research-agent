@@ -1,0 +1,27 @@
+# ARA v2 database: PostgreSQL 18 + pgvector + pg_search (DECISIONS D12).
+# Local development only: fixed credentials, bound to 127.0.0.1.
+name: ara-v2
+
+services:
+  db:
+    image: paradedb/paradedb:0.26.0-pg18
+    container_name: ara-v2-db
+    environment:
+      POSTGRES_USER: ara
+      POSTGRES_PASSWORD: ara
+      POSTGRES_DB: ara
+      PDB_TUNE: "false"  # keep Postgres defaults instead of sizing memory from the host
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./initdb/20_ara_test.sql:/docker-entrypoint-initdb.d/20_ara_test.sql:ro
+    healthcheck:
+      # Over TCP: during first-run initialisation Postgres listens only on its socket.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ara -d ara"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:

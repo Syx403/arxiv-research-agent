@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: [v2]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: paradedb/paradedb:0.26.0-pg18
+        env:
+          POSTGRES_USER: ara
+          POSTGRES_PASSWORD: ara
+          POSTGRES_DB: ara_test
+          PDB_TUNE: "false"
+        ports: ["5434:5432"]
+        # Over TCP: during first-run initialisation Postgres listens only on its socket.
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U ara -d ara_test"
+          --health-interval 2s --health-timeout 3s --health-retries 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv sync --locked
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - run: uv run pytest  # unit tests only; live tests need keys and approval
