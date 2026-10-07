@@ -15,8 +15,8 @@ from langsmith.schemas import Example
 from ara.db.migrate import migrate
 from ara.db.pool import Connection, Pool, make_pool
 from ara.graph.qa import answer_question
-from ara.graph.state import Context
-from ara.llm.gateway import Gateway
+from ara.graph.state import Context, Verdict
+from ara.llm.gateway import Gateway, InvalidOutput
 from ara.llm.ledger import Ledger, Scope
 from ara.llm.pricing import EMBEDDING, MILLION
 from ara.rag.chunking import chunk
@@ -26,7 +26,7 @@ from ara.rag.sources import ParsedPaper
 from ara.settings import Settings, configure_tracing, get_settings
 from ara.tokens import count_tokens
 from evals.graders.retrieval import score
-from evals.suites import s1, s2, s5_data
+from evals.suites import s1, s2, s5, s5_data
 from evals.suites.s1 import S1, Item
 
 
@@ -341,6 +341,8 @@ async def perturb_s5(*, execute: bool, max_usd: Decimal) -> None:
     if not execute:
         print("Dry run: nothing was sent. Add --execute to generate.")
         return
+    if s5_data.OUTPUT.exists():
+        raise SystemExit(f"{s5_data.OUTPUT} exists and holds Ewan's review; delete it to redo")
     settings = get_settings()
     configure_tracing(settings)
     migrate(settings.database_url)
@@ -356,3 +358,114 @@ async def perturb_s5(*, execute: bool, max_usd: Decimal) -> None:
             await gateway.aclose()
     s5_data.write(claims)
     print(f"wrote {len(claims)} claims to {s5_data.OUTPUT} (ledger run {run_id}); review them")
+
+
+async def run_s5(*, limit: int | None, execute: bool, max_usd: Decimal) -> str | None:
+    """Print the plan; with `execute`, verify the first `limit` claim pairs with both models."""
+    items = s5.load(limit)
+    usd = sum(Decimal(str(c)) for c in s5.UNIT_COST_USD.values()) * len(items)
+    print(
+        f"S5 plan: {len(items)} claims x {len(s5.ARMS)} arms = {len(items) * len(s5.ARMS)}"
+        f" verify requests; estimated ${usd:.4f}"
+    )
+    if not execute:
+        print("Dry run: nothing was sent. Add --execute to run.")
+        return None
+    settings = get_settings()
+    configure_tracing(settings)
+    migrate(settings.database_url)
+    async with make_pool(settings.database_url) as pool:
+        run_id = f"s5-{datetime.now(UTC):%Y%m%dT%H%M%S}"
+        config = {
+            "suite": "s5",
+            "data": sha256(s5.DATA.read_bytes()).hexdigest()[:12],
+            "arms": {arm: f"{st.model}/{st.effort}" for arm, st in s5.ARMS.items()},
+            "items": len(items),
+            "max_usd": str(max_usd),
+        }
+        await _start(pool, run_id, config)
+        status = "failed"
+        try:
+            status = await _verify_items(pool, settings, run_id, config, items, max_usd)
+        finally:
+            await _finish(pool, run_id, status)
+        return run_id
+
+
+async def _verify_items(
+    pool: Pool,
+    settings: Settings,
+    run_id: str,
+    config: dict[str, Any],
+    items: list[s5.Item],
+    max_usd: Decimal,
+) -> str:
+    ledger = Ledger(
+        pool, global_cap_usd=settings.global_cap_usd, turn_cap_usd=settings.turn_cap_usd
+    )
+    gateway = Gateway(settings, ledger)
+    scope = Scope(run_id=run_id, run_cap_usd=max_usd)
+    invalid = 0
+    try:
+        client = Client()
+        by_id = {item.id: item for item in items}
+
+        async def target(inputs: dict[str, Any]) -> dict[str, Any]:
+            """Both arms on one claim. A reply DeepSeek's JSON mode cannot validate is stored as
+            that arm's error and counted, never repaired (D10)."""
+            nonlocal invalid
+            item = by_id[inputs["item_id"]]
+            outputs: dict[str, Any] = {}
+            async with pool.connection() as conn:
+                for arm in s5.ARMS:
+                    try:
+                        verdict = await s5.check(gateway, arm, item, scope)
+                    except InvalidOutput as error:
+                        invalid += 1
+                        await _store(conn, run_id, item.id, arm, {}, {}, f"invalid: {error}")
+                        continue
+                    outputs[arm] = verdict.model_dump()
+                    await _store(conn, run_id, item.id, arm, s5.score(verdict, item), outputs[arm])
+            return outputs
+
+        def grade(outputs: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+            item = by_id[inputs["item_id"]]
+            return {
+                "results": [
+                    {"key": f"{arm}.correct", "score": s5.score(Verdict(**v), item)["correct"]}
+                    for arm, v in outputs.items()
+                ]
+            }
+
+        examples = [
+            {
+                "inputs": {"item_id": i.id, "claim": i.claim, "evidence": i.evidence.text},
+                "outputs": {"label": i.label, "kind": i.kind},
+                "metadata": {"split": i.split},
+            }
+            for i in s5.load()
+        ]
+        dataset = _dataset(client, "s5", examples)
+        results = await aevaluate(
+            target,
+            data=[e for e in client.list_examples(dataset_name=dataset) if _item(e) in by_id],
+            evaluators=[grade],
+            experiment_prefix=run_id,
+            metadata={**config, "dataset": dataset},
+            max_concurrency=4,
+            client=client,
+        )
+        failed = invalid
+        async with pool.connection() as conn:
+            await conn.execute(
+                "UPDATE eval_runs SET langsmith_experiment = %s WHERE id = %s",
+                (results.experiment_name, run_id),
+            )
+            async for row in results:
+                if (error := row["run"].error) is not None:
+                    failed += 1
+                    for arm in s5.ARMS:
+                        await _store(conn, run_id, _item(row["example"]), arm, {}, {}, error)
+        return "partial" if failed else "complete"
+    finally:
+        await gateway.aclose()

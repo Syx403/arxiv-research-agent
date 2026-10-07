@@ -278,6 +278,7 @@ Known trade-off: the answer judge and the in-product verifier are both Luna, so 
 may correlate. Mitigation: answer quality is graded against QASPER gold answers and gold evidence
 (reference-based), and the judge is calibrated on Ewan's labels (§11.4). The verifier model itself
 is chosen by measurement on the verifier suite (S5 compares Luna and DeepSeek, about $0.05).
+  Measured in M2 (D20): both at F1 1.00 on held-out; Luna kept.
 
 ### 6.3 Cache-aware prompts (confirmed 2026-10-07, D11)
 
@@ -464,7 +465,7 @@ pre-ingested papers so a live demo turn stays short.
 | S2-baselines | same items | 30 each | closed-book, whole paper in context, naive RAG | same | ≈ $0.05 |
 | S3 discovery | PaSa: AutoScholarQuery (dev 15), RealScholarQuery (test 15) | 15 per round | candidate-pool recall, precision@5 (gold lower bound + adjudicated), hit@5, constraint violations | code + DeepSeek judge + Ewan | ≈ $0.10 |
 | S4 understand/clarify | v1 UI questions + edge cases, labeled by Ewan | 50 | intent accuracy, false-clarify, missed-clarify | code | ≈ $0.02 |
-| S5 verifier | QASPER evidence (one sentence per S1 item); 30 DeepSeek paraphrases, 30 perturbed: number 8 and negation 7 by code, entity 8 and over-generalisation 7 by DeepSeek; reviewed by Ewan (D19) | 60 | P/R/F1 on "unsupported"; Luna vs DeepSeek | code | ≈ $0.05 |
+| S5 verifier | QASPER evidence (one sentence per S1 item); 30 DeepSeek paraphrases, 30 perturbed: number 8 and negation 7 by code, entity 8 and over-generalisation 7 by DeepSeek; reviewed by Ewan; 58 after review (D19, D20) | 58 | P/R/F1 on "unsupported", recall per kind; Luna vs DeepSeek | code | $0.0093 measured (D20) |
 | S6 multi-turn + memory | scripted scenarios | 6 × ~3 turns | assertion pass rate (reference resolution, constraint retention, update, forget, abstain) | code | ≈ $0.13 |
 | S7 robustness | fault hooks + one prompt-injection document | 6 + 3 turns | graceful-degradation rate, injection success (must be 0) | code | ≈ $0.02 |
 

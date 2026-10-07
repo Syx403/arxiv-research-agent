@@ -10,7 +10,7 @@ Update this file at the end of every working session: what was done, what was sp
 | Data: PaSa query sets | done (2026-10-07) | `data/datasets/pasa/` (git-ignored, checksums in its README) |
 | M0 Foundation | done (2026-10-07), reviewed | §16 verified; §6.2–6.3 confirmed (D10, D11); 29 unit tests on real Postgres; live checks passed (cache hits on both providers; a rejected request is released) |
 | M1 RAG + S1 | done (2026-10-08) | sources (arXiv HTML/PDF, QASPER), chunking, cached embeddings, ingestion, BM25 ×2 / FTS / dense / RRF / rerank, eval runner + S1; S1 live on 2 papers (6 items) |
-| M2 Read + answer | in progress (2026-10-08) | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data generated, awaiting Ewan's review; S5 suite not built |
+| M2 Read + answer | in progress (2026-10-08) | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20) |
 | M3 Understand + discover | not started | |
 | M4 Memory | not started | |
 | M5 Reliability + UI | not started | |
@@ -29,7 +29,9 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-08 | S1 full round | 10 papers × 3 questions (`s1-20261007T162246`): 9 embedding requests, 30 reranks | 39 | 0.0009 | Ewan |
 | 2026-10-08 | M2 live check | S2 on 2 questions: first attempt (`s2-20261007T165545`, every label discarded) and the fixed run (`s2-20261007T165742`) | 16 | 0.0021 | Ewan (≈ 30 requests, ≤ US$0.03) |
 | 2026-10-08 | S5 data | DeepSeek paraphrases + perturbations, 6 batches (`s5-data-20261007T165950` stopped by the cap after 5; `s5-data-20261007T170445` the last) | 6 | 0.0113 | Ewan (≈ 15 requests, ≤ US$0.01; cap then raised) |
-| | | **Total so far** | 75 | **0.0154** | |
+| 2026-10-08 | S5 smoke | one claim, both verifier arms (`s5-smoke-20261007T173949`) | 2 | 0.0002 | rule-1 threshold, reported |
+| 2026-10-08 | S5 round | 58 claims × Luna / DeepSeek (`s5-20261007T174137`) | 116 | 0.0093 | Ewan (116 requests, cap US$0.10) |
+| | | **Total so far** | 193 | **0.0249** | |
 
 ## Session log
 
@@ -117,3 +119,11 @@ Update this file at the end of every working session: what was done, what was sp
   (the 4,528 employees), so one claim pair is duplicated; code negations are sometimes awkward
   ("has not 100 training queries"). 62 unit tests. Next: Ewan reviews the S5 claims; then the S5
   suite (Luna vs DeepSeek verifier), which needs its own approval.
+- 2026-10-08 — M2, part 2. Ewan's S5 review: one duplicated pair removed, four code negations
+  reworded, the rest accepted (58 claims). Built the S5 suite (`evals/suites/s5.py`: the product's
+  verify prompt on each claim with its one evidence sentence, Luna vs DeepSeek; report adds P/R/F1
+  on "unsupported" and recall per kind), `ara eval run s5`, and a guard so `perturb` cannot
+  overwrite the review. Smoke (2 requests, $0.0002), then the round (116 requests, $0.0093, 0
+  failed): held-out both models F1 1.00; dev DeepSeek 1.00, Luna 0.96 (one false alarm on an
+  ambiguous paraphrase). Luna stays the verifier; the suite is at its ceiling (D20). 65 unit
+  tests. M2 remaining: Ewan's review of M2; the full S2 round belongs to E1.

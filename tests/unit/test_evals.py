@@ -2,9 +2,12 @@ from typing import Any
 
 import pytest
 
+from ara.graph.state import Verdict
 from evals.graders.retrieval import ndcg_at, recall_at, reciprocal_rank, score
 from evals.qasper import questions, select
+from evals.report import _detection
 from evals.stats import mean_ci, paired
+from evals.suites import s5
 
 
 def test_retrieval_metrics() -> None:
@@ -76,3 +79,35 @@ def test_code_perturbations_change_exactly_one_thing() -> None:
     assert change_number("No numbers here.") is None
     assert negate("The model can handle long inputs.") == "The model can not handle long inputs."
     assert negate("Results improve.") is None
+
+
+def test_s5_scores_unsupported_as_the_positive_class() -> None:
+    item: Any = type("I", (), {"label": "unsupported"})()
+    assert s5.score(Verdict(supported=False, problem="wrong number"), item) == {
+        "correct": 1.0,
+        "flagged": 1.0,
+        "unsupported": 1.0,
+    }
+    item.label = "supported"
+    assert s5.score(Verdict(supported=False, problem="x"), item)["correct"] == 0.0
+
+
+def test_s5_detection_reports_precision_recall_and_kinds() -> None:
+    scores = {
+        "a:unsupported": {"flagged": 1.0, "unsupported": 1.0},
+        "b:unsupported": {"flagged": 0.0, "unsupported": 1.0},
+        "a:supported": {"flagged": 1.0, "unsupported": 0.0},
+        "b:supported": {"flagged": 0.0, "unsupported": 0.0},
+    }
+    kinds = {"a:unsupported": "number", "b:unsupported": "entity"}
+    [_, line] = _detection({"luna": scores}, kinds)
+    assert "precision 0.50 (1/2), recall 0.50 (1/2), F1 0.50" in line
+    assert "entity 0/1, number 1/1" in line
+
+
+def test_s5_data_is_reviewed_and_paired_with_a_split_each() -> None:
+    claims = s5._claims()
+    assert len(claims) == 58
+    assert [c["label"] for c in claims] == ["supported", "unsupported"] * 29
+    assert len({c["sentence"] for c in claims}) == 29
+    assert set(s5.splits().values()) == {"dev", "test"}

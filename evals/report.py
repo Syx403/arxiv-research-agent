@@ -11,7 +11,7 @@ from psycopg.rows import DictRow
 
 from ara.db.pool import Pool
 from evals.stats import mean_ci, paired
-from evals.suites import s1, s2
+from evals.suites import s1, s2, s5
 
 EFFICIENCY = """
 SELECT stage, model, count(*) AS requests, sum(input_tokens) AS input_tokens,
@@ -22,7 +22,7 @@ SELECT stage, model, count(*) AS requests, sum(input_tokens) AS input_tokens,
 FROM llm_calls WHERE run_id = %s GROUP BY stage, model ORDER BY stage
 """
 SPLITS = (("test", "Held-out (test): reported numbers"), ("dev", "Dev: used for choices"))
-SUITES = {"s1": s1, "s2": s2}
+SUITES = {"s1": s1, "s2": s2, "s5": s5}
 
 type Scores = dict[str, dict[str, float]]  # item → metric → value, for one arm
 
@@ -69,6 +69,8 @@ async def report(pool: Pool, run_id: str) -> tuple[str, str]:
             for arm, scores in by_arm.items()
         }
         lines += ["", f"## {heading}", "", *_arms(scoped), *_abstention(scoped)]
+        if suite is s5:
+            lines += _detection(scoped, s5.kinds())
         if suite.PAIRS:
             lines += ["", *_pairs(scoped, suite.PAIRS)]
     lines += ["", "## Efficiency", "", *_efficiency(usage)]
@@ -119,6 +121,28 @@ def _abstention(by_arm: Mapping[str, Scores]) -> list[str]:
         lines.append(
             f"{arm} abstention: precision {precision} ({int(hits)}/{int(predicted)} abstentions"
             f" correct), recall {recall} ({int(hits)}/{int(actual)} unanswerable caught)"
+        )
+    return ["", *lines] if lines else []
+
+
+def _detection(by_arm: Mapping[str, Scores], kinds: Mapping[str, str]) -> list[str]:
+    """Verifier quality (S5): precision, recall and F1 on "unsupported", then recall by the kind
+    of perturbation, so a model blind to one kind shows."""
+    lines = []
+    for arm, scores in by_arm.items():
+        flagged = [i for i, m in scores.items() if m["flagged"]]
+        positives = [i for i, m in scores.items() if m["unsupported"]]
+        hits = len(set(flagged) & set(positives))
+        p = hits / len(flagged) if flagged else 0.0
+        r = hits / len(positives) if positives else 0.0
+        f1 = 2 * p * r / (p + r) if p + r else 0.0
+        by_kind = defaultdict(list)
+        for i in positives:
+            by_kind[kinds[i]].append(scores[i]["flagged"])
+        recalls = ", ".join(f"{kind} {int(sum(v))}/{len(v)}" for kind, v in sorted(by_kind.items()))
+        lines.append(
+            f"{arm} on unsupported: precision {p:.2f} ({hits}/{len(flagged)}), recall {r:.2f}"
+            f" ({hits}/{len(positives)}), F1 {f1:.2f}; caught by kind: {recalls}"
         )
     return ["", *lines] if lines else []
 

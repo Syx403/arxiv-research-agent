@@ -10,7 +10,7 @@
       "paper": "1712.00991",
       "paragraph": 17,
       "sentence": "From 12742 sentences predicted to have label STRENGTH, we extract nouns that indicate the actual strength, and cluster them using a simple clustering algorithm which uses the cosine similarity between word embeddings of these nouns.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "4c18081ae3b676cc7831403d11bc070c10120f8e:unsupported",
@@ -21,7 +21,7 @@
       "paper": "1712.00991",
       "paragraph": 17,
       "sentence": "From 12742 sentences predicted to have label STRENGTH, we extract nouns that indicate the actual strength, and cluster them using a simple clustering algorithm which uses the cosine similarity between word embeddings of these nouns.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "61652a3da85196564401d616d251084a25ab4596:supported",
@@ -32,7 +32,7 @@
       "paper": "1712.00991",
       "paragraph": 9,
       "sentence": "In this paper, we used the supervisor assessment and peer feedback text produced during the performance appraisal of 4528 employees in a large multi-national IT company.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "61652a3da85196564401d616d251084a25ab4596:unsupported",
@@ -43,29 +43,7 @@
       "paper": "1712.00991",
       "paragraph": 9,
       "sentence": "In this paper, we used the supervisor assessment and peer feedback text produced during the performance appraisal of 4528 employees in a large multi-national IT company.",
-      "reviewed": false
-    },
-    {
-      "id": "e025061e199b121f2ac8f3d9637d9bf987d65cd5:supported",
-      "label": "supported",
-      "kind": "paraphrase",
-      "made_by": "deepseek",
-      "claim": "In this paper, we used the supervisor assessment and peer feedback text produced during the performance appraisal of 4528 employees in a large multi-national IT company.",
-      "paper": "1712.00991",
-      "paragraph": 9,
-      "sentence": "In this paper, we used the supervisor assessment and peer feedback text produced during the performance appraisal of 4528 employees in a large multi-national IT company.",
-      "reviewed": false
-    },
-    {
-      "id": "e025061e199b121f2ac8f3d9637d9bf987d65cd5:unsupported",
-      "label": "unsupported",
-      "kind": "number",
-      "made_by": "code",
-      "claim": "In this paper, we used the supervisor assessment and peer feedback text produced during the performance appraisal of 5886 employees in a large multi-national IT company.",
-      "paper": "1712.00991",
-      "paragraph": 9,
-      "sentence": "In this paper, we used the supervisor assessment and peer feedback text produced during the performance appraisal of 4528 employees in a large multi-national IT company.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "cf171fad0bea5ab985c53d11e48e7883c23cdc44:supported",
@@ -76,7 +54,7 @@
       "paper": "2001.01269",
       "paragraph": 33,
       "sentence": "973 of them are negative and 743 of them are positive.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "cf171fad0bea5ab985c53d11e48e7883c23cdc44:unsupported",
@@ -87,7 +65,7 @@
       "paper": "2001.01269",
       "paragraph": 33,
       "sentence": "973 of them are negative and 743 of them are positive.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "0d34c0812f1e69ea33f76ca8c24c23b0415ebc8d:supported",
@@ -98,7 +76,7 @@
       "paper": "2001.01269",
       "paragraph": 29,
       "sentence": "For example, if a review consists of five words, it would have five polarity scores and we utilise only three of these sentiment scores as mentioned.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "0d34c0812f1e69ea33f76ca8c24c23b0415ebc8d:unsupported",
@@ -109,7 +87,7 @@
       "paper": "2001.01269",
       "paragraph": 29,
       "sentence": "For example, if a review consists of five words, it would have five polarity scores and we utilise only three of these sentiment scores as mentioned.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "81d193672090295e687bc4f4ac1b7a9c76ea35df:supported",
@@ -120,7 +98,7 @@
       "paper": "2001.01269",
       "paragraph": 10,
       "sentence": "They use the word2vec algorithm, create several unsupervised hand-crafted features, generate document vectors and feed them as input into the support vector machines (SVM) approach.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "81d193672090295e687bc4f4ac1b7a9c76ea35df:unsupported",
@@ -131,7 +109,7 @@
       "paper": "2001.01269",
       "paragraph": 10,
       "sentence": "They use the word2vec algorithm, create several unsupervised hand-crafted features, generate document vectors and feed them as input into the support vector machines (SVM) approach.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "4ef11518b40cc55d86c485f14e24732123b0d907:supported",
@@ -142,7 +120,7 @@
       "paper": "2001.07820",
       "paragraph": 17,
       "sentence": "We experiment with five benchmark attacking methods for texts: FGM, FGVM, DeepFool BIBREF5, HotFlip BIBREF3) and TYC BIBREF4.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "4ef11518b40cc55d86c485f14e24732123b0d907:unsupported",
@@ -153,7 +131,7 @@
       "paper": "2001.07820",
       "paragraph": 17,
       "sentence": "We experiment with five benchmark attacking methods for texts: FGM, FGVM, DeepFool BIBREF5, HotFlip BIBREF3) and TYC BIBREF4.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "395b61d368e8766014aa960fde0192e4196bcb85:supported",
@@ -164,7 +142,7 @@
       "paper": "2001.07820",
       "paragraph": 28,
       "sentence": "These datasets present a variation in the text lengths (e.g. the average number of words for yelp50, yelp200 and imdb400 is 34, 82 and 195 words respectively), training data size (e.g. the number of training examples for target classifiers for imdb400, yelp50 and yelp200 are 18K, 407K and 2M, respectively) and input domain (e.g. restaurant vs. movie reviews).",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "395b61d368e8766014aa960fde0192e4196bcb85:unsupported",
@@ -175,7 +153,7 @@
       "paper": "2001.07820",
       "paragraph": 28,
       "sentence": "These datasets present a variation in the text lengths (e.g. the average number of words for yelp50, yelp200 and imdb400 is 34, 82 and 195 words respectively), training data size (e.g. the number of training examples for target classifiers for imdb400, yelp50 and yelp200 are 18K, 407K and 2M, respectively) and input domain (e.g. restaurant vs. movie reviews).",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "92bb41cf7bd1f7886784796a8220ed5aa07bc49b:supported",
@@ -186,18 +164,19 @@
       "paper": "2001.07820",
       "paragraph": 10,
       "sentence": "We learn that a number of factors can influence the performance of adversarial attacks, including architecture of the classifier, sentence length and input domain.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "92bb41cf7bd1f7886784796a8220ed5aa07bc49b:unsupported",
       "label": "unsupported",
       "kind": "negation",
       "made_by": "code",
-      "claim": "We find that several factors can not affect the performance of adversarial attacks, including the architecture of the classifier, sentence length, and input domain.",
+      "claim": "We find that several factors cannot affect the performance of adversarial attacks, including the architecture of the classifier, sentence length, and input domain.",
       "paper": "2001.07820",
       "paragraph": 10,
       "sentence": "We learn that a number of factors can influence the performance of adversarial attacks, including architecture of the classifier, sentence length and input domain.",
-      "reviewed": false
+      "reviewed": true,
+      "edited": "negation reworded by hand"
     },
     {
       "id": "06cc8fcafc0880cf69a2514bb7341642b9833041:supported",
@@ -208,18 +187,19 @@
       "paper": "1809.06537",
       "paragraph": 7,
       "sentence": "Fact description, pleas, and results can be extracted easily from these case documents with regular expressions, since the original documents have special typographical characteristics indicating the discourse structure.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "06cc8fcafc0880cf69a2514bb7341642b9833041:unsupported",
       "label": "unsupported",
       "kind": "negation",
       "made_by": "code",
-      "claim": "Because the original documents have not special typographical features that indicate discourse structure, regular expressions can easily extract fact description, pleas, and results from these case documents.",
+      "claim": "Because the original documents do not have special typographical features that indicate discourse structure, regular expressions can easily extract fact description, pleas, and results from these case documents.",
       "paper": "1809.06537",
       "paragraph": 7,
       "sentence": "Fact description, pleas, and results can be extracted easily from these case documents with regular expressions, since the original documents have special typographical characteristics indicating the discourse structure.",
-      "reviewed": false
+      "reviewed": true,
+      "edited": "negation reworded by hand"
     },
     {
       "id": "41b70699514703820435b00efbc3aac4dd67560a:supported",
@@ -230,7 +210,7 @@
       "paper": "1809.06537",
       "paragraph": 49,
       "sentence": "Divorce proceedings often come with several kinds of pleas, e.g. seeking divorce, custody of children, compensation, and maintenance, which focuses on different aspects and thus makes it a challenge for judgment prediction.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "41b70699514703820435b00efbc3aac4dd67560a:unsupported",
@@ -241,7 +221,7 @@
       "paper": "1809.06537",
       "paragraph": 49,
       "sentence": "Divorce proceedings often come with several kinds of pleas, e.g. seeking divorce, custody of children, compensation, and maintenance, which focuses on different aspects and thus makes it a challenge for judgment prediction.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d9412dda3279729e95fcb35cbed09e61577a896e:supported",
@@ -252,7 +232,7 @@
       "paper": "1809.06537",
       "paragraph": 55,
       "sentence": "We use Adam BIBREF32 for training and set learning rate to INLINEFORM2 , INLINEFORM3 to INLINEFORM4 , INLINEFORM5 to INLINEFORM6 , INLINEFORM7 to INLINEFORM8 , batch size to 64.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d9412dda3279729e95fcb35cbed09e61577a896e:unsupported",
@@ -263,7 +243,7 @@
       "paper": "1809.06537",
       "paragraph": 55,
       "sentence": "We use Adam BIBREF32 for training and set learning rate to INLINEFORM2 , INLINEFORM3 to INLINEFORM4 , INLINEFORM5 to INLINEFORM6 , INLINEFORM7 to INLINEFORM8 , batch size to 64.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "2f901dab6b757e12763b23ae8b37ae2e517a2271:supported",
@@ -274,7 +254,7 @@
       "paper": "1611.01576",
       "paragraph": 37,
       "sentence": "This dataset consists of 209,772 sentence pairs of parallel training data from transcribed TED and TEDx presentations, with a mean sentence length of 103 characters for German and 93 for English.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "2f901dab6b757e12763b23ae8b37ae2e517a2271:unsupported",
@@ -285,7 +265,7 @@
       "paper": "1611.01576",
       "paragraph": 37,
       "sentence": "This dataset consists of 209,772 sentence pairs of parallel training data from transcribed TED and TEDx presentations, with a mean sentence length of 103 characters for German and 93 for English.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "a130306c6662ff489df13fb3f8faa7cba8c52a21:supported",
@@ -296,18 +276,19 @@
       "paper": "1611.01576",
       "paragraph": 9,
       "sentence": "We seek a function controlled by gates that can mix states across timesteps, but which acts independently on each channel of the state vector.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "a130306c6662ff489df13fb3f8faa7cba8c52a21:unsupported",
       "label": "unsupported",
       "kind": "negation",
       "made_by": "code",
-      "claim": "We look for a gated function that can not mix states across timesteps while acting independently on each channel of the state vector.",
+      "claim": "We look for a gated function that cannot mix states across timesteps while acting independently on each channel of the state vector.",
       "paper": "1611.01576",
       "paragraph": 9,
       "sentence": "We seek a function controlled by gates that can mix states across timesteps, but which acts independently on each channel of the state vector.",
-      "reviewed": false
+      "reviewed": true,
+      "edited": "negation reworded by hand"
     },
     {
       "id": "b591853e938984e6069d738371500ebdec50d256:supported",
@@ -318,7 +299,7 @@
       "paper": "1611.01576",
       "paragraph": 26,
       "sentence": "The dataset consists of a balanced sample of 25,000 positive and 25,000 negative reviews, divided into equal-size train and test sets, with an average document length of 231 words BIBREF18 .",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "b591853e938984e6069d738371500ebdec50d256:unsupported",
@@ -329,7 +310,7 @@
       "paper": "1611.01576",
       "paragraph": 26,
       "sentence": "The dataset consists of a balanced sample of 25,000 positive and 25,000 negative reviews, divided into equal-size train and test sets, with an average document length of 231 words BIBREF18 .",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "b08f88d1facefceb87e134ba2c1fa90035018e83:supported",
@@ -340,7 +321,7 @@
       "paper": "1806.00738",
       "paragraph": 9,
       "sentence": "All the 5 decoders use the last hidden state of the encoder (i.e. the context) as its first hidden state and take the corresponding image embedding as its first input.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "b08f88d1facefceb87e134ba2c1fa90035018e83:unsupported",
@@ -351,7 +332,7 @@
       "paper": "1806.00738",
       "paragraph": 9,
       "sentence": "All the 5 decoders use the last hidden state of the encoder (i.e. the context) as its first hidden state and take the corresponding image embedding as its first input.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "c37f65c9f0d543a35c784263b79236ccf1c44fac:supported",
@@ -362,7 +343,7 @@
       "paper": "1806.00738",
       "paragraph": 6,
       "sentence": "The encoder is a Convolutional Neural Network (CNN) and the decoder is a Long Short-Term Memory (LSTM) network, as presented in Figure 2 .",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "c37f65c9f0d543a35c784263b79236ccf1c44fac:unsupported",
@@ -373,7 +354,7 @@
       "paper": "1806.00738",
       "paragraph": 6,
       "sentence": "The encoder is a Convolutional Neural Network (CNN) and the decoder is a Long Short-Term Memory (LSTM) network, as presented in Figure 2 .",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "584af673429c7f8621c6bf83362a37048daa0e5d:supported",
@@ -384,7 +365,7 @@
       "paper": "1806.00738",
       "paragraph": 8,
       "sentence": "The last hidden state from the encoder $h_e^{(t)}$ is used to initialize the first hidden state of the decoder $h_d^{(0)}$ .",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "584af673429c7f8621c6bf83362a37048daa0e5d:unsupported",
@@ -395,7 +376,7 @@
       "paper": "1806.00738",
       "paragraph": 8,
       "sentence": "The last hidden state from the encoder $h_e^{(t)}$ is used to initialize the first hidden state of the decoder $h_d^{(0)}$ .",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "1bdc990c7e948724ab04e70867675a334fdd3051:supported",
@@ -406,7 +387,7 @@
       "paper": "1909.00105",
       "paragraph": 24,
       "sentence": "We collect a novel dataset of 230K+ recipe texts and 1M+ user interactions (reviews) over 18 years (2000-2018) from Food.com.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "1bdc990c7e948724ab04e70867675a334fdd3051:unsupported",
@@ -417,7 +398,7 @@
       "paper": "1909.00105",
       "paragraph": 24,
       "sentence": "We collect a novel dataset of 230K+ recipe texts and 1M+ user interactions (reviews) over 18 years (2000-2018) from Food.com.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "9bfebf8e5bc0bacf0af96a9a951eb7b96b359faa:supported",
@@ -428,7 +409,7 @@
       "paper": "1909.00105",
       "paragraph": 33,
       "sentence": "A higher score indicates better step ordering (with a maximum score of 2). tab:coherencemetrics shows that our personalized models achieve average recipe-level coherence scores of 1.78-1.82, surpassing the baseline at 1.77.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "9bfebf8e5bc0bacf0af96a9a951eb7b96b359faa:unsupported",
@@ -439,7 +420,7 @@
       "paper": "1909.00105",
       "paragraph": 33,
       "sentence": "A higher score indicates better step ordering (with a maximum score of 2). tab:coherencemetrics shows that our personalized models achieve average recipe-level coherence scores of 1.78-1.82, surpassing the baseline at 1.77.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "34dc0838632d643f33c8dbfe7bd4b656586582a2:supported",
@@ -450,7 +431,7 @@
       "paper": "1909.00105",
       "paragraph": 29,
       "sentence": "While our models exhibit comparable performance to baseline in BLEU-1/4 and ROUGE-L, we generate more diverse (Distinct-1/2: percentage of distinct unigrams and bigrams) and acceptable recipes.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "34dc0838632d643f33c8dbfe7bd4b656586582a2:unsupported",
@@ -461,7 +442,7 @@
       "paper": "1909.00105",
       "paragraph": 29,
       "sentence": "While our models exhibit comparable performance to baseline in BLEU-1/4 and ROUGE-L, we generate more diverse (Distinct-1/2: percentage of distinct unigrams and bigrams) and acceptable recipes.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "2c7e94a65f5f532aa31d3e538dcab0468a43b264:supported",
@@ -472,18 +453,19 @@
       "paper": "1909.02027",
       "paragraph": 8,
       "sentence": "For each intent, there are 100 training queries, which is representative of what a team with a limited budget could gather while developing a task-driven dialog system.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "2c7e94a65f5f532aa31d3e538dcab0468a43b264:unsupported",
       "label": "unsupported",
       "kind": "negation",
       "made_by": "code",
-      "claim": "Each intent has not 100 training queries, which is representative of what a team with a limited budget could collect while developing a task-driven dialog system.",
+      "claim": "Each intent does not have 100 training queries, which is representative of what a team with a limited budget could collect while developing a task-driven dialog system.",
       "paper": "1909.02027",
       "paragraph": 8,
       "sentence": "For each intent, there are 100 training queries, which is representative of what a team with a limited budget could gather while developing a task-driven dialog system.",
-      "reviewed": false
+      "reviewed": true,
+      "edited": "negation reworded by hand"
     },
     {
       "id": "27de1d499348e17fec324d0ef00361a490659988:supported",
@@ -494,7 +476,7 @@
       "paper": "1909.02027",
       "paragraph": 5,
       "sentence": "To do so, we constructed a new dataset with 23,700 queries that are short and unstructured, in the same style made by real users of task-oriented systems.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "27de1d499348e17fec324d0ef00361a490659988:unsupported",
@@ -505,7 +487,7 @@
       "paper": "1909.02027",
       "paragraph": 5,
       "sentence": "To do so, we constructed a new dataset with 23,700 queries that are short and unstructured, in the same style made by real users of task-oriented systems.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "cfcdd73e712caf552ba44d0aa264d8dace65a589:supported",
@@ -516,7 +498,7 @@
       "paper": "1909.02027",
       "paragraph": 7,
       "sentence": "We introduce a new crowdsourced dataset of 23,700 queries, including 22,500 in-scope queries covering 150 intents, which can be grouped into 10 general domains.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "cfcdd73e712caf552ba44d0aa264d8dace65a589:unsupported",
@@ -527,7 +509,7 @@
       "paper": "1909.02027",
       "paragraph": 7,
       "sentence": "We introduce a new crowdsourced dataset of 23,700 queries, including 22,500 in-scope queries covering 150 intents, which can be grouped into 10 general domains.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "357eb9f0c07fa45e482d998a8268bd737beb827f:supported",
@@ -538,7 +520,7 @@
       "paper": "1910.08293",
       "paragraph": 5,
       "sentence": "When the conversation goes well, the dialogue becomes part of the training data, and when the conversation does not, the agent asks for feedback.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "357eb9f0c07fa45e482d998a8268bd737beb827f:unsupported",
@@ -549,7 +531,7 @@
       "paper": "1910.08293",
       "paragraph": 5,
       "sentence": "When the conversation goes well, the dialogue becomes part of the training data, and when the conversation does not, the agent asks for feedback.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "f0b1d8c0a44dbe8d444a5dbe2d9c3d51e048a6f6:supported",
@@ -560,7 +542,7 @@
       "paper": "1910.08293",
       "paragraph": 50,
       "sentence": "Table TABREF45 shows average Hits@1/20 scores by evaluation character.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "f0b1d8c0a44dbe8d444a5dbe2d9c3d51e048a6f6:unsupported",
@@ -571,7 +553,7 @@
       "paper": "1910.08293",
       "paragraph": 50,
       "sentence": "Table TABREF45 shows average Hits@1/20 scores by evaluation character.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "808f0ad46ca4eb4ea5492f9e14ca043fe1e206cc:supported",
@@ -582,7 +564,7 @@
       "paper": "1910.08293",
       "paragraph": 8,
       "sentence": "We end up eliminating 5.86% of total characters, and end up with 45,821 characters and 12,815 unique HLA, resulting in 945,519 total character-HLA pairs.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "808f0ad46ca4eb4ea5492f9e14ca043fe1e206cc:unsupported",
@@ -593,7 +575,7 @@
       "paper": "1910.08293",
       "paragraph": 8,
       "sentence": "We end up eliminating 5.86% of total characters, and end up with 45,821 characters and 12,815 unique HLA, resulting in 945,519 total character-HLA pairs.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "6844683935d0d8f588fa06530f5068bf3e1ed0c0:supported",
@@ -604,7 +586,7 @@
       "paper": "1908.06941",
       "paragraph": 2,
       "sentence": "Many models work around this issue by clipping negative $\\mathit {PMI}$ values at 0, a measure known as Positive $\\mathit {PMI}$ ($\\mathit {PPMI}$), which works very well in practice.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "6844683935d0d8f588fa06530f5068bf3e1ed0c0:unsupported",
@@ -615,7 +597,7 @@
       "paper": "1908.06941",
       "paragraph": 2,
       "sentence": "Many models work around this issue by clipping negative $\\mathit {PMI}$ values at 0, a measure known as Positive $\\mathit {PMI}$ ($\\mathit {PPMI}$), which works very well in practice.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d46c0ea1ba68c649cc64d2ebb6af20202a74a3c7:supported",
@@ -626,7 +608,7 @@
       "paper": "1908.06941",
       "paragraph": 27,
       "sentence": "$\\mathit {\\texttt {+}PPMI}$ only falters on the RW and analogy tasks, and we hypothesize this is where $\\mathit {\\texttt {-}PMI}$ is useful: in the absence of positive information, negative information can be used to improve rare word representations and word analogies.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d46c0ea1ba68c649cc64d2ebb6af20202a74a3c7:unsupported",
@@ -637,7 +619,7 @@
       "paper": "1908.06941",
       "paragraph": 27,
       "sentence": "$\\mathit {\\texttt {+}PPMI}$ only falters on the RW and analogy tasks, and we hypothesize this is where $\\mathit {\\texttt {-}PMI}$ is useful: in the absence of positive information, negative information can be used to improve rare word representations and word analogies.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "bc4dca3e1e83f3b4bbb53a31557fc5d8971603b2:supported",
@@ -648,7 +630,7 @@
       "paper": "1908.06941",
       "paragraph": 22,
       "sentence": "We evaluate sentence-level semantics using averaged bag of vectors (BoV) representations on the Semantic Textual Similarity (STSB) task BIBREF21 and Word Content (WC) probing task (identify from a list of words which is contained in the sentence representation) from SentEval BIBREF22.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "bc4dca3e1e83f3b4bbb53a31557fc5d8971603b2:unsupported",
@@ -659,7 +641,8 @@
       "paper": "1908.06941",
       "paragraph": 22,
       "sentence": "We evaluate sentence-level semantics using averaged bag of vectors (BoV) representations on the Semantic Textual Similarity (STSB) task BIBREF21 and Word Content (WC) probing task (identify from a list of words which is contained in the sentence representation) from SentEval BIBREF22.",
-      "reviewed": false
+      "reviewed": true
     }
-  ]
+  ],
+  "review": "2026-10-08, Ewan: removed the duplicate pair (two S1 questions share one source sentence), reworded four code negations; all other items accepted"
 }

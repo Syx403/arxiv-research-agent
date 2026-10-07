@@ -24,9 +24,9 @@ def main() -> None:
     evals.add_parser("prepare", help="download QASPER and draw any missing S1/S2 manifest")
     for name in ("plan", "run"):
         sub = evals.add_parser(name)
-        sub.add_argument("suite", choices=["s1", "s2"])
+        sub.add_argument("suite", choices=["s1", "s2", "s5"])
         sub.add_argument("--papers", type=int, help="S1: only the first N papers of the manifest")
-        sub.add_argument("--limit", type=int, help="S2: only the first N items of the manifest")
+        sub.add_argument("--limit", type=int, help="S2: first N items; S5: first N claim pairs")
         if name == "run":
             sub.add_argument("--execute", action="store_true", help="send billable requests")
             sub.add_argument("--max-usd", type=Decimal, default=Decimal("1.0"))
@@ -49,8 +49,10 @@ def main() -> None:
             max_usd = getattr(args, "max_usd", Decimal("1.0"))
             if args.suite == "s1":
                 run = runner.run_s1(papers=args.papers, execute=execute, max_usd=max_usd)
-            else:
+            elif args.suite == "s2":
                 run = runner.run_s2(limit=args.limit, execute=execute, max_usd=max_usd)
+            else:
+                run = runner.run_s5(limit=args.limit, execute=execute, max_usd=max_usd)
             run_id = asyncio.run(run)
             if run_id:
                 print(asyncio.run(_report(run_id)))

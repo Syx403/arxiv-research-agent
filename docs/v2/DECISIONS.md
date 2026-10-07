@@ -214,3 +214,27 @@ decision gets a new entry that names the one it replaces.
   ($0.0026) completed the set. Total: 6 requests, $0.0113 — over the first approval by $0.0013.
 - Alternatives: S2 with only the 30 answerable items (no abstention signal); all perturbations by
   LLM (cheaper code paths unused, less control over what changed).
+
+## D20 — S5 round: Luna stays the verifier; S5 as built is at its ceiling (2026-10-08, Ewan approved the run)
+- Data: Ewan's review of the S5 claims removed one duplicated pair (two S1 questions share the
+  same source sentence) and reworded four code negations by hand ("has not 100" → "does not have
+  100", "can not" → "cannot", "have not special" → "do not have special"); the rest was accepted.
+  58 claims (29 pairs), all marked reviewed; the file records the review. `ara eval perturb`
+  now refuses to overwrite the reviewed file.
+- Run `s5-20261007T174137` (116 requests, $0.0093, 0 failed, 0 invalid DeepSeek replies; report
+  in `docs/v2/eval/`): held-out (36 claims) both models P = R = F1 = 1.00 on "unsupported",
+  every kind caught; dev (22) DeepSeek 1.00, Luna F1 0.96 with one false alarm. That false alarm
+  is a label ambiguity, not a clear miss: the source says the system "create[s] … features,
+  generate[s] document vectors and feed[s] them" to the SVM, the paraphrase reads "them" as
+  features and vectors, and Luna objected that only the vectors are said to be fed.
+- Decision: the product keeps Luna for `verify` (D10). The suite cannot separate the models
+  (paired Δ 0/0 on held-out), so the choice rests on the other grounds: checker ≠ writer (D10
+  principle 3, the answers are written by DeepSeek), and Luna was cheaper here ($0.000062 vs
+  $0.000099 per claim, DeepSeek off-peak; DeepSeek peak doubles it). DeepSeek was faster (p50
+  0.84 s vs 1.60 s).
+- Limitation: one evidence sentence and one obvious change per claim make S5 an easy test. It
+  shows the verify prompt catches the four perturbation kinds; it does not measure how often the
+  verifier errs on real answer lines against multi-sentence packs. That is measured through S2
+  (lines dropped by verification, judged in E1). A harder S5 (several sentences per pack with
+  distractors, subtler changes) is a proposal for the E rounds, not built.
+- Cost estimate corrected: the plan assumed ≈ $0.05 per S5 round (§11.2); measured $0.0093.

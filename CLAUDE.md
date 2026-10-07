@@ -57,6 +57,6 @@ Read first: `docs/v2/DESIGN.md` (spec), `docs/v2/DECISIONS.md` (why), `docs/v2/P
   ara eval plan s1 [--papers N]` (free dry run: requests and cost), `uv run ara eval run s1 --papers N
   --execute --max-usd X` (billable, needs approval), `uv run ara eval report <run_id>` (also written
   to `data/eval_reports/`). S2: `uv run ara eval run s2 --limit N --execute --max-usd X`
-  (reading QA through the graphs). S5 data: `uv run ara eval perturb` (dry run) / `--execute
+  (reading QA through the graphs); S5 the same with `s5` (`--limit N` = claim pairs). S5 data: `uv run ara eval perturb` (dry run) / `--execute
   --max-usd X` (resumes from `data/s5_rewrites.json`; output for Ewan's review).
 - API server and UI: added in M5.
