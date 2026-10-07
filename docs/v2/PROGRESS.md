@@ -51,4 +51,6 @@ Update this file at the end of every working session: what was done, what was sp
   US$0.005): Luna prewarm wrote 2,690 tokens and the call read 2,690 / 2,710 from cache; the
   DeepSeek follow-up read 2,560 / 2,795; all four runs visible in LangSmith with the ledger's
   token counts and costs. Deviation recorded: `Prompt.static` became one `Instructions` object
-  (D14). Next: M1 (RAG + S1), after Ewan's review of M0 and the Cohere quota check.
+  (D14). CI: the first run failed because setup-uv has no moving `v10` tag (pinned v10.2.0);
+  the second run passed (ruff, mypy, 28 unit tests against the ParadeDB service).
+  Next: M1 (RAG + S1), after Ewan's review of M0 and the Cohere quota check.
