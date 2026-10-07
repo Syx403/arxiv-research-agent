@@ -23,7 +23,7 @@ jobs:
           --health-interval 2s --health-timeout 3s --health-retries 60
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0  # this action publishes no moving major tag
       - run: uv sync --locked
       - run: uv run ruff format --check .
       - run: uv run ruff check .
