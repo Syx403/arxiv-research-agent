@@ -40,4 +40,14 @@ Read first: `docs/v2/DESIGN.md` (spec), `docs/v2/DECISIONS.md` (why), `docs/v2/P
 
 ## Commands
 
-To be filled in at M0 (Docker DB, migrations, tests, API server, UI, eval runner).
+- `make install` — `uv sync --locked` (Python 3.13).
+- `make db-up` / `make db-down` — v2 database container `ara-v2-db` (ParadeDB 0.26, PostgreSQL 18) on
+  127.0.0.1:5434 with databases `ara` (app, ledger) and `ara_test` (unit tests). v1's container on
+  5433 is separate; leave it alone.
+- `make migrate` — apply `ara/db/migrations/*.sql` to `ara`; unit tests migrate `ara_test` themselves.
+- `make check` — ruff format check, ruff lint, mypy (strict), unit tests. Same steps run in CI
+  (`.github/workflows/ci.yml`, on pushes to `v2`).
+- `make test-live` — billable (rule 1): real model calls, recorded in `llm_calls` and traced in
+  LangSmith project `ara-v2`. Each live test module sets a run cap equal to its approval.
+- Spend so far: `docker exec ara-v2-db psql -U ara -d ara -c "SELECT run_id, count(*), sum(cost_usd) FROM llm_calls GROUP BY 1"`.
+- API server, UI and eval runner: added in M1–M5.
