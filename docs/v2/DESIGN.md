@@ -343,6 +343,14 @@ Migrations: numbered SQL files and a ~30-line runner.
 
 ## 9. API and UI
 
+Delivery form: a local web app. One command (`make start`) starts the Docker database, applies
+migrations, builds the UI if needed and runs FastAPI; then open **http://127.0.0.1:8000** in a
+browser. It binds to 127.0.0.1 only, single user, no login (same form as v1). The UI does not
+depend on LangSmith or LangGraph Studio and works with tracing turned off; Studio is only an
+optional developer tool. Requirements: Docker, uv (Python), Node (only to build the UI; v26.8.2
+is installed). During development `make ui-dev` runs the Vite dev server with hot reload and
+proxies API calls to FastAPI.
+
 UI purpose: show the work in interviews. Priority: (1) workflow, (2) evidence, (4) evals,
 (3) memory (optional).
 
@@ -463,7 +471,7 @@ testing starts only after the architecture review.
 | M2 Read + answer | read and answer subgraphs, prewarmed verification, finalize; S2, S5 | two live questions answered with verified citations |
 | M3 Understand + discover | understand, clarify interrupt, researcher loop, screen, choose_papers; S3, S4 | a live discover → read turn and a clarify turn |
 | M4 Memory | Store namespaces, remember, library, forget; S6 | a scripted cross-session scenario passes live |
-| M5 Reliability + UI | retry/timeout/error handlers, fault hooks, S7; UI pages 1, 2, 4 (3 optional); README | demo turn works in the UI |
+| M5 Reliability + UI | retry/timeout/error handlers, fault hooks, S7; UI pages 1, 2, 4 (3 optional); README | `make start` → http://127.0.0.1:8000 shows pages 1, 2, 4 and a demo turn works |
 | **Gate** | **Ewan reviews the architecture** | approved |
 | E1–E6 | judge calibration, then baseline, comparison, iteration and final rounds (≤ $1 each) | results reported with CIs |
 | Interview | facts / stories / Q&A in the interview hub | — |
