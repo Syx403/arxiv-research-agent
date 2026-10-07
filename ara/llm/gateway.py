@@ -16,10 +16,10 @@ import httpx
 import langsmith
 from langsmith.run_trees import RunTree
 from langsmith.schemas import ExtractedUsageMetadata
-from openai import APIStatusError, AsyncOpenAI
+from openai import APIStatusError, AsyncOpenAI, omit
 from openai.types import CompletionUsage
 from openai.types.responses import ParsedResponse, ResponseUsage
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from ara.llm.ledger import Ledger, Scope
 from ara.llm.pricing import Rates, Usage, rates, upper_bound
@@ -84,7 +84,17 @@ class Gateway:
     async def structured[T: BaseModel](
         self, stage: Stage, prompt: Prompt, schema: type[T], *, scope: Scope
     ) -> T:
-        """An OpenAI stage with a strict JSON schema (Responses API)."""
+        """Structured output. OpenAI enforces the strict JSON schema (Responses API); DeepSeek only
+        guarantees a JSON object, so its reply is validated here and a mismatch raises InvalidOutput
+        (counted by the caller, never repaired; D10)."""
+        if stage.provider == "deepseek":
+            content = await self._chat(stage, prompt, scope, schema=schema)
+            try:
+                return schema.model_validate_json(content)
+            except ValidationError as error:
+                raise InvalidOutput(
+                    f"{stage.name}: reply does not match {schema.__name__}"
+                ) from error
         response = await self._respond(stage, prompt, schema, scope, prewarm=False)
         if response.output_parsed is None:
             raise InvalidOutput(f"{stage.name}: no structured output (status {response.status})")
@@ -126,14 +136,26 @@ class Gateway:
 
     async def text(self, stage: Stage, prompt: Prompt, *, scope: Scope) -> str:
         """A DeepSeek stage in thinking mode (Chat Completions); returns the final answer."""
+        return await self._chat(stage, prompt, scope)
+
+    async def _chat(
+        self, stage: Stage, prompt: Prompt, scope: Scope, *, schema: type[BaseModel] | None = None
+    ) -> str:
+        """DeepSeek Chat Completions in thinking mode. With a schema, JSON mode is on and the schema
+        follows the static instructions, so every call of the stage shares the same prefix."""
         messages = deepseek_messages(prompt)
+        if schema is not None:
+            contract = (
+                f"Reply with one JSON object that matches this JSON Schema:\n{_schema(schema)}"
+            )
+            messages.insert(1, {"role": "system", "content": contract})
         async with self._metered(
             stage.name,
             stage.model,
             prompt.instructions.version,
             scope,
             inputs={"messages": messages},
-            input_tokens=_estimate(prompt),
+            input_tokens=_estimate(prompt, schema),
             output_tokens=stage.max_output_tokens,
             metadata={"effort": stage.effort},
         ) as call:
@@ -143,6 +165,7 @@ class Gateway:
                 reasoning_effort=stage.effort,
                 max_tokens=stage.max_output_tokens,
                 extra_body={"thinking": {"type": "enabled"}},
+                response_format={"type": "json_object"} if schema else omit,
             )
             choice = response.choices[0]
             await call.settle(deepseek_usage(response.usage), response.id, choice.message.content)
@@ -322,7 +345,11 @@ def worth_prewarming(prompt: Prompt, schema: type[BaseModel], calls: int) -> boo
 
 def _tokens(prompt: Prompt, schema: type[BaseModel] | None = None) -> int:
     """cl100k count of a prompt and its output schema; providers count slightly differently."""
-    return count_tokens(prompt.text() + (json.dumps(schema.model_json_schema()) if schema else ""))
+    return count_tokens(prompt.text() + (_schema(schema) if schema else ""))
+
+
+def _schema(schema: type[BaseModel]) -> str:
+    return json.dumps(schema.model_json_schema(), sort_keys=True)
 
 
 def _estimate(prompt: Prompt, schema: type[BaseModel] | None = None) -> int:

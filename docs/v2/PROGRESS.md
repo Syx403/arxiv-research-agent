@@ -10,7 +10,7 @@ Update this file at the end of every working session: what was done, what was sp
 | Data: PaSa query sets | done (2026-10-07) | `data/datasets/pasa/` (git-ignored, checksums in its README) |
 | M0 Foundation | done (2026-10-07), reviewed | §16 verified; §6.2–6.3 confirmed (D10, D11); 29 unit tests on real Postgres; live checks passed (cache hits on both providers; a rejected request is released) |
 | M1 RAG + S1 | done (2026-10-08) | sources (arXiv HTML/PDF, QASPER), chunking, cached embeddings, ingestion, BM25 ×2 / FTS / dense / RRF / rerank, eval runner + S1; S1 live on 2 papers (6 items) |
-| M2 Read + answer | not started | |
+| M2 Read + answer | in progress (2026-10-08) | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data generated, awaiting Ewan's review; S5 suite not built |
 | M3 Understand + discover | not started | |
 | M4 Memory | not started | |
 | M5 Reliability + UI | not started | |
@@ -27,7 +27,9 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-07 | M0 review | one request rejected by OpenAI (HTTP 400), released at $0 (`m0-reject-20261007T131416`) | 1 | 0.00 | rule-1 threshold, reported |
 | 2026-10-08 | M1 live check | S1 on 2 papers × 3 questions (`s1-20261007T161240`): 3 embedding requests, 6 Cohere reranks | 9 | 0.0002 | Ewan (≈ 9 requests, ≤ US$0.002) |
 | 2026-10-08 | S1 full round | 10 papers × 3 questions (`s1-20261007T162246`): 9 embedding requests, 30 reranks | 39 | 0.0009 | Ewan |
-| | | **Total so far** | 53 | **0.0020** | |
+| 2026-10-08 | M2 live check | S2 on 2 questions: first attempt (`s2-20261007T165545`, every label discarded) and the fixed run (`s2-20261007T165742`) | 16 | 0.0021 | Ewan (≈ 30 requests, ≤ US$0.03) |
+| 2026-10-08 | S5 data | DeepSeek paraphrases + perturbations, 6 batches (`s5-data-20261007T165950` stopped by the cap after 5; `s5-data-20261007T170445` the last) | 6 | 0.0113 | Ewan (≈ 15 requests, ≤ US$0.01; cap then raised) |
+| | | **Total so far** | 75 | **0.0154** | |
 
 ## Session log
 
@@ -99,3 +101,19 @@ Update this file at the end of every working session: what was done, what was sp
   the 23 s rerank latency claim; DESIGN §3, §10, §11.5, §17 (embedding price and limits, Cohere v2
   rerank, checked 2026-10-08); JSONL export added. 47 unit tests. No billable calls (the arXiv
   PDF fetch is free). The Cohere quota is resolved (Ewan: unused this month before M1).
+- 2026-10-08 — M2, part 1. Ewan chose S2 = S1's 30 + 5 seeded unanswerable questions, the answer
+  form (direct answer + cited lines; F1 on the direct answer), code-only grading until E1, and S5
+  perturbations by code + DeepSeek with his review (D19). Built `ara/rag/retrieve.py`, `ara/graph`
+  (read: ingest × paper → gather × document → collect → ≤ 1 requery; answer: synthesize → prewarm
+  if worth it → verify × claim → assemble → ≤ 1 repair → finalize; `qa.answer_question`), the
+  DeepSeek JSON path in the gateway, `evals/graders/answers.py`, `evals/suites/s2.py`,
+  `evals/suites/s5_data.py`, `ara eval run s2 --limit` and `ara eval perturb`. Live check
+  (`s2-20261007T165742`, 2 questions): both answered, every delivered line verified, citation
+  precision 0.83, answer F1 0.25 — low because of the metric (one answer covered both annotators'
+  answers in one line; the other quoted the paper's 4,528 employees where the gold says 26,972
+  sentences), which is what the E1 judge is for. No prewarm (the pack was under 1,024 tokens) and
+  no repair needed. S5 data: 60 claims in `evals/datasets/s5_claims.json`; the generation overran
+  its first approval (D19). Noted for Ewan's review: two S1 questions share one source sentence
+  (the 4,528 employees), so one claim pair is duplicated; code negations are sometimes awkward
+  ("has not 100 training queries"). 62 unit tests. Next: Ewan reviews the S5 claims; then the S5
+  suite (Luna vs DeepSeek verifier), which needs its own approval.

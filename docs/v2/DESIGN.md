@@ -70,22 +70,24 @@ plain functions. The LLM gateway is a thin in-house layer over the official `ope
 (DeepSeek is OpenAI-compatible). The evaluation runner is plain Python, not a graph.
 
 Package layout. A module is created in the milestone that first needs it (M0: `settings.py`,
-`db/`, `llm/`; M1: `tokens.py`, `rag/`, `arxiv/`, `evals/`):
+`db/`, `llm/`; M1: `tokens.py`, `rag/`, `arxiv/`, `evals/`; M2: `graph/` read, answer, qa, state;
+`rag/retrieve.py`; `evals/prompts/`):
 
 ```
 ara/
   settings.py   keys from .env, database URL, budget caps, tracing
   tokens.py     cl100k token counting (chunk sizes, cost estimates)
   graph/        app.py (top-level graph), discover.py, read.py, answer.py, routing.py, state.py
-  rag/          sources.py (arxiv html/pdf, qasper), chunking.py, embed.py, ingest.py, search.py
+  rag/          sources.py (arxiv html/pdf, qasper), chunking.py, embed.py, ingest.py, search.py,
+                retrieve.py (stemmed BM25 + dense → RRF → rerank top 30 → top 8 passages)
   llm/          gateway.py, prompt.py, prompts/ (text files), stages.py, pricing.py, ledger.py
   memory/       store.py, extract.py
   db/           migrations/*.sql, migrate.py, pool.py
   arxiv/        client.py (metadata, HTML/PDF fetch; search API in M3)
   api/          server.py, events.py
 ui/             React + Vite + TypeScript
-evals/          datasets/, suites/, graders/, judges/, qasper.py, stats.py, runner.py, report.py,
-                cli.py (`ara eval`)
+evals/          datasets/, suites/, graders/, judges/, prompts/ (data-generation prompts),
+                qasper.py, stats.py, runner.py, report.py, cli.py (`ara eval`)
 tests/          unit (deterministic code, real Postgres) and live (opt-in, small)
 docs/v2/        DESIGN.md, DECISIONS.md, PROGRESS.md
 ```
@@ -143,6 +145,13 @@ read — `ingest` × paper (`Send`; idempotent, cached by paper version + pipeli
 
 answer — `synthesize` → `prewarm` → `verify` × claim (`Send`) → `assemble` (keep only sentences
 whose every citation passed) → at most one `repair` → `verify` again → `finalize`.
+
+Answer form (M2, D19): the first line is `Answer: <direct answer> [E…]`, followed by explanation
+lines, each ending with its citations. Each cited line is one claim and is verified on its own;
+uncited lines are dropped. If the direct answer fails verification the answer becomes the
+abstention "Not stated in the provided papers."; with no evidence, `finalize` abstains without
+calling a model. `select_evidence` returns sentence labels (`S3`), parsed by regex so a label with
+the sentence appended still counts.
 
 ### 4.3 State
 
@@ -335,7 +344,9 @@ are not padded.
   `gateway.rerank(query, documents, top_n)` (Cohere v2 REST, calls spaced 6 s for the trial's
   10 per minute) go through the same metering, so embeddings and reranks are in the ledger too.
 - Luna: Responses API with strict `json_schema` from the Pydantic model.
-  DeepSeek: Chat Completions; tool arguments are validated by Pydantic. With tools in thinking mode
+  DeepSeek: Chat Completions; `structured` uses JSON mode (`response_format: json_object`) with
+  the schema stated in a system message after the static prefix, and the reply validated by
+  Pydantic (a failure raises `InvalidOutput`); tool arguments are validated by Pydantic. With tools in thinking mode
   DeepSeek requires every earlier `reasoning_content` to be sent back (HTTP 400 otherwise), which
   also keeps its cached prefix intact.
 - SDK retries are off (`max_retries=0`); the node `RetryPolicy` is the only retry layer.
@@ -449,11 +460,11 @@ pre-ingested papers so a live demo turn stays short.
 | Suite | Data | n | Metrics | Graders | Est. cost |
 |---|---|---|---|---|---:|
 | S1 retrieval | QASPER validation, dataset full text | 10 papers × 3 questions | evidence recall@k, MRR, nDCG@10 for BM25 / dense / RRF / RRF+rerank / native FTS | code | ≈ $0 (≈ 30 rerank calls) |
-| S2 reading QA | same 30 questions (≈ 5 unanswerable) | 30, plus 5 × 3 trials | answer F1 (extractive, yes/no), judged equivalence to gold (free-form), abstention P/R, citation precision vs gold evidence, latency, $ | code + Luna judge | ≈ $0.29 |
+| S2 reading QA | the 30 S1 questions + 5 unanswerable ones drawn (seed 20261008) from other validation papers, since the S1 papers have none (D19) | 30, plus 5 × 3 trials | answer F1 (extractive, yes/no), judged equivalence to gold (free-form), abstention P/R, citation precision vs gold evidence, latency, $ | code + Luna judge | ≈ $0.29 |
 | S2-baselines | same items | 30 each | closed-book, whole paper in context, naive RAG | same | ≈ $0.05 |
 | S3 discovery | PaSa: AutoScholarQuery (dev 15), RealScholarQuery (test 15) | 15 per round | candidate-pool recall, precision@5 (gold lower bound + adjudicated), hit@5, constraint violations | code + DeepSeek judge + Ewan | ≈ $0.10 |
 | S4 understand/clarify | v1 UI questions + edge cases, labeled by Ewan | 50 | intent accuracy, false-clarify, missed-clarify | code | ≈ $0.02 |
-| S5 verifier | QASPER evidence; 30 supported, 30 perturbed (number, entity, negation, over-generalisation) | 60 | P/R/F1 on "unsupported"; Luna vs DeepSeek | code | ≈ $0.05 |
+| S5 verifier | QASPER evidence (one sentence per S1 item); 30 DeepSeek paraphrases, 30 perturbed: number 8 and negation 7 by code, entity 8 and over-generalisation 7 by DeepSeek; reviewed by Ewan (D19) | 60 | P/R/F1 on "unsupported"; Luna vs DeepSeek | code | ≈ $0.05 |
 | S6 multi-turn + memory | scripted scenarios | 6 × ~3 turns | assertion pass rate (reference resolution, constraint retention, update, forget, abstain) | code | ≈ $0.13 |
 | S7 robustness | fault hooks + one prompt-injection document | 6 + 3 turns | graceful-degradation rate, injection success (must be 0) | code | ≈ $0.02 |
 

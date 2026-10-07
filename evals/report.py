@@ -11,7 +11,7 @@ from psycopg.rows import DictRow
 
 from ara.db.pool import Pool
 from evals.stats import mean_ci, paired
-from evals.suites import s1
+from evals.suites import s1, s2
 
 EFFICIENCY = """
 SELECT stage, model, count(*) AS requests, sum(input_tokens) AS input_tokens,
@@ -22,6 +22,7 @@ SELECT stage, model, count(*) AS requests, sum(input_tokens) AS input_tokens,
 FROM llm_calls WHERE run_id = %s GROUP BY stage, model ORDER BY stage
 """
 SPLITS = (("test", "Held-out (test): reported numbers"), ("dev", "Dev: used for choices"))
+SUITES = {"s1": s1, "s2": s2}
 
 type Scores = dict[str, dict[str, float]]  # item → metric → value, for one arm
 
@@ -43,7 +44,8 @@ async def report(pool: Pool, run_id: str) -> tuple[str, str]:
         ).fetchall()
         usage = await (await conn.execute(EFFICIENCY, (run_id,))).fetchall()
 
-    split_of = s1.splits()
+    suite = SUITES[run["suite"]]
+    split_of = suite.splits()
     by_arm: dict[str, Scores] = defaultdict(dict)
     items, errors = set(), set()
     for row in results:
@@ -66,7 +68,9 @@ async def report(pool: Pool, run_id: str) -> tuple[str, str]:
             arm: {i: m for i, m in scores.items() if split_of[i] == split}
             for arm, scores in by_arm.items()
         }
-        lines += ["", f"## {heading}", "", *_arms(scoped), "", *_pairs(scoped, s1.PAIRS)]
+        lines += ["", f"## {heading}", "", *_arms(scoped), *_abstention(scoped)]
+        if suite.PAIRS:
+            lines += ["", *_pairs(scoped, suite.PAIRS)]
     lines += ["", "## Efficiency", "", *_efficiency(usage)]
     export = "".join(
         json.dumps({**row, "split": split_of[row["item_id"]]}, sort_keys=True) + "\n"
@@ -80,6 +84,8 @@ def _metrics(by_arm: Mapping[str, Scores]) -> list[str]:
 
 
 def _arms(by_arm: Mapping[str, Scores]) -> list[str]:
+    """Mean [CI] per metric over the items that have it; "(n=k)" marks a metric defined on fewer
+    items than the arm completed (citation precision is undefined when nothing is cited)."""
     names = _metrics(by_arm)
     lines = ["| arm | n | " + " | ".join(names) + " |", "|---|---:|" + "---|" * len(names)]
     for arm, scores in by_arm.items():
@@ -87,10 +93,34 @@ def _arms(by_arm: Mapping[str, Scores]) -> list[str]:
             continue
         cells = []
         for name in names:
-            mean, low, high = mean_ci([m[name] for m in scores.values()])
-            cells.append(f"{mean:.2f} [{low:.2f}, {high:.2f}]")
+            values = [m[name] for m in scores.values() if name in m]
+            if not values:
+                cells.append("—")
+                continue
+            mean, low, high = mean_ci(values)
+            note = f" (n={len(values)})" if len(values) < len(scores) else ""
+            cells.append(f"{mean:.2f} [{low:.2f}, {high:.2f}]{note}")
         lines.append(f"| {arm} | {len(scores)} | " + " | ".join(cells) + " |")
     return lines
+
+
+def _abstention(by_arm: Mapping[str, Scores]) -> list[str]:
+    """Abstention precision and recall (S2): unanswerable is the positive class."""
+    lines = []
+    for arm, scores in by_arm.items():
+        rows = [m for m in scores.values() if "abstained" in m]
+        if not rows:
+            continue
+        hits = sum(m["abstained"] * m["unanswerable"] for m in rows)
+        predicted = sum(m["abstained"] for m in rows)
+        actual = sum(m["unanswerable"] for m in rows)
+        precision = f"{hits / predicted:.2f}" if predicted else "—"
+        recall = f"{hits / actual:.2f}" if actual else "—"
+        lines.append(
+            f"{arm} abstention: precision {precision} ({int(hits)}/{int(predicted)} abstentions"
+            f" correct), recall {recall} ({int(hits)}/{int(actual)} unanswerable caught)"
+        )
+    return ["", *lines] if lines else []
 
 
 def _pairs(by_arm: Mapping[str, Scores], pairs: Sequence[tuple[str, str]]) -> list[str]:

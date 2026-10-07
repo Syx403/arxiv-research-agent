@@ -1,0 +1,190 @@
+"""The read subgraph (DESIGN §4.2): ingest per paper → gather per (document, query) → collect, with
+at most one requery for the aspects the evidence left uncovered.
+
+    START ─(Send ingest per paper)→ ingest → ready ─(Send gather per document)→ gather → collect
+    collect ─(Send gather per document and missing aspect, once)→ gather …  or → END
+"""
+
+import operator
+import re
+from typing import Annotated, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.runtime import Runtime
+from langgraph.types import Send
+from pydantic import BaseModel, Field
+
+from ara.graph.state import Context, Evidence
+from ara.llm.prompt import Block, Instructions, Prompt
+from ara.llm.stages import STAGES
+from ara.rag.ingest import ingest
+from ara.rag.retrieve import Passage, retrieve
+
+MAX_REQUERIES = 3  # aspects searched again, per document
+LABEL = re.compile(r"S\d+")
+SELECT = Instructions.load("select_evidence")
+
+
+class EvidenceSelection(BaseModel):
+    sentences: list[str] = Field(description='Labels of the chosen sentences only, e.g. "S3".')
+    missing: list[str] = Field(description="Uncovered aspects of the question, as search queries.")
+
+
+class Found(BaseModel):
+    round: int
+    sentences: list[Evidence]  # ids are assigned in collect
+    missing: list[str]
+
+
+class ReadInput(TypedDict):
+    question: str
+    papers: list[str]  # references the context's `fetch` understands
+
+
+class ReadOutput(TypedDict):
+    evidence: list[Evidence]
+    missing: list[str]
+
+
+class ReadState(ReadInput, ReadOutput):
+    documents: Annotated[list[int], operator.add]
+    found: Annotated[list[Found], operator.add]
+    requery: list[str]
+    requeried: bool
+
+
+class IngestTask(TypedDict):
+    reference: str
+
+
+class GatherTask(TypedDict):
+    question: str
+    query: str
+    document: int
+    round: int
+
+
+async def ingest_paper(state: IngestTask, runtime: Runtime[Context]) -> dict[str, list[int]]:
+    ctx = runtime.context
+    paper = await ctx.fetch(state["reference"])
+    document = await ingest(paper, pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope)
+    return {"documents": [document]}
+
+
+def ready(state: ReadState) -> dict[str, object]:
+    """Joins the ingest branches: the gather fan-out starts once every paper is stored."""
+    return {}
+
+
+async def gather(state: GatherTask, runtime: Runtime[Context]) -> dict[str, list[Found]]:
+    """Search one document for one query, then let the model pick the sentences that matter."""
+    ctx = runtime.context
+    passages = await retrieve(
+        state["query"], [state["document"]], pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope
+    )
+    if not passages:
+        return {"found": []}
+    labelled = labels(passages)
+    prompt = Prompt(
+        SELECT,
+        shared=(Block("user", f"Question: {state['question']}"),),
+        item=(
+            Block(
+                "user", "Passages:\n" + "\n\n".join(_passage_text(p, labelled) for p in passages)
+            ),
+        ),
+    )
+    selection = await ctx.gateway.structured(
+        STAGES["select_evidence"], prompt, EvidenceSelection, scope=ctx.scope
+    )
+    chosen = [
+        labelled[label]
+        for label in dict.fromkeys(_labels(selection.sentences))
+        if label in labelled
+    ]
+    return {"found": [Found(round=state["round"], sentences=chosen, missing=selection.missing)]}
+
+
+def _labels(chosen: list[str]) -> list[str]:
+    """The label at the start of each entry: models sometimes append the sentence ("S8: ...")."""
+    return [m[0] for entry in chosen if (m := LABEL.match(entry.strip()))]
+
+
+def labels(passages: list[Passage]) -> dict[str, Evidence]:
+    """S1, S2, ... for every sentence of every passage, in order (ids are filled in later)."""
+    sentences = [
+        Evidence(
+            id="",
+            paper_id=p.paper_id,
+            chunk_id=p.chunk_id,
+            paragraph=p.paragraph,
+            heading_path=p.heading_path,
+            text=text,
+        )
+        for p in passages
+        for text in p.sentence_texts()
+    ]
+    return {f"S{n}": sentence for n, sentence in enumerate(sentences, start=1)}
+
+
+def _passage_text(passage: Passage, labelled: dict[str, Evidence]) -> str:
+    lines = [f"[{passage.heading_path}]"]
+    lines += [
+        f"{label}: {e.text}" for label, e in labelled.items() if e.chunk_id == passage.chunk_id
+    ]
+    return "\n".join(lines)
+
+
+def collect(state: ReadState) -> dict[str, object]:
+    """Number the distinct sentences E1, E2, ...; ask for one more round if aspects are missing."""
+    seen: dict[tuple[int, str], Evidence] = {}
+    for found in state["found"]:
+        for sentence in found.sentences:
+            seen.setdefault((sentence.chunk_id, sentence.text), sentence)
+    evidence = [e.model_copy(update={"id": f"E{n}"}) for n, e in enumerate(seen.values(), 1)]
+    last = max((f.round for f in state["found"]), default=0)
+    missing = list(dict.fromkeys(m for f in state["found"] if f.round == last for m in f.missing))
+    first_pass = not state.get("requeried", False)
+    requery = missing[:MAX_REQUERIES] if first_pass else []
+    return {"evidence": evidence, "missing": missing, "requery": requery, "requeried": True}
+
+
+def to_ingest(state: ReadState) -> list[Send]:
+    return [Send("ingest", IngestTask(reference=r)) for r in dict.fromkeys(state["papers"])]
+
+
+def to_gather(state: ReadState) -> list[Send]:
+    return [
+        Send(
+            "gather",
+            GatherTask(question=state["question"], query=state["question"], document=d, round=0),
+        )
+        for d in state["documents"]
+    ]
+
+
+def after_collect(state: ReadState) -> list[Send] | str:
+    if not state["requery"]:
+        return END
+    return [
+        Send("gather", GatherTask(question=state["question"], query=aspect, document=d, round=1))
+        for d in state["documents"]
+        for aspect in state["requery"]
+    ]
+
+
+def build() -> CompiledStateGraph[ReadState, Context, ReadInput, ReadOutput]:
+    graph = StateGraph(
+        ReadState, context_schema=Context, input_schema=ReadInput, output_schema=ReadOutput
+    )
+    graph.add_node("ingest", ingest_paper, input_schema=IngestTask)
+    graph.add_node("ready", ready)
+    graph.add_node("gather", gather, input_schema=GatherTask)
+    graph.add_node("collect", collect)
+    graph.add_conditional_edges(START, to_ingest, ["ingest"])
+    graph.add_edge("ingest", "ready")
+    graph.add_conditional_edges("ready", to_gather, ["gather"])
+    graph.add_edge("gather", "collect")
+    graph.add_conditional_edges("collect", after_collect, ["gather", END])
+    return graph.compile(name="read")

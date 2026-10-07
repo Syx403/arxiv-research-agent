@@ -188,3 +188,29 @@ decision gets a new entry that names the one it replaces.
 - Alternatives: keep pooled figures (larger n, but choices and reported numbers on the same items).
 - Consequence: the M2 pipeline is unchanged (stemmed BM25 + dense → RRF → rerank → top 8), on the
   strength of top-8 recall; whether rerank's ordering gain is real is re-measured in S2.
+
+## D19 — M2 choices: S2 items, answer form, S5 data (2026-10-08, Ewan)
+- S2 items: the 30 S1 questions plus 5 questions every annotator marked unanswerable, drawn with
+  seed 20261008 from other QASPER validation papers (the S1 papers have none). Manifest
+  `evals/datasets/s2_qasper.json`; 2 of the 5 are dev. Deviation from DESIGN §11.2 ("same 30
+  questions, ≈ 5 unanswerable"), approved by Ewan.
+- Answer form: one `Answer:` line with the direct answer, then cited explanation lines. Each cited
+  line is a claim and is verified alone; uncited lines are dropped; an unverified direct answer
+  turns the whole answer into the abstention. Answer F1 is QASPER's token F1 on the direct answer
+  only.
+- Grading in M2 is by code only. The Luna equivalence judge for free-form answers moves to E1,
+  where it is calibrated against Ewan's labels (§11.4).
+- `select_evidence` returns labels; the first live attempt returned "S8: <sentence>" and every
+  label was discarded, so both questions abstained. The prompt now asks for labels only and the
+  parser extracts `S\d+` from each entry.
+- S5 data: one evidence sentence per S1 item (with a number preferred, then the longest).
+  Supported claims are DeepSeek paraphrases; unsupported ones change one thing — number (8) and
+  negation (7) by code, entity (8) and over-generalisation (7) by DeepSeek (`s5_perturb`, high
+  effort, 5 sentences per request). Every item carries `reviewed: false` until Ewan reviews it.
+  Generation saves each batch to `data/s5_rewrites.json` and skips batches already saved.
+- S5 cost: approved as ≈ 15 requests, ≤ $0.01. Thinking tokens grew from 394 to 5,250 per request,
+  and the run cap stopped the sixth (last) request after 5 requests, $0.0087. The 5 replies were
+  recovered from the LangSmith traces, not re-bought; Ewan raised the cap and the last request
+  ($0.0026) completed the set. Total: 6 requests, $0.0113 — over the first approval by $0.0013.
+- Alternatives: S2 with only the 30 answerable items (no abstention signal); all perturbations by
+  LLM (cheaper code paths unused, less control over what changed).

@@ -14,6 +14,8 @@ from langsmith.schemas import Example
 
 from ara.db.migrate import migrate
 from ara.db.pool import Connection, Pool, make_pool
+from ara.graph.qa import answer_question
+from ara.graph.state import Context
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
 from ara.llm.pricing import EMBEDDING, MILLION
@@ -24,7 +26,7 @@ from ara.rag.sources import ParsedPaper
 from ara.settings import Settings, configure_tracing, get_settings
 from ara.tokens import count_tokens
 from evals.graders.retrieval import score
-from evals.suites import s1
+from evals.suites import s1, s2, s5_data
 from evals.suites.s1 import S1, Item
 
 
@@ -48,7 +50,7 @@ class Plan:
         )
 
 
-async def plan(pool: Pool, items: list[Item], papers: dict[str, ParsedPaper]) -> Plan:
+async def plan(pool: Pool, questions: list[str], papers: dict[str, ParsedPaper]) -> Plan:
     """What a run would send, from the local database alone: no API calls."""
     async with pool.connection() as conn:
         cursor = await conn.execute(
@@ -57,20 +59,20 @@ async def plan(pool: Pool, items: list[Item], papers: dict[str, ParsedPaper]) ->
         ingested = {row["paper_id"] for row in await cursor.fetchall()}
         new = [paper for paper in papers.values() if paper.id not in ingested]
         texts = {c.search_text for p in new for c in chunk(p.paragraphs)}
-        texts |= {item.question for item in items}
+        texts |= set(questions)
         cursor = await conn.execute(
             "SELECT key FROM embedding_cache WHERE key = ANY(%s)",
             ([cache_key(text) for text in texts],),
         )
         cached = {bytes(row["key"]) for row in await cursor.fetchall()}
     missing = [text for text in texts if cache_key(text) not in cached]
-    questions_missing = any(cache_key(item.question) not in cached for item in items)
+    questions_missing = any(cache_key(q) not in cached for q in questions)
     return Plan(
-        items=len(items),
+        items=len(questions),
         papers_to_ingest=len(new),
         embed_requests=len(new) + int(questions_missing),
         embed_tokens=sum(count_tokens(text) for text in missing),
-        rerank_calls=len(items),
+        rerank_calls=len(questions),
     )
 
 
@@ -81,7 +83,7 @@ async def run_s1(*, papers: int | None, execute: bool, max_usd: Decimal) -> str 
     migrate(settings.database_url)
     items, parsed = s1.load(papers)
     async with make_pool(settings.database_url) as pool:
-        estimate = await plan(pool, items, parsed)
+        estimate = await plan(pool, [item.question for item in items], parsed)
         print(f"S1 plan: {estimate}")
         if not execute:
             print("Dry run: nothing was sent. Add --execute to run.")
@@ -146,7 +148,7 @@ async def _evaluate(
                 ]
             }
 
-        dataset = _dataset(client)
+        dataset = _dataset(client, "s1", [_s1_example(i) for i in s1.load()[0]])
         results = await aevaluate(
             target,
             data=[e for e in client.list_examples(dataset_name=dataset) if _item(e) in by_id],
@@ -172,25 +174,24 @@ async def _evaluate(
         await gateway.aclose()
 
 
-def _dataset(client: Client) -> str:
+def _dataset(client: Client, suite: str, examples: list[dict[str, Any]]) -> str:
     """The suite's LangSmith dataset (QASPER is CC BY 4.0). Its name hashes the examples
     themselves, gold references included, so a change to how gold is derived makes a new dataset
     instead of grading against stale references."""
-    items, _ = s1.load()
-    examples = [
-        {
-            "inputs": {"item_id": i.id, "paper": i.paper, "question": i.question},
-            "outputs": {"references": [sorted(gold) for gold in i.references]},
-            "metadata": {"split": i.split},
-        }
-        for i in items
-    ]
     digest = sha256(json.dumps(examples, sort_keys=True).encode()).hexdigest()[:12]
-    name = f"ara-s1-{digest}"
+    name = f"ara-{suite}-{digest}"
     if not client.has_dataset(dataset_name=name):
-        dataset = client.create_dataset(name, description="ARA S1 retrieval: QASPER validation")
+        dataset = client.create_dataset(name, description=f"ARA {suite.upper()}: QASPER validation")
         client.create_examples(dataset_id=dataset.id, examples=examples)
     return name
+
+
+def _s1_example(item: Item) -> dict[str, Any]:
+    return {
+        "inputs": {"item_id": item.id, "paper": item.paper, "question": item.question},
+        "outputs": {"references": [sorted(gold) for gold in item.references]},
+        "metadata": {"split": item.split},
+    }
 
 
 def _item(example: Example) -> str:
@@ -203,13 +204,13 @@ async def _store(
     item_id: str,
     arm: str,
     metrics: dict[str, float],
-    ranking: list[int],
+    output: Any,
     error: str | None = None,
 ) -> None:
     await conn.execute(
         "INSERT INTO eval_results (run_id, item_id, arm, metrics, output, error)"
         " VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
-        (run_id, item_id, arm, json.dumps(metrics), json.dumps(ranking), error),
+        (run_id, item_id, arm, json.dumps(metrics), json.dumps(output), error),
     )
 
 
@@ -227,3 +228,131 @@ async def _finish(pool: Pool, run_id: str, status: str) -> None:
             "UPDATE eval_runs SET status = %s, finished_at = now() WHERE id = %s",
             (status, run_id),
         )
+
+
+async def run_s2(*, limit: int | None, execute: bool, max_usd: Decimal) -> str | None:
+    """Print the plan; with `execute`, answer the first `limit` S2 items and return the run id."""
+    settings = get_settings()
+    configure_tracing(settings)
+    migrate(settings.database_url)
+    items, papers = s2.load(limit)
+    async with make_pool(settings.database_url) as pool:
+        ingestion = await plan(pool, [item.question for item in items], papers)
+        llm_usd = Decimal(str(s2.UNIT_COST_USD)) * len(items)
+        print(
+            f"S2 plan: {len(items)} items; {ingestion.papers_to_ingest} papers to ingest"
+            f" (${ingestion.usd:.5f}); about {len(items)} x (1-2 select_evidence, 1 synthesize,"
+            f" 1 prewarm, ~5 verify, 0-1 repair) and 1-2 reranks;"
+            f" estimated ${llm_usd + ingestion.usd:.4f}"
+        )
+        if not execute:
+            print("Dry run: nothing was sent. Add --execute to run.")
+            return None
+        run_id = f"s2-{datetime.now(UTC):%Y%m%dT%H%M%S}"
+        config = {
+            "suite": "s2",
+            "manifest": s2.manifest_hash(),
+            "pipeline_version": PIPELINE_VERSION,
+            "items": [item.id for item in items],
+            "max_usd": str(max_usd),
+        }
+        await _start(pool, run_id, config)
+        status = "failed"
+        try:
+            status = await _answer_items(pool, settings, run_id, config, items, papers, max_usd)
+        finally:
+            await _finish(pool, run_id, status)
+        return run_id
+
+
+async def _answer_items(
+    pool: Pool,
+    settings: Settings,
+    run_id: str,
+    config: dict[str, Any],
+    items: list[s2.Item],
+    papers: dict[str, ParsedPaper],
+    max_usd: Decimal,
+) -> str:
+    ledger = Ledger(
+        pool, global_cap_usd=settings.global_cap_usd, turn_cap_usd=settings.turn_cap_usd
+    )
+    gateway = Gateway(settings, ledger)
+
+    async def fetch(reference: str) -> ParsedPaper:
+        return papers[reference]
+
+    context = Context(pool, gateway, Scope(run_id=run_id, run_cap_usd=max_usd), fetch)
+    try:
+        client = Client()
+        by_id = {item.id: item for item in items}
+
+        async def target(inputs: dict[str, Any]) -> dict[str, Any]:
+            item = by_id[inputs["item_id"]]
+            answer = await answer_question(item.question, [f"qasper:{item.paper}"], context)
+            result = s2.output(answer)
+            async with pool.connection() as conn:
+                await _store(conn, run_id, item.id, "product", s2.score(result, item), result)
+            return result
+
+        def grade(outputs: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+            metrics = s2.score(outputs, by_id[inputs["item_id"]])
+            return {"results": [{"key": k, "score": v} for k, v in metrics.items()]}
+
+        examples = [
+            {
+                "inputs": {"item_id": i.id, "paper": i.paper, "question": i.question},
+                "outputs": {"golds": [[g.kind, g.text, sorted(g.evidence)] for g in i.golds]},
+                "metadata": {"split": i.split},
+            }
+            for i in s2.load()[0]
+        ]
+        dataset = _dataset(client, "s2", examples)
+        results = await aevaluate(
+            target,
+            data=[e for e in client.list_examples(dataset_name=dataset) if _item(e) in by_id],
+            evaluators=[grade],
+            experiment_prefix=run_id,
+            metadata={**config, "dataset": dataset},
+            max_concurrency=1,
+            client=client,
+        )
+        failed = 0
+        async with pool.connection() as conn:
+            await conn.execute(
+                "UPDATE eval_runs SET langsmith_experiment = %s WHERE id = %s",
+                (results.experiment_name, run_id),
+            )
+            async for row in results:
+                if (error := row["run"].error) is not None:
+                    failed += 1
+                    await _store(conn, run_id, _item(row["example"]), "product", {}, {}, error)
+        return "partial" if failed else "complete"
+    finally:
+        await gateway.aclose()
+
+
+async def perturb_s5(*, execute: bool, max_usd: Decimal) -> None:
+    """Show the S5 sources and kinds; with `execute`, generate the claims for Ewan's review."""
+    picks = s5_data.sources()
+    kinds = {kind: sum(p["kind"] == kind for p in picks) for kind in s5_data.QUOTA}
+    requests = -(-len(picks) // s5_data.BATCH)
+    print(f"S5 data: {len(picks)} sentences, kinds {kinds}; {requests} DeepSeek requests")
+    if not execute:
+        print("Dry run: nothing was sent. Add --execute to generate.")
+        return
+    settings = get_settings()
+    configure_tracing(settings)
+    migrate(settings.database_url)
+    async with make_pool(settings.database_url) as pool:
+        ledger = Ledger(
+            pool, global_cap_usd=settings.global_cap_usd, turn_cap_usd=settings.turn_cap_usd
+        )
+        gateway = Gateway(settings, ledger)
+        run_id = f"s5-data-{datetime.now(UTC):%Y%m%dT%H%M%S}"
+        try:
+            claims = await s5_data.generate(gateway, Scope(run_id=run_id, run_cap_usd=max_usd))
+        finally:
+            await gateway.aclose()
+    s5_data.write(claims)
+    print(f"wrote {len(claims)} claims to {s5_data.OUTPUT} (ledger run {run_id}); review them")

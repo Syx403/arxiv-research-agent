@@ -21,6 +21,14 @@ URL = (
 PATH = ROOT / "data/datasets/qasper/validation.parquet"
 
 type Record = Mapping[str, Any]
+UNANSWERABLE = "Unanswerable"
+
+
+@dataclass(frozen=True)
+class Gold:
+    kind: str  # "extractive", "yes_no", "free_form" or "unanswerable"
+    text: str
+    evidence: frozenset[int]  # paragraph indices
 
 
 @dataclass(frozen=True)
@@ -77,3 +85,33 @@ def select(
     eligible = {pid: sorted(q.id for q in questions(r)) for pid, r in sorted(data.items())}
     candidates = [pid for pid, ids in eligible.items() if len(ids) >= per_paper]
     return [(pid, rng.sample(eligible[pid], per_paper)) for pid in rng.sample(candidates, papers)]
+
+
+def golds(record: Record, question_id: str) -> list[Gold]:
+    """Every annotator's answer to one question, written the way the official scorer writes it:
+    extractive spans joined by ", ", "Yes"/"No", the free-form text, or "Unanswerable"."""
+    where = paragraph_index(qasper_paper(record))
+    qas = record["qas"]
+    answers = qas["answers"][qas["question_id"].index(question_id)]["answer"]
+    result = []
+    for a in answers:
+        evidence = frozenset(where[e.strip()] for e in a["evidence"] if e.strip() in where)
+        if a["unanswerable"]:
+            result.append(Gold("unanswerable", UNANSWERABLE, evidence))
+        elif a["yes_no"] is not None:
+            result.append(Gold("yes_no", "Yes" if a["yes_no"] else "No", evidence))
+        elif a["extractive_spans"]:
+            result.append(Gold("extractive", ", ".join(a["extractive_spans"]), evidence))
+        else:
+            result.append(Gold("free_form", a["free_form_answer"], evidence))
+    return result
+
+
+def unanswerable(record: Record) -> list[str]:
+    """Questions every annotator marked unanswerable."""
+    qas = record["qas"]
+    return [
+        qid
+        for qid, answers in zip(qas["question_id"], qas["answers"], strict=True)
+        if all(a["unanswerable"] for a in answers["answer"])
+    ]

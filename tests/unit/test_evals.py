@@ -64,3 +64,15 @@ def test_selection_is_reproducible() -> None:
     assert select(data, seed=7, papers=3, per_paper=1) == select(
         data, seed=7, papers=3, per_paper=1
     )
+
+
+def test_code_perturbations_change_exactly_one_thing() -> None:
+    from evals.suites.s5_data import change_number, negate
+
+    assert change_number("The corpus has 26972 sentences in 3 sets.") == (
+        "The corpus has 35064 sentences in 3 sets."
+    )
+    assert change_number("Accuracy rose to 0.85.") == "Accuracy rose to 3.35."
+    assert change_number("No numbers here.") is None
+    assert negate("The model can handle long inputs.") == "The model can not handle long inputs."
+    assert negate("Results improve.") is None
