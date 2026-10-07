@@ -111,3 +111,32 @@ def test_s5_data_is_reviewed_and_paired_with_a_split_each() -> None:
     assert [c["label"] for c in claims] == ["supported", "unsupported"] * 29
     assert len({c["sentence"] for c in claims}) == 29
     assert set(s5.splits().values()) == {"dev", "test"}
+
+
+def test_s2_counts_rejections_over_both_drafts() -> None:
+    from evals.qasper import Gold
+    from evals.suites import s2
+
+    item: Any = type("I", (), {"golds": (Gold("extractive", "BLEU", frozenset({3})),)})()
+    result = {
+        "short": "BLEU",
+        "abstained": False,
+        "cited_paragraphs": [3],
+        "delivered": 2,
+        "dropped": 0,
+        "checked": 4,
+        "rejected": 1,
+    }
+    metrics = s2.score(result, item)
+    assert (metrics["verified_share"], metrics["rejection_rate"]) == (1.0, 0.25)
+
+
+def test_s2_repeats_each_unanswerable_item() -> None:
+    from evals.suites import s2
+
+    items, _ = s2.load()
+    ids = [i.id for i in items]
+    unanswerable = [i for i in items if all(g.kind == "unanswerable" for g in i.golds)]
+    assert len(items) == 30 + 5 * s2.TRIALS and len(set(ids)) == len(ids)
+    assert len(unanswerable) == 5 * s2.TRIALS
+    assert set(s2.splits()) == set(ids)

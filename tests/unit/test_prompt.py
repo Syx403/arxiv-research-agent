@@ -72,3 +72,10 @@ def test_deepseek_messages_map_developer_to_system() -> None:
         "assistant",
         "user",
     ]
+
+
+def test_a_follow_up_file_is_part_of_the_version() -> None:
+    repair = Instructions("repair", "Fix the listed lines.")
+    prompt = Prompt(INSTRUCTIONS, item=(Block("user", repair.text),), follow_up=repair)
+    assert prompt.version == f"{INSTRUCTIONS.version}+{repair.version}"
+    assert claim("A").version == INSTRUCTIONS.version

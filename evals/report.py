@@ -72,7 +72,7 @@ async def report(pool: Pool, run_id: str) -> tuple[str, str]:
         if suite is s5:
             lines += _detection(scoped, s5.kinds())
         if suite.PAIRS:
-            lines += ["", *_pairs(scoped, suite.PAIRS)]
+            lines += ["", *_pairs(scoped, suite.PAIRS, suite.LABELS)]
     lines += ["", "## Efficiency", "", *_efficiency(usage)]
     export = "".join(
         json.dumps({**row, "split": split_of[row["item_id"]]}, sort_keys=True) + "\n"
@@ -147,9 +147,12 @@ def _detection(by_arm: Mapping[str, Scores], kinds: Mapping[str, str]) -> list[s
     return ["", *lines] if lines else []
 
 
-def _pairs(by_arm: Mapping[str, Scores], pairs: Sequence[tuple[str, str]]) -> list[str]:
-    """a - b on the items both arms completed: mean Δ [CI], then items better / worse."""
-    names = _metrics(by_arm)
+def _pairs(
+    by_arm: Mapping[str, Scores], pairs: Sequence[tuple[str, str]], labels: Sequence[str]
+) -> list[str]:
+    """a - b on the items both arms completed: mean Δ [CI], then items better / worse. Columns
+    that record the item's label rather than the arm's output are left out."""
+    names = [name for name in _metrics(by_arm) if name not in labels]
     lines = [
         "Paired a - b: mean Δ [95% CI], items better/worse",
         "",

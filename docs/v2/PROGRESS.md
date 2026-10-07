@@ -10,7 +10,7 @@ Update this file at the end of every working session: what was done, what was sp
 | Data: PaSa query sets | done (2026-10-07) | `data/datasets/pasa/` (git-ignored, checksums in its README) |
 | M0 Foundation | done (2026-10-07), reviewed | §16 verified; §6.2–6.3 confirmed (D10, D11); 29 unit tests on real Postgres; live checks passed (cache hits on both providers; a rejected request is released) |
 | M1 RAG + S1 | done (2026-10-08) | sources (arXiv HTML/PDF, QASPER), chunking, cached embeddings, ingestion, BM25 ×2 / FTS / dense / RRF / rerank, eval runner + S1; S1 live on 2 papers (6 items) |
-| M2 Read + answer | in progress (2026-10-08) | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20) |
+| M2 Read + answer | done (2026-10-08), reviewed | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20); review fixes and a live check of requery, prewarm and repair (D21) |
 | M3 Understand + discover | not started | |
 | M4 Memory | not started | |
 | M5 Reliability + UI | not started | |
@@ -31,7 +31,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-08 | S5 data | DeepSeek paraphrases + perturbations, 6 batches (`s5-data-20261007T165950` stopped by the cap after 5; `s5-data-20261007T170445` the last) | 6 | 0.0113 | Ewan (≈ 15 requests, ≤ US$0.01; cap then raised) |
 | 2026-10-08 | S5 smoke | one claim, both verifier arms (`s5-smoke-20261007T173949`) | 2 | 0.0002 | rule-1 threshold, reported |
 | 2026-10-08 | S5 round | 58 claims × Luna / DeepSeek (`s5-20261007T174137`) | 116 | 0.0093 | Ewan (116 requests, cap US$0.10) |
-| | | **Total so far** | 193 | **0.0249** | |
+| 2026-10-08 | M2 review check | requery, prewarm + cached verify, off-question verify, repair (`m2-review-20261007T180521`, `…180557` a mistaken rerun, `…180728`) | 23 | 0.0025 | Ewan (≈ 10 requests, < US$0.005; exceeded in count by the rerun) |
+| | | **Total so far** | 216 | **0.0274** | |
 
 ## Session log
 
@@ -127,3 +128,16 @@ Update this file at the end of every working session: what was done, what was sp
   failed): held-out both models F1 1.00; dev DeepSeek 1.00, Luna 0.96 (one false alarm on an
   ambiguous paraphrase). Luna stays the verifier; the suite is at its ceiling (D20). 65 unit
   tests. M2 remaining: Ewan's review of M2; the full S2 round belongs to E1.
+- 2026-10-08 — M2 strict review (严格审核), then fixes approved by Ewan (D21). Found: the requery
+  told synthesize that aspects other searches had covered were missing; the verifier never saw the
+  question, so a direct answer was checked as a bare phrase; a failed direct answer still
+  delivered its explanation lines (against D19); repair calls carried only the synthesize version;
+  S2 lost first-draft rejections; S2 had no trials and a stale cost estimate; `run s2` / `run s5`
+  did not compare the estimate with `--max-usd`; a stored paper was fetched again; label columns
+  appeared in paired differences; S5's DeepSeek bias was unstated. Fixed all of them (D21).
+  New live check `tests/live/test_answer_paths.py`: prewarm wrote 2,234 tokens and verify read
+  them from the cache, the requery fired, an off-question phrase was rejected, one repair removed
+  a rejected line. Observed, not changed: Luna rejects "no" for a yes/no question whose evidence
+  implies but does not state it (E1 measures this). Spend: 23 requests, US$0.0025; a mistaken
+  rerun of the live module took it past the approved ≈ 10 requests (still under US$0.005).
+  73 unit tests. Next: M3 (understand + discover).

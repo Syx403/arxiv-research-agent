@@ -146,12 +146,19 @@ read — `ingest` × paper (`Send`; idempotent, cached by paper version + pipeli
 answer — `synthesize` → `prewarm` → `verify` × claim (`Send`) → `assemble` (keep only sentences
 whose every citation passed) → at most one `repair` → `verify` again → `finalize`.
 
-Answer form (M2, D19): the first line is `Answer: <direct answer> [E…]`, followed by explanation
-lines, each ending with its citations. Each cited line is one claim and is verified on its own;
-uncited lines are dropped. If the direct answer fails verification the answer becomes the
-abstention "Not stated in the provided papers."; with no evidence, `finalize` abstains without
-calling a model. `select_evidence` returns sentence labels (`S3`), parsed by regex so a label with
-the sentence appended still counts.
+Answer form (M2, D19, D21): the first line is `Answer: <direct answer> [E…]`, followed by
+explanation lines, each ending with its citations. Each cited line is one claim and is verified on
+its own; the direct answer is verified together with the question, so a true phrase that does not
+answer it fails. Uncited lines are dropped. If the direct answer fails verification or cites
+nothing, nothing is delivered and the answer is the abstention "Not stated in the provided
+papers."; when the model itself abstains, its one verified line on what the evidence does cover is
+kept. With no evidence, `finalize` abstains without calling a model. `select_evidence` returns
+sentence labels (`S3`), parsed by regex so a label with the sentence appended still counts.
+
+Requery (D21): after the first round, each document is searched once more for up to 3 aspects
+that its own selection reported missing. `synthesize` is told only the aspects no search covered
+(no first-round document answered them and their own search chose nothing). A reference that is
+already a stored paper id is not fetched again.
 
 ### 4.3 State
 
@@ -170,7 +177,8 @@ class ConversationState(TypedDict):
 ```
 
 Subgraph states add only what the phase needs (e.g. `DiscoveryState.tool_calls`,
-`AnswerState.claims`, `AnswerState.verdicts: Annotated[list[Verdict], operator.add]`).
+`AnswerState.claims`, `AnswerState.verdicts: Annotated[dict[str, Verdict], merge]`, keyed by
+claim so a line repair leaves unchanged is not verified again).
 Cost and usage are not kept in graph state; they live in the ledger (§6.5).
 
 Routing functions are small pure functions of state (unit-tested without any LLM):
@@ -329,6 +337,11 @@ class Prompt:
 | screen | instructions + the research request (all batches) |
 | verify | instructions + the answer's evidence pack (all claims) |
 
+Measured in M2 (D21): for one paper the verify prompt is usually far below the 1,024-token minimum
+(about 410 tokens per call in the first live check), so prewarm and verify cache hits appear only
+with longer packs (several papers, or a long requery); the M2 review check showed both working on
+a 2,234-token pack.
+
 The gateway records `usage.input_tokens_details.cached_tokens` / `cache_write_tokens` (OpenAI)
 and `usage.prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` (DeepSeek). The UI and the eval
 report show cache-hit rate per stage. OpenAI caches only prefixes of ≥ 1,024 tokens; short prompts
@@ -352,7 +365,8 @@ are not padded.
   also keeps its cached prefix intact.
 - SDK retries are off (`max_retries=0`); the node `RetryPolicy` is the only retry layer.
 - Prompts are files under `ara/llm/prompts/`. The version tag recorded in traces and in the ledger
-  is the file name plus a short hash of its content, so it cannot go stale.
+  is the file name plus a short hash of its content, so it cannot go stale. A follow-up file sent
+  as the item part (repair) adds its own tag: `synthesize@…+repair@…` (D21).
 
 ### 6.5 Budget ledger
 
@@ -461,7 +475,7 @@ pre-ingested papers so a live demo turn stays short.
 | Suite | Data | n | Metrics | Graders | Est. cost |
 |---|---|---|---|---|---:|
 | S1 retrieval | QASPER validation, dataset full text | 10 papers × 3 questions | evidence recall@k, MRR, nDCG@10 for BM25 / dense / RRF / RRF+rerank / native FTS | code | ≈ $0 (≈ 30 rerank calls) |
-| S2 reading QA | the 30 S1 questions + 5 unanswerable ones drawn (seed 20261008) from other validation papers, since the S1 papers have none (D19) | 30, plus 5 × 3 trials | answer F1 (extractive, yes/no), judged equivalence to gold (free-form), abstention P/R, citation precision vs gold evidence, latency, $ | code + Luna judge | ≈ $0.29 |
+| S2 reading QA | the 30 S1 questions + 5 unanswerable ones drawn (seed 20261008) from other validation papers, since the S1 papers have none (D19) | 30, plus 5 × 3 trials (45 runs) | answer F1 (extractive, yes/no), judged equivalence to gold (free-form), abstention P/R, citation precision vs gold evidence, lines verified and rejected (both drafts), latency, $ | code + Luna judge | ≈ $0.14 for the runs, re-measured (D21); judge from E1 |
 | S2-baselines | same items | 30 each | closed-book, whole paper in context, naive RAG | same | ≈ $0.05 |
 | S3 discovery | PaSa: AutoScholarQuery (dev 15), RealScholarQuery (test 15) | 15 per round | candidate-pool recall, precision@5 (gold lower bound + adjudicated), hit@5, constraint violations | code + DeepSeek judge + Ewan | ≈ $0.10 |
 | S4 understand/clarify | v1 UI questions + edge cases, labeled by Ewan | 50 | intent accuracy, false-clarify, missed-clarify | code | ≈ $0.02 |

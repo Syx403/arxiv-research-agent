@@ -6,6 +6,7 @@ one repair → verify the changed lines → finalize. Only lines whose citations
     (no evidence: START → finalize, which abstains)
 """
 
+import operator
 import re
 from typing import Annotated, TypedDict
 
@@ -44,10 +45,12 @@ class AnswerState(AnswerInput, AnswerOutput):
     claims: list[Claim]  # lines that cite known evidence: these are verified
     uncited: list[Claim]  # lines citing nothing (or unknown labels): dropped unverified
     verdicts: Annotated[dict[str, Verdict], merge]  # by Claim.key, across both rounds
+    rejected: Annotated[list[Claim], operator.add]  # first-draft lines the verifier rejected
     repaired: bool
 
 
 class VerifyTask(TypedDict):
+    question: str
     claim: Claim
     evidence: list[Evidence]
 
@@ -64,10 +67,9 @@ def parse(reply: str, known: set[str]) -> tuple[list[Claim], list[Claim]]:
         ids = list(dict.fromkeys(i.strip() for g in CITATION.findall(line) for i in g.split(",")))
         text = re.sub(r"\s+([.,;:!?])", r"\1", " ".join(CITATION.sub(" ", line).split()))
         claim = Claim(index=index, text=text, citations=ids)
-        if ids and set(ids) <= known:
-            claims.append(claim)
-        elif not (index == 0 and text.startswith(ABSTAIN.rstrip("."))):
-            uncited.append(claim)
+        if index == 0 and text.startswith(ABSTAIN.rstrip(".")):
+            continue  # the model abstained, with or without a citation
+        (claims if ids and set(ids) <= known else uncited).append(claim)
     return claims, uncited
 
 
@@ -84,8 +86,12 @@ def synthesis_prompt(state: AnswerInput) -> Prompt:
     return Prompt(SYNTHESIZE, shared=(pack(state["evidence"]),), item=(Block("user", question),))
 
 
-def verify_prompt(evidence: list[Evidence], claim: Claim) -> Prompt:
+def verify_prompt(evidence: list[Evidence], claim: Claim, question: str) -> Prompt:
+    """The direct answer is a short phrase ("no", "BLEU"), so it is checked as the answer to the
+    question; explanation lines are checked on their own (D21)."""
     item = f"Claim: {claim.text}\nCites: {', '.join(claim.citations)}"
+    if claim.direct:
+        item = f"Question: {question}\nDirect answer to the question.\n{item}"
     return Prompt(VERIFY, shared=(pack(evidence),), item=(Block("user", item),))
 
 
@@ -102,7 +108,8 @@ async def prewarm(state: AnswerState, runtime: Runtime[Context]) -> dict[str, ob
     pending = _unverified(state)
     if not pending:
         return {}
-    prompt = verify_prompt(state["evidence"], pending[0])  # prewarm drops the item part
+    # prewarm sends only the static and shared parts, so any pending claim gives the same prefix
+    prompt = verify_prompt(state["evidence"], pending[0], state["question"])
     if worth_prewarming(prompt, Verdict, len(pending)):
         await ctx.gateway.prewarm(STAGES["verify"], prompt, Verdict, scope=ctx.scope)
     return {}
@@ -110,7 +117,7 @@ async def prewarm(state: AnswerState, runtime: Runtime[Context]) -> dict[str, ob
 
 async def verify(state: VerifyTask, runtime: Runtime[Context]) -> dict[str, dict[str, Verdict]]:
     ctx = runtime.context
-    prompt = verify_prompt(state["evidence"], state["claim"])
+    prompt = verify_prompt(state["evidence"], state["claim"], state["question"])
     verdict = await ctx.gateway.structured(STAGES["verify"], prompt, Verdict, scope=ctx.scope)
     return {"verdicts": {state["claim"].key: verdict}}
 
@@ -125,34 +132,49 @@ async def repair(state: AnswerState, runtime: Runtime[Context]) -> dict[str, obj
     DeepSeek serves the evidence pack and question from its cache."""
     ctx = runtime.context
     first = synthesis_prompt(state)
+    failed = [c for c in state["claims"] if not state["verdicts"][c.key].supported]
     failures = "\n".join(
-        f"- {c.text} [{', '.join(c.citations)}]: {state['verdicts'][c.key].problem}"
-        for c in state["claims"]
-        if not state["verdicts"][c.key].supported
+        f"- {c.text} [{', '.join(c.citations)}]: {state['verdicts'][c.key].problem}" for c in failed
     )
     prompt = Prompt(
         SYNTHESIZE,
         shared=(*first.shared, *first.item, Block("assistant", state["draft"])),
         item=(Block("user", f"{REPAIR.text}\n{failures}"),),
+        follow_up=REPAIR,
     )
     draft = await ctx.gateway.text(STAGES["repair"], prompt, scope=ctx.scope)
     claims, uncited = parse(draft, {e.id for e in state["evidence"]})
-    return {"draft": draft, "claims": claims, "uncited": uncited, "repaired": True}
+    return {
+        "draft": draft,
+        "claims": claims,
+        "uncited": uncited,
+        "rejected": failed,
+        "repaired": True,
+    }
 
 
 def finalize(state: AnswerState) -> dict[str, Answer]:
+    """Deliver the verified lines. A direct answer that failed (unsupported or uncited) withholds
+    the whole answer (D19, D21); a model that abstained keeps its verified note on what the
+    evidence does cover."""
     verdicts = state.get("verdicts", {})
     claims = state.get("claims", [])
+    uncited = state.get("uncited", [])
     supported = [c for c in claims if verdicts[c.key].supported]
-    direct = next((c for c in supported if c.index == 0), None)
-    sentences = [c for c in supported if c.index > 0]
-    cited = {i for c in supported for i in c.citations}
+    direct = next((c for c in supported if c.direct), None)
+    failed = direct is None and any(c.direct for c in claims + uncited)
+    sentences = [] if failed else [c for c in supported if not c.direct]
+    delivered = ([direct] if direct else []) + sentences
+    rejected = state.get("rejected", []) + [c for c in claims if c not in supported]
+    cited = {i for c in delivered for i in c.citations}
     answer = Answer(
         question=state["question"],
         short=direct.text if direct else ABSTAIN,
         abstained=direct is None,
         sentences=sentences,
-        dropped=[c for c in claims if c not in supported] + state.get("uncited", []),
+        dropped=[c for c in claims if c not in delivered] + uncited,
+        checked=len(verdicts),
+        rejected=list({c.key: c for c in rejected}.values()),
         evidence=[e for e in state["evidence"] if e.id in cited],
     )
     return {"answer": answer}
@@ -171,7 +193,10 @@ def to_verify(state: AnswerState) -> list[Send] | str:
     pending = _unverified(state)
     if not pending:
         return "assemble"
-    return [Send("verify", VerifyTask(claim=c, evidence=state["evidence"])) for c in pending]
+    return [
+        Send("verify", VerifyTask(question=state["question"], claim=c, evidence=state["evidence"]))
+        for c in pending
+    ]
 
 
 def after_assemble(state: AnswerState) -> str:

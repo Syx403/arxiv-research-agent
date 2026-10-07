@@ -115,7 +115,7 @@ class Gateway:
         async with self._metered(
             stage.name,
             stage.model,
-            prompt.instructions.version,
+            prompt.version,
             scope,
             inputs={"messages": messages},
             input_tokens=_estimate(prompt, schema),
@@ -152,7 +152,7 @@ class Gateway:
         async with self._metered(
             stage.name,
             stage.model,
-            prompt.instructions.version,
+            prompt.version,
             scope,
             inputs={"messages": messages},
             input_tokens=_estimate(prompt, schema),

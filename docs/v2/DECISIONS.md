@@ -238,3 +238,53 @@ decision gets a new entry that names the one it replaces.
   (lines dropped by verification, judged in E1). A harder S5 (several sentences per pack with
   distractors, subtler changes) is a proposal for the E rounds, not built.
 - Cost estimate corrected: the plan assumed ≈ $0.05 per S5 round (§11.2); measured $0.0093.
+
+## D21 — M2 review fixes (2026-10-08, Ewan approved the fixes and the live check)
+- Context: the M2 strict review found that the requery reported aspects as missing that other
+  searches had covered; that the verifier never saw the question, so a direct answer was checked as
+  a bare phrase (live: "4528 employees" passed for "What is the size of the real-life dataset?",
+  gold 26,972 sentences); that a failed direct answer still delivered its explanation lines, against
+  D19; that repair calls carried only the synthesize prompt's version (D14); that S2 recorded no
+  verifier rejections from the first draft; and smaller gaps listed below.
+- Decisions:
+  - Requery per document: each document is searched again, once, for up to 3 aspects
+    (`MAX_REQUERIES`) its own first-round selection reported missing, so at most 9 extra gathers
+    for 3 papers. `synthesize` is told only the aspects no search covered: no first-round document
+    chose sentences without listing the aspect, and the aspect's own search chose nothing. The
+    requery's own `missing` lists are ignored, because they judge the whole question from one
+    aspect's passages. Alternative: intersect the first-round lists (cheaper, but blind to an aspect
+    one paper covers and another lacks).
+  - The direct answer (line 0) is verified with the question before the claim; explanation lines
+    stay question-free, so the evidence pack remains the shared prefix and S5 is unchanged. The
+    verify prompt gains one paragraph for this (new version `verify@88327669`; the S5 round of D20
+    used the earlier version).
+  - A direct answer that fails verification or cites nothing withholds the whole answer (D19 as
+    written; Ewan chose this over keeping verified lines). A model abstention still keeps its one
+    verified line on what the evidence covers, as the synthesize prompt allows; a cited abstention
+    is recognised as an abstention.
+  - `Prompt.follow_up`: a second prompt file sent as the item part; the version becomes
+    `synthesize@…+repair@…` (D14 extended).
+  - `Answer` records `checked` (distinct lines verified over both drafts) and `rejected` (lines the
+    verifier rejected, over both drafts); S2 reports `rejection_rate` beside `verified_share`, which
+    is what D20 relies on to measure the verifier on real answer lines.
+  - S2 runs each unanswerable item 3 times (DESIGN §11.2 "5 × 3 trials", not built in M2): 45 runs.
+    Per-item cost re-measured: $0.00075 on the happy path; the dry-run estimate is $0.003 per item,
+    $0.136 for the round (was $0.29). `run s2` and `run s5` refuse when the estimate exceeds
+    `--max-usd`, as S1 does.
+  - The read graph does not fetch a reference that is already a stored paper id. The report leaves
+    label columns (`unanswerable`, `unsupported`) out of paired differences.
+- Live check (`tests/live/test_answer_paths.py`): prewarm wrote 2,234 tokens and both verify calls
+  read 2,234 from the cache; the requery fired (1 and then 2 aspects); a true but off-question
+  phrase ("five independent decoders" for "How many images are in each sequence?") was rejected;
+  one repair removed the rejected line and its version tag carried `+repair@`.
+- Observed, not changed: with the question, Luna rejected "no" for "Do the decoder LSTMs all have
+  the same weights?" (QASPER gold "No"), because the evidence says "five independent decoders" and
+  not that their weights differ. The verifier is strict about yes/no answers that rest on an
+  inference; whether that is wanted is measured in E1 (S2 has one yes/no item) before the verify
+  prompt is loosened.
+- Limitation added to D20: DeepSeek wrote all 29 S5 paraphrases and 15 of the perturbations and is
+  also one of the two arms, so S5 may favour it slightly; the suite was at its ceiling anyway.
+- Spend: the check was approved at about 10 requests under US$0.005. A mistaken rerun of the whole
+  module (a command meant only to show the failures) doubled it: 23 requests (5 of them free
+  reranks), US$0.0025 in all. The run cap was raised from US$0.005 to US$0.01 for the last two
+  requests, because one repair call reserves about US$0.0052 before it settles (it cost US$0.0006).

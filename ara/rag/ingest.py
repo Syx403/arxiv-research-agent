@@ -34,22 +34,22 @@ async def ingest(paper: ParsedPaper, *, pool: Pool, gateway: Gateway, scope: Sco
     """Store `paper` and return its document id. Embeddings are computed before the transaction;
     the write itself runs under a per-paper advisory lock, so concurrent ingests store it once."""
     async with pool.connection() as conn:
-        if (existing := await _document_id(conn, paper.id)) is not None:
+        if (existing := await document_id(conn, paper.id)) is not None:
             return existing
     chunks = chunk(paper.paragraphs)
     vectors = await embed([c.search_text for c in chunks], pool=pool, gateway=gateway, scope=scope)
     async with pool.connection() as conn, conn.transaction():
         await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (paper.id,))
-        if (existing := await _document_id(conn, paper.id)) is not None:
+        if (existing := await document_id(conn, paper.id)) is not None:
             return existing
         await conn.execute(UPSERT_PAPER, _paper_row(paper))
         row = {"paper_id": paper.id, "pipeline_version": PIPELINE_VERSION, "format": paper.format}
-        document_id = int((await fetch_one(conn, INSERT_DOCUMENT, row))["id"])
+        document = int((await fetch_one(conn, INSERT_DOCUMENT, row))["id"])
         await conn.cursor().executemany(
             INSERT_CHUNK,
             [
                 (
-                    document_id,
+                    document,
                     c.ord,
                     c.paragraph,
                     c.heading_path,
@@ -61,10 +61,11 @@ async def ingest(paper: ParsedPaper, *, pool: Pool, gateway: Gateway, scope: Sco
                 for c, vector in zip(chunks, vectors, strict=True)
             ],
         )
-        return document_id
+        return document
 
 
-async def _document_id(conn: Connection, paper_id: str) -> int | None:
+async def document_id(conn: Connection, paper_id: str) -> int | None:
+    """The stored document of `paper_id` under this PIPELINE_VERSION, if any."""
     cursor = await conn.execute(
         "SELECT id FROM documents WHERE paper_id = %s AND pipeline_version = %s",
         (paper_id, PIPELINE_VERSION),

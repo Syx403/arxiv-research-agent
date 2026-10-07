@@ -20,6 +20,7 @@ DATA = s5_data.OUTPUT
 # The DeepSeek arm gets synthesize's output cap: its thinking counts against it (D19).
 ARMS = {"luna": STAGES["verify"], "deepseek": Stage("verify", FLASH, "high", 8_000)}
 PAIRS = (("luna", "deepseek"),)
+LABELS = ("unsupported",)  # metrics that record the item's label, not an arm's output
 # Per claim, for the dry-run estimate: the smoke run (2026-10-08, one claim, off-peak) measured
 # $0.00008 (Luna) and $0.00015 (DeepSeek); these allow for longer thinking and DeepSeek peak hours.
 UNIT_COST_USD = {"luna": 0.0002, "deepseek": 0.0008}
@@ -73,7 +74,7 @@ def load(limit: int | None = None) -> list[Item]:
 
 async def check(gateway: Gateway, arm: str, item: Item, scope: Scope) -> Verdict:
     claim = Claim(index=1, text=item.claim, citations=["E1"])
-    prompt = verify_prompt([item.evidence], claim)
+    prompt = verify_prompt([item.evidence], claim, question="")  # not a direct answer
     return await gateway.structured(ARMS[arm], prompt, Verdict, scope=scope)
 
 

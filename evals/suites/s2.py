@@ -1,8 +1,10 @@
 """S2 reading QA (DESIGN §11.2, D19): the product's read → answer on one QASPER paper per question.
 Items: the 30 S1 questions plus 5 questions every annotator found unanswerable, drawn with a fixed
-seed from other validation papers (the S1 papers have none). Graded by code: QASPER token F1 on the
-direct answer, abstention, citation precision against gold evidence, and how many lines survived
-verification. Free-form answers get a judged score from E1 on (§11.4)."""
+seed from other validation papers (the S1 papers have none); each unanswerable item runs TRIALS
+times, since abstention varies most between runs. Graded by code: QASPER token F1 on the direct
+answer, abstention, citation precision against gold evidence, how many lines survived
+verification and how often the verifier rejected a line. Free-form answers get a judged score from
+E1 on (§11.4)."""
 
 import json
 import random
@@ -20,15 +22,20 @@ from evals.suites import s1
 
 MANIFEST = Path(__file__).parents[1] / "datasets" / "s2_qasper.json"
 SEED, UNANSWERABLE_ITEMS, DEV_UNANSWERABLE = 20261008, 5, 2
+TRIALS = 3  # runs of each unanswerable item (DESIGN §11.2)
 ARMS = ("product",)
 # Baselines (closed-book, whole paper in context, naive RAG) and their pairs come with E1.
 PAIRS: tuple[tuple[str, str], ...] = ()
-UNIT_COST_USD = 0.008  # estimate per item: select, synthesize, verify (DESIGN §11.2), re-measured
+LABELS = ("unanswerable",)  # metrics that record the item's label, not an arm's output
+# Per item, for the dry-run estimate (re-measured in the M2 review, D21): the happy path cost
+# $0.00075 (1 select, 1 synthesize, 3 verify); a requery adds ~$0.0002 per aspect, a prewarm
+# ~$0.0003, a repair ~$0.0006, and DeepSeek peak hours double its share.
+UNIT_COST_USD = 0.003
 
 
 @dataclass(frozen=True)
 class Item:
-    id: str
+    id: str  # the QASPER question id; "<id>#2", "<id>#3" for repeated trials
     paper: str  # arXiv id; the reference is "qasper:<id>"
     split: str
     question: str
@@ -66,11 +73,12 @@ def manifest_hash() -> str:
 
 
 def splits() -> dict[str, str]:
-    return {e["id"]: e["split"] for e in json.loads(MANIFEST.read_text())["items"]}
+    return {item.id: item.split for item in load()[0]}
 
 
 def load(limit: int | None = None) -> tuple[list[Item], dict[str, ParsedPaper]]:
-    """The first `limit` items in manifest order (all if None) and their parsed papers."""
+    """The first `limit` manifest entries (all if None) as items, unanswerable ones repeated
+    TRIALS times, and their parsed papers."""
     manifest = json.loads(MANIFEST.read_text())
     if qasper.download() != manifest["dataset"]["sha256"]:
         raise ValueError(f"{qasper.PATH} differs from the file the S2 manifest was drawn from")
@@ -81,9 +89,12 @@ def load(limit: int | None = None) -> tuple[list[Item], dict[str, ParsedPaper]]:
         record = data[e["paper"]]
         qas = record["qas"]
         question = qas["question"][qas["question_id"].index(e["id"])]
-        items.append(
-            Item(e["id"], e["paper"], e["split"], question, tuple(qasper.golds(record, e["id"])))
-        )
+        golds = tuple(qasper.golds(record, e["id"]))
+        trials = TRIALS if all(g.kind == "unanswerable" for g in golds) else 1
+        items += [
+            Item(e["id"] if n == 1 else f"{e['id']}#{n}", e["paper"], e["split"], question, golds)
+            for n in range(1, trials + 1)
+        ]
     papers = {f"qasper:{e['paper']}": qasper_paper(data[e["paper"]]) for e in entries}
     return items, papers
 
@@ -96,6 +107,8 @@ def output(answer: Answer) -> dict[str, Any]:
         "cited_paragraphs": [e.paragraph for e in answer.evidence],
         "delivered": len(answer.sentences) + int(not answer.abstained),
         "dropped": len(answer.dropped),
+        "checked": answer.checked,
+        "rejected": len(answer.rejected),
     }
 
 
@@ -106,4 +119,7 @@ def score(result: dict[str, Any], item: Item) -> dict[str, float]:
     lines = result["delivered"] + result["dropped"]
     if lines:
         metrics["verified_share"] = result["delivered"] / lines
+    if result["checked"]:
+        # over both drafts: a line repair fixed still counts as one the verifier rejected
+        metrics["rejection_rate"] = result["rejected"] / result["checked"]
     return metrics

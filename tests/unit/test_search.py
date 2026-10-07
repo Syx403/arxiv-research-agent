@@ -2,9 +2,12 @@
 the gateway is never called: no API request is made."""
 
 import numpy as np
+from langgraph.runtime import Runtime
 from pydantic import SecretStr
 
 from ara.db.pool import Pool
+from ara.graph.read import ingest_paper
+from ara.graph.state import Context
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
 from ara.rag import search
@@ -66,6 +69,18 @@ async def test_ingest_is_idempotent(pool: Pool) -> None:
         count = await (await conn.execute("SELECT count(*) AS n FROM chunks")).fetchone()
     assert again == first
     assert count is not None and count["n"] == 6
+    await gateway.aclose()
+
+
+async def test_the_read_graph_does_not_fetch_a_stored_paper_again(pool: Pool) -> None:
+    gateway, first, _ = await setup(pool)
+
+    async def fetch(reference: str) -> ParsedPaper:
+        raise AssertionError(f"fetched {reference}")
+
+    runtime = Runtime(context=Context(pool, gateway, Scope(), fetch))
+    stored = await ingest_paper({"reference": "arxiv:2401.00001v1"}, runtime)
+    assert stored == {"documents": [first]}
     await gateway.aclose()
 
 

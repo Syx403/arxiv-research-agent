@@ -2,7 +2,7 @@
 at most one requery for the aspects the evidence left uncovered.
 
     START ─(Send ingest per paper)→ ingest → ready ─(Send gather per document)→ gather → collect
-    collect ─(Send gather per document and missing aspect, once)→ gather …  or → END
+    collect ─(Send gather per document and the aspects it missed, once)→ gather …  or → END
 """
 
 import operator
@@ -18,10 +18,10 @@ from pydantic import BaseModel, Field
 from ara.graph.state import Context, Evidence
 from ara.llm.prompt import Block, Instructions, Prompt
 from ara.llm.stages import STAGES
-from ara.rag.ingest import ingest
+from ara.rag.ingest import document_id, ingest
 from ara.rag.retrieve import Passage, retrieve
 
-MAX_REQUERIES = 3  # aspects searched again, per document
+MAX_REQUERIES = 3  # missing aspects searched again, per document (D21)
 LABEL = re.compile(r"S\d+")
 SELECT = Instructions.load("select_evidence")
 
@@ -33,8 +33,10 @@ class EvidenceSelection(BaseModel):
 
 class Found(BaseModel):
     round: int
+    document: int
+    query: str
     sentences: list[Evidence]  # ids are assigned in collect
-    missing: list[str]
+    missing: list[str]  # aspects of the question these passages leave open
 
 
 class ReadInput(TypedDict):
@@ -45,13 +47,6 @@ class ReadInput(TypedDict):
 class ReadOutput(TypedDict):
     evidence: list[Evidence]
     missing: list[str]
-
-
-class ReadState(ReadInput, ReadOutput):
-    documents: Annotated[list[int], operator.add]
-    found: Annotated[list[Found], operator.add]
-    requery: list[str]
-    requeried: bool
 
 
 class IngestTask(TypedDict):
@@ -65,10 +60,21 @@ class GatherTask(TypedDict):
     round: int
 
 
+class ReadState(ReadInput, ReadOutput):
+    documents: Annotated[list[int], operator.add]
+    found: Annotated[list[Found], operator.add]
+    requery: list[GatherTask]
+    requeried: bool
+
+
 async def ingest_paper(state: IngestTask, runtime: Runtime[Context]) -> dict[str, list[int]]:
+    """A reference that is a stored paper id ("qasper:…", "arxiv:…v3") is not fetched again."""
     ctx = runtime.context
-    paper = await ctx.fetch(state["reference"])
-    document = await ingest(paper, pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope)
+    async with ctx.pool.connection() as conn:
+        document = await document_id(conn, state["reference"])
+    if document is None:
+        paper = await ctx.fetch(state["reference"])
+        document = await ingest(paper, pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope)
     return {"documents": [document]}
 
 
@@ -84,7 +90,7 @@ async def gather(state: GatherTask, runtime: Runtime[Context]) -> dict[str, list
         state["query"], [state["document"]], pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope
     )
     if not passages:
-        return {"found": []}
+        return {"found": [_found(state, [], [])]}
     labelled = labels(passages)
     prompt = Prompt(
         SELECT,
@@ -103,7 +109,17 @@ async def gather(state: GatherTask, runtime: Runtime[Context]) -> dict[str, list
         for label in dict.fromkeys(_labels(selection.sentences))
         if label in labelled
     ]
-    return {"found": [Found(round=state["round"], sentences=chosen, missing=selection.missing)]}
+    return {"found": [_found(state, chosen, selection.missing)]}
+
+
+def _found(task: GatherTask, sentences: list[Evidence], missing: list[str]) -> Found:
+    return Found(
+        round=task["round"],
+        document=task["document"],
+        query=task["query"],
+        sentences=sentences,
+        missing=missing,
+    )
 
 
 def _labels(chosen: list[str]) -> list[str]:
@@ -137,17 +153,36 @@ def _passage_text(passage: Passage, labelled: dict[str, Evidence]) -> str:
 
 
 def collect(state: ReadState) -> dict[str, object]:
-    """Number the distinct sentences E1, E2, ...; ask for one more round if aspects are missing."""
+    """Number the distinct sentences E1, E2, ... After the first round, search each document once
+    more for the aspects it reported missing; after the requery, report what is still uncovered."""
     seen: dict[tuple[int, str], Evidence] = {}
     for found in state["found"]:
         for sentence in found.sentences:
             seen.setdefault((sentence.chunk_id, sentence.text), sentence)
     evidence = [e.model_copy(update={"id": f"E{n}"}) for n, e in enumerate(seen.values(), 1)]
-    last = max((f.round for f in state["found"]), default=0)
-    missing = list(dict.fromkeys(m for f in state["found"] if f.round == last for m in f.missing))
-    first_pass = not state.get("requeried", False)
-    requery = missing[:MAX_REQUERIES] if first_pass else []
-    return {"evidence": evidence, "missing": missing, "requery": requery, "requeried": True}
+    if state.get("requeried", False):
+        return {"evidence": evidence, "missing": uncovered(state["found"]), "requery": []}
+    requery = [
+        GatherTask(question=state["question"], query=aspect, document=f.document, round=1)
+        for f in state["found"]
+        for aspect in list(dict.fromkeys(f.missing))[:MAX_REQUERIES]
+    ]
+    return {"evidence": evidence, "missing": [], "requery": requery, "requeried": True}
+
+
+def uncovered(found: list[Found]) -> list[str]:
+    """Requeried aspects that no search covered: no first-round document answered them (it chose
+    sentences and did not list the aspect) and their own search chose nothing. The `missing` lists
+    of the requery are not used: they judge the whole question from one aspect's passages."""
+    first = [f for f in found if f.round == 0]
+    again = [f for f in found if f.round == 1]
+
+    def covered(aspect: str) -> bool:
+        return any(f.sentences and aspect not in f.missing for f in first) or any(
+            f.sentences for f in again if f.query == aspect
+        )
+
+    return [a for a in dict.fromkeys(f.query for f in again) if not covered(a)]
 
 
 def to_ingest(state: ReadState) -> list[Send]:
@@ -165,13 +200,7 @@ def to_gather(state: ReadState) -> list[Send]:
 
 
 def after_collect(state: ReadState) -> list[Send] | str:
-    if not state["requery"]:
-        return END
-    return [
-        Send("gather", GatherTask(question=state["question"], query=aspect, document=d, round=1))
-        for d in state["documents"]
-        for aspect in state["requery"]
-    ]
+    return [Send("gather", task) for task in state["requery"]] or END
 
 
 def build() -> CompiledStateGraph[ReadState, Context, ReadInput, ReadOutput]:

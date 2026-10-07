@@ -33,9 +33,14 @@ class Claim(BaseModel):
     citations: list[str]
 
     @property
+    def direct(self) -> bool:
+        """The direct answer is verified together with the question it answers (D21)."""
+        return self.index == 0
+
+    @property
     def key(self) -> str:
         """Identity for verdict reuse: a line repeated unchanged after repair is not re-verified."""
-        return f"{self.text} {sorted(self.citations)}"
+        return f"{self.direct} {self.text} {sorted(self.citations)}"
 
 
 class Verdict(BaseModel):
@@ -48,7 +53,9 @@ class Answer(BaseModel):
     short: str  # the direct answer, or ABSTAIN
     abstained: bool
     sentences: list[Claim]  # verified explanation lines
-    dropped: list[Claim]  # lines removed: unsupported after repair, or citing nothing known
+    dropped: list[Claim]  # final-draft lines not delivered: unsupported, uncited, or withheld
+    checked: int  # distinct lines the verifier judged, over both drafts
+    rejected: list[Claim]  # lines the verifier judged unsupported, over both drafts
     evidence: list[Evidence]  # every evidence sentence the delivered lines cite
 
     def render(self) -> str:

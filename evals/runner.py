@@ -238,16 +238,18 @@ async def run_s2(*, limit: int | None, execute: bool, max_usd: Decimal) -> str |
     items, papers = s2.load(limit)
     async with make_pool(settings.database_url) as pool:
         ingestion = await plan(pool, [item.question for item in items], papers)
-        llm_usd = Decimal(str(s2.UNIT_COST_USD)) * len(items)
+        usd = Decimal(str(s2.UNIT_COST_USD)) * len(items) + ingestion.usd
         print(
             f"S2 plan: {len(items)} items; {ingestion.papers_to_ingest} papers to ingest"
-            f" (${ingestion.usd:.5f}); about {len(items)} x (1-2 select_evidence, 1 synthesize,"
-            f" 1 prewarm, ~5 verify, 0-1 repair) and 1-2 reranks;"
-            f" estimated ${llm_usd + ingestion.usd:.4f}"
+            f" (${ingestion.usd:.5f}); per item 1 select_evidence and 1 rerank per paper (more"
+            f" on a requery), 1 synthesize, ~4 verify, 0-1 prewarm, 0-1 repair;"
+            f" estimated ${usd:.4f}"
         )
         if not execute:
             print("Dry run: nothing was sent. Add --execute to run.")
             return None
+        if usd > max_usd:
+            raise SystemExit(f"estimated ${usd:.4f} exceeds --max-usd {max_usd}")
         run_id = f"s2-{datetime.now(UTC):%Y%m%dT%H%M%S}"
         config = {
             "suite": "s2",
@@ -371,6 +373,8 @@ async def run_s5(*, limit: int | None, execute: bool, max_usd: Decimal) -> str |
     if not execute:
         print("Dry run: nothing was sent. Add --execute to run.")
         return None
+    if usd > max_usd:
+        raise SystemExit(f"estimated ${usd:.4f} exceeds --max-usd {max_usd}")
     settings = get_settings()
     configure_tracing(settings)
     migrate(settings.database_url)

@@ -55,6 +55,14 @@ class Prompt:
     instructions: Instructions
     shared: tuple[Block, ...] = ()
     item: tuple[Block, ...] = ()
+    follow_up: Instructions | None = None  # a second prompt file sent as the item (e.g. repair)
+
+    @property
+    def version(self) -> str:
+        """Every prompt file the request carries (D14), so a follow-up turn is traceable too."""
+        if self.follow_up is None:
+            return self.instructions.version
+        return f"{self.instructions.version}+{self.follow_up.version}"
 
     def parts(self) -> tuple[tuple[Part, tuple[Block, ...]], ...]:
         static = (Block("developer", self.instructions.text),)

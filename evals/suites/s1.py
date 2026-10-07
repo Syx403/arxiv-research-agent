@@ -28,6 +28,7 @@ PAIRS = (
     ("rrf", "dense"),
     ("rrf_rerank", "rrf"),
 )
+LABELS: tuple[str, ...] = ()  # metrics that record the item's label, not an arm's output
 RERANK_POOL = 30  # RRF candidates sent to the reranker
 
 
