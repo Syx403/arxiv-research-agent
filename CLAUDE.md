@@ -1,0 +1,43 @@
+# ARA (arXiv Research Agent) — v2
+
+Personal project by Ewan (Syx403). Purpose: demonstrate, with honest evidence, how a mature
+agent system is built and evaluated (LangGraph, RAG, LLM layer, memory, database). It is not
+production and must never be described as production.
+
+Read first: `docs/v2/DESIGN.md` (spec), `docs/v2/DECISIONS.md` (why), `docs/v2/PROGRESS.md`
+(where we are). v1 is kept only at tag `baseline-2026-10-07`; read it with
+`git show baseline-2026-10-07:<path>` or a separate worktree, never revive it wholesale.
+
+## Hard rules
+
+1. Billable APIs (LLM, embedding, rerank): a run of ≤ 3 requests and ≤ US$0.02 may be done and
+   reported afterwards. Anything larger needs Ewan's approval first: state the request count and
+   estimated cost. Report actual spend after every billable run and log it in `PROGRESS.md`.
+2. Budget: whole v2 ≤ US$10 (development + evaluation); one full evaluation round ≤ US$1. If
+   either needs to change, tell Ewan before acting.
+3. No large-scale LLM testing until Ewan has reviewed the architecture (DESIGN §14 gate).
+4. No mocks: no fake LLM classes, no recorded cassettes. Unit tests cover deterministic code
+   against real Postgres; LLM behaviour is checked with small live tests.
+5. Code style: elegant and concise. Validate at trust boundaries (LLM output, external APIs, user
+   input) only; no scattered defensive checks; small functions; prompts live in files.
+6. Never silently change something agreed in `DESIGN.md` / `DECISIONS.md`. If a deviation is
+   needed, say so at that moment, record a new decision, and repeat it in the session summary.
+7. Never fabricate when context is long: re-read the docs or ask.
+8. Git: work on `v2`. Do not merge into `main` or push to `main` unless Ewan asks.
+9. Keys come from the existing `.env`; never print or commit secrets. Do not add new providers
+   (no Semantic Scholar).
+10. Datasets: raw data stays in git-ignored `data/datasets/`; PaSa is gated (CC BY-NC-SA 4.0) and
+    must not be committed or redistributed.
+
+## Working with Ewan
+
+- Talk to Ewan in Chinese; repository code, docs and UI are in English.
+- Cite code as absolute paths, e.g. `/Users/richsion/Desktop/arxiv-research-agent/ara/graph/app.py:12`.
+- Flow per milestone: confirm scope → implement → small live check (rule 1) → update
+  `PROGRESS.md` → summarise what changed, what was spent and any deviations.
+- Ewan's known gaps (databases, hand-written code fluency): explain DB and LangGraph choices in
+  plain terms; keep the code readable enough for him to defend line by line.
+
+## Commands
+
+To be filled in at M0 (Docker DB, migrations, tests, API server, UI, eval runner).
