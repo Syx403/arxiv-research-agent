@@ -211,6 +211,8 @@ def test_s4_grades_quotes_by_the_words_they_cover() -> None:
 
 
 def test_s6_checks_each_expectation_of_a_turn() -> None:
+    from langchain_core.messages import AIMessage
+
     from ara.graph.state import Constraint, PaperCard
     from ara.memory.store import Fact
 
@@ -235,7 +237,13 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
         PaperCard(arxiv_id=i, version=1, title="t", abstract="", published="2024-01-01")
         for i in ("2401.00001", "2401.00002")
     ]
-    state = {"request": request, "selected": ["arxiv:2401.00002v1"], "answer": None}
+    reply = AIMessage("We have not discussed this. Would you like me to search arXiv?")
+    state = {
+        "request": request,
+        "selected": ["arxiv:2401.00002v1"],
+        "answer": None,
+        "messages": [reply],
+    }
     profile = [Fact(key="k", quote="I never fine-tune models", statement="s")]
     passing = {
         "intent": "read",
@@ -244,6 +252,7 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
         "selected_positions": [2],
         "selected": ["2401.00002"],
         "answered": False,
+        "reply_has": "search arXiv",
     }
     assert s6.check(passing, state, profile, shown) == []
     failing = {"intent": "library", "no_constraint": "fine-tune", "profile_lacks": "never"}

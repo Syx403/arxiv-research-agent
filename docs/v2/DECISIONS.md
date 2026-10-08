@@ -529,3 +529,15 @@ decision gets a new entry that names the one it replaces.
   (CoT, SayCan, WebGPT …), which reads as if those were read too; the reply's "From your library"
   list shows only ReAct. Store embeddings (recall, episodes) are metered without a run id, so run
   reports leave them out (a few hundred tokens a turn).
+- S6 review and round (2026-10-09, Ewan): every scenario accepted, with one change — a library
+  question nothing read covers answers "We have not discussed this in any paper we have read. Would
+  you like me to search arXiv for papers on it?" (a library turn that found nothing is also not
+  recorded as research, so no paper gets linked to the topic). Round `s6-20261008T164126` (108
+  requests, US$0.0280, report in `docs/v2/eval/`): 5 of 6 scenarios passed (dev 2/2, held-out 3/4;
+  checks 1.00 dev, 0.85 held-out). s6-episode failed: in a new session "Go back to the ReWOO paper
+  we read earlier" became find-then-read by title, discovery listed ReWOO alone, and choose_papers
+  stopped to ask because ReWOO was not screened relevance 3. Cause 1, a slip in this milestone: the
+  understand prompt (restored in D25) allowed only ids from the latest message, so the ids that
+  D27 lets through from research records could never be used; the prompt now also takes the id
+  of a paper from earlier research the message refers to (fixed after the round, not rerun).
+  Cause 2, open for Ewan: D22's choose_papers asks even when only one paper was listed.

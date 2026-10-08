@@ -43,7 +43,7 @@ def check(
     expect: dict[str, Any], state: dict[str, Any], profile: list[Fact], shown: list[PaperCard]
 ) -> list[str]:
     """The expectations a turn failed (none if it passed); `shown`: the list before the turn."""
-    request = state["request"]
+    request, reply = state["request"], state["messages"][-1].text
     quotes = [plain(c.quote) for c in request.constraints]
     facts = [plain(f.quote) for f in profile]
     read = [r.removeprefix("arxiv:").split("v")[0] for r in state["selected"]]
@@ -58,5 +58,6 @@ def check(
         "selected": lambda v: set(v) <= set(read),
         "selected_positions": lambda v: read == [shown[n - 1].arxiv_id for n in v],
         "answered": lambda v: answered == v,
+        "reply_has": lambda v: v in reply,
     }
     return [f"{name}={value!r}" for name, value in expect.items() if not tests[name](value)]

@@ -150,3 +150,9 @@ def test_a_memory_turn_says_what_changed() -> None:
         "Noted: The user said hosted APIs only.\nForgotten: The user said latency."
     )
     assert "nothing to remember" in app.memory_reply(base_state(request(intent="memory")))
+
+
+def test_a_library_question_nothing_read_covers_offers_a_search() -> None:
+    nothing = base_state(request(intent="library"), selected=["arxiv:2210.03629v3"], answer=None)
+    assert app.reply(nothing) == app.NOT_DISCUSSED
+    assert "search arXiv" in app.NOT_DISCUSSED

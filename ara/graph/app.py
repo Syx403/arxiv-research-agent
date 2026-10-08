@@ -59,7 +59,10 @@ OTHER = (
     "I find arXiv papers and answer questions from their full text. Ask me for papers on a topic,"
     " or to read a paper by its arXiv id."
 )
-EMPTY_LIBRARY = "No papers have been read yet, so there is nothing to answer from."
+NOT_DISCUSSED = (
+    "We have not discussed this in any paper we have read."
+    " Would you like me to search arXiv for papers on it?"
+)
 RESEARCH = ("discover", "discover_read", "read", "library")
 # Our types kept in checkpoints; LangGraph will refuse to load types it was not told about.
 CHECKPOINTED = [
@@ -360,7 +363,8 @@ async def remember(state: ConversationState, runtime: Runtime[Context]) -> dict[
             await store.remember(memory, ctx.user_id, fact)
         for key in update.forget:
             await store.forget(memory, ctx.user_id, key)
-    if request.intent in RESEARCH and (papers := state["read"] or state["papers"]):
+    found = request.intent != "library" or _answered(state)  # a miss links no paper to the topic
+    if request.intent in RESEARCH and found and (papers := state["read"] or state["papers"]):
         await store.record(memory, ctx.user_id, uuid4().hex, episode(state, ctx.today, papers))
     return {"memory": update}
 
@@ -387,8 +391,8 @@ def reply(state: ConversationState) -> str:
         return OTHER
     if request.intent == "memory":
         return memory_reply(state)
-    if request.intent == "library" and not state["selected"]:
-        return EMPTY_LIBRARY
+    if request.intent == "library" and not _answered(state):
+        return NOT_DISCUSSED  # nothing read covers it: offer a search instead (D27, Ewan)
     parts = []
     if request.intent == "library":
         parts.append(
@@ -404,6 +408,11 @@ def reply(state: ConversationState) -> str:
     elif request.intent == "discover_read" and state["papers"] and not state["selected"]:
         parts.append("Nothing was chosen to read.")
     return "\n\n".join(parts)
+
+
+def _answered(state: ConversationState) -> bool:
+    delivered = state["answer"]
+    return delivered is not None and not delivered.abstained
 
 
 def memory_reply(state: ConversationState) -> str:

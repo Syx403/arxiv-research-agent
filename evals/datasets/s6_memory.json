@@ -1,6 +1,6 @@
 {
   "suite": "s6",
-  "labels": "drafted by Claude for Ewan's review (D27)",
+  "labels": "drafted by Claude, reviewed by Ewan on 2026-10-09 (D27)",
   "checks": {
     "intent": "the request's intent",
     "constraint": "a constraint quote covers this phrase",
@@ -9,7 +9,8 @@
     "profile_lacks": "no remembered fact quotes this phrase",
     "selected": "these bare arXiv ids are among the papers read",
     "selected_positions": "the papers read are these positions of the list shown before the turn",
-    "answered": "true: a verified answer was delivered; false: the reply abstains or finds nothing"
+    "answered": "true: a verified answer was delivered; false: the reply abstains or finds nothing",
+    "reply_has": "the reply contains this text"
   },
   "scenarios": [
     {
@@ -69,7 +70,8 @@
             "message": "And what did the papers we read say about diffusion models for image generation?",
             "expect": {
               "intent": "library",
-              "answered": false
+              "answered": false,
+              "reply_has": "Would you like me to search arXiv"
             }
           }
         ]
