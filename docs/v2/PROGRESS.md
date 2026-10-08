@@ -174,8 +174,8 @@ Update this file at the end of every working session: what was done, what was sp
   unit cost) and S4 rounds need approval.
 - 2026-10-08 — S3 calibration (`s3-20261008T052442`, 4 queries, 0 failed, US$0.0098): US$0.0012-0.0031
   per query (screening 63% of it), 30-37 s each, so a 30-query round is ≈ US$0.07-0.09 and ≈ 18
-  minutes, well under the D22 estimate of US$0.24. The researcher used 2-4 steps per query (budget
-  8) and gathered 5-56 candidates; pool recall 0.28 held-out, 0.33 dev (n = 2 each, directional).
+  minutes, well under the D22 estimate of US$0.24. The researcher used 2-4 steps per query (about four
+  searches each, so its 8-search budget) and gathered 5-56 candidates; pool recall 0.28 held-out, 0.33 dev (n = 2 each, directional).
 - 2026-10-08 — D24, after Ewan's S4 label review. Built: `priorities`, `titles` and `prefer_recent`
   in the request (understand prompt rewritten, quotes checked in code), `Context.today` in the
   understand item and as the search end (S3 pins it to the PaSa date), `search_arxiv(newest_first)`
@@ -185,9 +185,9 @@ Update this file at the end of every working session: what was done, what was sp
   live check of the changed turns (≈ 40 requests, ≤ US$0.02) needs approval; then S4 and S3.
 - 2026-10-08 — Ewan accepted every S4 label; first S4 and S3 rounds (D25). S4 held-out: intent
   0.94, every field right 0.69, priorities the weakest field, no missed clarification. S3 held-out:
-  pool recall 0.44, hit@5 0.87; the researcher stops after 2-4 of its 8 steps, so search recall is
-  the bottleneck. Live check: the latest-papers turn passed; the read-then-follow-up turn failed at
-  its first step (ids taken as find-then-read). No change was tuned on held-out results: three
+  pool recall 0.44, hit@5 0.87; search recall is the bottleneck (the researcher uses its 8
+  searches, about four per step; an earlier line here wrongly said it stopped early). Live check:
+  the latest-papers turn passed; the read-then-follow-up turn failed at its first step (ids taken as find-then-read). No change was tuned on held-out results: three
   candidates (inclusive date limits, tighter priorities, an ids-means-read rule) go to the E rounds.
   Fixed a D24 slip in the understand prompt (`paper_ids` from the latest message). S3's dry-run unit
   cost lowered to US$0.005 from the calibration. Spend this session: 290 requests, US$0.1096; v2 total

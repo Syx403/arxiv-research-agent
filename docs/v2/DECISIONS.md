@@ -447,9 +447,11 @@ decision gets a new entry that names the one it replaces.
 - S3 (`s3-20261008T103432`, 30 queries, 0 failed, 189 requests, US$0.0893, 19 minutes, off-peak):
   held-out (RealScholarQuery, 15) pool recall 0.44 [0.32, 0.57], shortlist recall 0.36, gold
   precision@5 ≥ 0.44, hit@5 0.87; dev (AutoScholarQuery, 15, mostly one gold paper, so precision@5
-  is at most 0.20 there) pool recall 0.70, hit@5 0.73. No paper went unjudged. The researcher used
-  2.4 steps per query on average and never more than 4 of its 8, so search recall, not screening,
-  is the bottleneck; prerank's cut to 24 loses 0.08 of held-out recall. Screening is 63% of the cost.
+  is at most 0.20 there) pool recall 0.70, hit@5 0.73. No paper went unjudged. Search recall, not
+  screening, is the bottleneck; prerank's cut to 24 loses 0.08 of held-out recall. Screening is 63%
+  of the cost. (Corrected after the round: the researcher did use its budget. It sends about four
+  searches per step, so 2.4 steps is 8 searches; the traces show 237 searches over 30 queries, 21 of
+  them empty. A first version of this entry said it stopped early, confusing steps with searches.)
 - Decision (Ewan): no prompt or code change is tuned on these held-out results now. Three
   candidates go to the E rounds, tuned on dev and reported on held-out: state that date limits
   include their day; tighten `priorities` with counter-examples; a code rule that a request with
