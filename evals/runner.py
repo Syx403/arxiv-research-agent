@@ -15,12 +15,14 @@ from langsmith.schemas import Example
 from ara.arxiv.client import ArxivClient
 from ara.db.migrate import migrate
 from ara.db.pool import Connection, Pool, make_pool
+from ara.graph import app
 from ara.graph.discover import build as build_discover
 from ara.graph.qa import answer_question
-from ara.graph.state import Context, ResearchRequest, Verdict
+from ara.graph.state import Context, PaperCard, ResearchRequest, Verdict
 from ara.llm.gateway import Gateway, InvalidOutput
 from ara.llm.ledger import Ledger, Scope
 from ara.llm.pricing import EMBEDDING, MILLION
+from ara.memory import store
 from ara.rag.chunking import chunk
 from ara.rag.embed import cache_key
 from ara.rag.ingest import PIPELINE_VERSION
@@ -29,7 +31,7 @@ from ara.settings import Settings, configure_tracing, get_settings
 from ara.tokens import count_tokens
 from evals.graders import discovery
 from evals.graders.retrieval import score
-from evals.suites import s1, s2, s3, s4, s5, s5_data
+from evals.suites import s1, s2, s3, s4, s5, s5_data, s6
 from evals.suites.s1 import S1, Item
 
 
@@ -637,3 +639,75 @@ async def _understand_items(
         return "partial" if failed else "complete"
     finally:
         await gateway.aclose()
+
+
+async def run_s6(*, limit: int | None, execute: bool, max_usd: Decimal) -> str | None:
+    """Print the plan; with `execute`, run the first `limit` scenarios through the conversation
+    graph, each as its own user, each session as its own thread (D27). Results stay in Postgres."""
+    scenarios = s6.load(limit)
+    usd = Decimal(str(s6.UNIT_COST_USD)) * len(scenarios)
+    turns = sum(len(t) for s in scenarios for t in s.sessions)
+    print(f"S6 plan: {len(scenarios)} scenarios, {turns} turns; estimated ${usd:.4f}")
+    if not execute:
+        print("Dry run: nothing was sent. Add --execute to run.")
+        return None
+    if usd > max_usd:
+        raise SystemExit(f"estimated ${usd:.4f} exceeds --max-usd {max_usd}")
+    settings = get_settings()
+    configure_tracing(settings)
+    migrate(settings.database_url)
+    async with make_pool(settings.database_url) as pool, ArxivClient() as arxiv:
+        run_id = f"s6-{datetime.now(UTC):%Y%m%dT%H%M%S}"
+        config = {"suite": "s6", "data": s6.data_hash(), "items": len(scenarios)}
+        await _start(pool, run_id, {**config, "max_usd": str(max_usd)})
+        ledger = Ledger(
+            pool, global_cap_usd=settings.global_cap_usd, turn_cap_usd=settings.turn_cap_usd
+        )
+        gateway = Gateway(settings, ledger)
+        memory = await store.open_store(pool, gateway)
+        graph = app.build(await app.checkpointer(pool), memory)
+
+        async def fetch(reference: str) -> ParsedPaper:
+            return await arxiv.paper(reference.removeprefix("arxiv:"))
+
+        failed, status = 0, "failed"
+        try:
+            for scenario in scenarios:
+                user = f"{run_id}:{scenario.id}"
+                failures: list[str] = []
+                try:
+                    for n, session in enumerate(scenario.sessions):
+                        thread, shown = f"{user}:{n}", list[PaperCard]()
+                        for k, turn in enumerate(session):
+                            scope = Scope(
+                                run_id=run_id, turn_id=f"{user}:{n}:{k}", run_cap_usd=max_usd
+                            )
+                            context = Context(pool, gateway, scope, fetch, arxiv, user_id=user)
+                            done = await app.send(graph, thread, context, message=turn["message"])
+                            profile = await store.profile(memory, user)
+                            failures += [
+                                f"session {n} turn {k}: {f}"
+                                for f in s6.check(turn["expect"], done.state, profile, shown)
+                            ]
+                            if done.waiting is not None:
+                                failures.append(f"session {n} turn {k}: waiting {done.waiting}")
+                            shown = done.state.get("shown", [])
+                except Exception as error:  # one failed scenario must not end the round
+                    failed += 1
+                    async with pool.connection() as conn:
+                        await _store(conn, run_id, scenario.id, "product", {}, {}, repr(error))
+                    continue
+                checks = sum(len(t["expect"]) for s in scenario.sessions for t in s)
+                metrics = {
+                    "passed": float(not failures),
+                    "checks_passed": (checks - len(failures)) / checks,
+                }
+                async with pool.connection() as conn:
+                    await _store(
+                        conn, run_id, scenario.id, "product", metrics, {"failures": failures}
+                    )
+            status = "partial" if failed else "complete"
+        finally:
+            await gateway.aclose()
+            await _finish(pool, run_id, status)
+        return run_id

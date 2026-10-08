@@ -18,8 +18,6 @@ from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
 from ara.settings import Settings
 
-EMPTY: Any = {}
-
 
 def request(**fields: Any) -> ResearchRequest:
     base: dict[str, Any] = {
@@ -103,14 +101,14 @@ def test_routing_after_understand_bounds_clarification() -> None:
     assert app.after_understand(base_state(asking)) == "clarify"
     assert app.after_understand(base_state(asking, clarifications=2)) == "discover"
     assert app.after_understand(base_state(request(intent="read", paper_ids=["1"]))) == "resolve"
-    assert app.after_understand(base_state(request(intent="library"))) == "respond"
+    assert app.after_understand(base_state(request(intent="library"))) == "library"
 
 
 def base_state(r: ResearchRequest, **fields: Any) -> Any:
     state: dict[str, Any] = {
         "messages": [],
         "shown": [],
-        **app.load_context(EMPTY),
+        **app.fresh_turn(),
         "request": r,
     }
     return state | fields
@@ -192,7 +190,7 @@ async def test_an_ambiguous_choice_waits_for_the_user_and_resumes(pool: Pool) ->
         config,
         {
             "messages": [HumanMessage("find and read")],
-            **app.load_context(EMPTY),
+            **app.fresh_turn(),
             "request": request(intent="discover_read"),
             "papers": papers,
         },
@@ -218,7 +216,7 @@ async def test_clarify_waits_with_the_question(pool: Pool) -> None:
         config,
         {
             "messages": [HumanMessage("find the best paper to cut my agent's cost")],
-            **app.load_context(EMPTY),
+            **app.fresh_turn(),
             "request": request(clarification="Which cost: API spend or latency?"),
         },
         as_node="understand",

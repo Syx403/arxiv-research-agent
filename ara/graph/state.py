@@ -17,7 +17,7 @@ from ara.rag.sources import ParsedPaper
 ABSTAIN = "Not stated in the provided papers."
 MAX_LISTED, MAX_READ = 5, 3  # papers per turn (DESIGN §2)
 
-type Intent = Literal["discover", "discover_read", "read", "library", "other"]
+type Intent = Literal["discover", "discover_read", "read", "library", "memory", "other"]
 
 
 def plain(text: str) -> str:
@@ -137,3 +137,4 @@ class Context:
     fetch: Callable[[str], Awaitable[ParsedPaper]]  # paper reference → parsed full text
     arxiv: ArxivClient
     today: date = field(default_factory=date.today)  # when the user asks; evals pin it (D24)
+    user_id: str = "local"  # whose memory and library (single user, no login: DESIGN §9)

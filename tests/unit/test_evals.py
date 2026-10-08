@@ -10,7 +10,7 @@ from evals.graders.retrieval import ndcg_at, recall_at, reciprocal_rank, score
 from evals.qasper import questions, select
 from evals.report import _detection
 from evals.stats import mean_ci, paired
-from evals.suites import s3, s4, s5
+from evals.suites import s3, s4, s5, s6
 
 CJK = re.compile("[\u4e00-\u9fff]")  # project data is English (D24)
 
@@ -208,3 +208,51 @@ def test_s4_grades_quotes_by_the_words_they_cover() -> None:
     assert not s4._covers(["API cost"], labelled), "a missing phrase fails"
     assert not s4._covers(["API cost", "waiting time", "open source"], labelled)
     assert s4._covers([], []) and not s4._covers(["no fine-tuning"], [])
+
+
+def test_s6_checks_each_expectation_of_a_turn() -> None:
+    from ara.graph.state import Constraint, PaperCard
+    from ara.memory.store import Fact
+
+    request = ResearchRequest(
+        **{
+            "intent": "read",
+            "clarification": None,
+            "need": "n",
+            "question": "q",
+            "paper_ids": [],
+            "listed": [2],
+            "count": None,
+            "constraints": [Constraint(quote="I never fine-tune models", meaning="m")],
+            "priorities": [],
+            "titles": [],
+            "prefer_recent": False,
+            "published_after": None,
+            "published_before": None,
+        }
+    )
+    shown = [
+        PaperCard(arxiv_id=i, version=1, title="t", abstract="", published="2024-01-01")
+        for i in ("2401.00001", "2401.00002")
+    ]
+    state = {"request": request, "selected": ["arxiv:2401.00002v1"], "answer": None}
+    profile = [Fact(key="k", quote="I never fine-tune models", statement="s")]
+    passing = {
+        "intent": "read",
+        "constraint": "never fine-tune",
+        "profile_has": "never fine-tune",
+        "selected_positions": [2],
+        "selected": ["2401.00002"],
+        "answered": False,
+    }
+    assert s6.check(passing, state, profile, shown) == []
+    failing = {"intent": "library", "no_constraint": "fine-tune", "profile_lacks": "never"}
+    assert len(s6.check(failing, state, profile, shown)) == 3
+    assert [s.id for s in s6.load()] == [
+        "s6-carry",
+        "s6-library",
+        "s6-update",
+        "s6-forget",
+        "s6-refer",
+        "s6-episode",
+    ]

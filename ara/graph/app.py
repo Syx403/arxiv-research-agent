@@ -5,24 +5,31 @@ Postgres, so a turn that stops for the user (clarify, paper choice) resumes wher
                                        ├─► discover ⟦sub⟧ ─┬─► choose_papers ⏸? → read …
                                        │                   └─► respond
                                        ├─► resolve → read ⟦sub⟧ → answer ⟦sub⟧ → respond
-                                       └─► respond → END
+                                       ├─► library → read ⟦sub⟧ → answer ⟦sub⟧ → respond
+                                       ├─► remember → respond → END          (intent "memory")
+                                       └─► respond
+    respond → remember → END                                               (every other turn)
 
-choose_papers stops for the user only when the choice is ambiguous. Memory (remember, the library,
-the user profile) arrives in M4; until then a library question is answered with a notice.
+choose_papers stops for the user only when the choice is ambiguous. Memory (D27): load_context
+reads the user's profile and the past research closest to the message from the Store; remember
+keeps what the user says about themselves and records the turn; reading adds to the library.
 """
 
 import re
 from dataclasses import dataclass
 from datetime import date
 from typing import Annotated, Any, Literal, TypedDict
+from uuid import uuid4
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
+from langgraph.store.base import BaseStore
 from langgraph.types import Command, interrupt
 
 from ara.arxiv.client import ARXIV_ID
@@ -39,6 +46,10 @@ from ara.graph.state import (
 )
 from ara.llm.prompt import Block, Instructions, Prompt, data
 from ara.llm.stages import STAGES
+from ara.memory import extract, library, store
+from ara.memory.extract import MemoryUpdate
+from ara.memory.store import Episode, Fact
+from ara.rag.embed import embed
 
 UNDERSTAND = Instructions.load("understand")
 MAX_CLARIFY = 2  # questions per turn; after that the turn proceeds with what it has
@@ -48,7 +59,26 @@ OTHER = (
     "I find arXiv papers and answer questions from their full text. Ask me for papers on a topic,"
     " or to read a paper by its arXiv id."
 )
-LIBRARY = "Questions about papers from earlier sessions need memory, which is not built yet."
+EMPTY_LIBRARY = "No papers have been read yet, so there is nothing to answer from."
+RESEARCH = ("discover", "discover_read", "read", "library")
+# Our types kept in checkpoints; LangGraph will refuse to load types it was not told about.
+CHECKPOINTED = [
+    ("ara.graph.state", name)
+    for name in (
+        "Answer",
+        "Claim",
+        "Constraint",
+        "Evidence",
+        "PaperCard",
+        "Priority",
+        "ResearchRequest",
+        "Verdict",
+    )
+] + [
+    ("ara.memory.store", "Episode"),
+    ("ara.memory.store", "Fact"),
+    ("ara.memory.extract", "MemoryUpdate"),
+]
 
 type Status = Literal["running", "needs_input", "complete", "partial", "failed"]
 
@@ -56,7 +86,11 @@ type Status = Literal["running", "needs_input", "complete", "partial", "failed"]
 class ConversationState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     shown: list[PaperCard]  # the papers listed last, which "the second one" refers to
-    request: ResearchRequest | None  # turn-scoped from here on
+    turn_start: int  # index of this turn's first message; turn-scoped from here on
+    profile: list[Fact]  # what the user told us in any session
+    episodes: list[Episode]  # earlier research closest to the latest message
+    memory: MemoryUpdate | None  # what remember changed this turn
+    request: ResearchRequest | None
     clarifications: int
     papers: list[PaperCard]  # listed by discovery
     selected: list[str]  # paper references to read
@@ -68,9 +102,13 @@ class ConversationState(TypedDict):
     stop_reason: str
 
 
-def load_context(state: ConversationState) -> dict[str, object]:
-    """Reset the turn-scoped fields, so nothing from the previous turn leaks into this one."""
+def fresh_turn() -> dict[str, object]:
+    """The turn-scoped fields, reset so nothing from the previous turn leaks into this one."""
     return {
+        "turn_start": 0,
+        "profile": [],
+        "episodes": [],
+        "memory": None,
         "request": None,
         "clarifications": 0,
         "papers": [],
@@ -84,19 +122,46 @@ def load_context(state: ConversationState) -> dict[str, object]:
     }
 
 
-def understand_prompt(messages: list[AnyMessage], shown: list[PaperCard], today: date) -> Prompt:
-    """The conversation so far is the shared part; today's date, the numbered papers shown last
-    (when there are any) and the latest message are the item. Each turn extends the previous
-    turn's cached prefix, which ends just before the previous turn's item (DESIGN §6.3: understand
-    caches all three parts; the date is never placed before the item, D24)."""
+async def load_context(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
+    """Start a turn: fresh turn-scoped fields, and the user's memory from the Store, which is the
+    profile and the earlier research closest to the new message (D27)."""
+    user, memory = runtime.context.user_id, runtime.store
+    if memory is None:  # a graph compiled without a Store (unit tests) has no memory
+        return {**fresh_turn(), "turn_start": len(state["messages"]) - 1}
+    return {
+        **fresh_turn(),
+        "turn_start": len(state["messages"]) - 1,
+        "profile": await store.profile(memory, user),
+        "episodes": await store.recall(memory, user, state["messages"][-1].text),
+    }
+
+
+def understand_prompt(
+    messages: list[AnyMessage],
+    shown: list[PaperCard],
+    today: date,
+    profile: list[Fact] = [],  # noqa: B006 (never mutated)
+    episodes: list[Episode] = [],  # noqa: B006
+) -> Prompt:
+    """The user's profile and the conversation so far are the shared part; today's date, earlier
+    research related to the message, the numbered papers shown last and the latest message are
+    the item. Each turn extends the previous turn's cached prefix, which ends just before the
+    previous turn's item (DESIGN §6.3; the date is never placed before the item, D24); the
+    profile changes rarely, and only then breaks the prefix (D27)."""
     blocks = tuple(_block(m) for m in messages)
+    known = (data("About the user", [f.model_dump(exclude={"key"}) for f in profile]),)
     listing = [
         {"n": n, "id": f"{p.arxiv_id}v{p.version}", "title": p.title, "published": p.published}
         for n, p in enumerate(shown, 1)
     ]
     papers = (data("Papers shown last", listing),) if listing else ()
+    earlier = (Block("user", "Earlier research:\n" + "\n".join(e.text() for e in episodes)),)
     when = Block("user", f"Today: {today.isoformat()}")
-    return Prompt(UNDERSTAND, shared=blocks[:-1], item=(when, *papers, *blocks[-1:]))
+    return Prompt(
+        UNDERSTAND,
+        shared=(*(known if profile else ()), *blocks[:-1]),
+        item=(when, *(earlier if episodes else ()), *papers, *blocks[-1:]),
+    )
 
 
 def _block(message: AnyMessage) -> Block:
@@ -105,23 +170,29 @@ def _block(message: AnyMessage) -> Block:
 
 async def understand(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
     ctx = runtime.context
-    shown = state.get("shown", [])
-    prompt = understand_prompt(state["messages"], shown, ctx.today)
+    shown, profile, episodes = state.get("shown", []), state["profile"], state["episodes"]
+    prompt = understand_prompt(state["messages"], shown, ctx.today, profile, episodes)
     request = await ctx.gateway.structured(
         STAGES["understand"], prompt, ResearchRequest, scope=ctx.scope
     )
-    return {"request": checked(request, state["messages"], shown)}
+    return {"request": checked(request, state["messages"], shown, profile, episodes)}
 
 
 def checked(
-    request: ResearchRequest, messages: list[AnyMessage], shown: list[PaperCard]
+    request: ResearchRequest,
+    messages: list[AnyMessage],
+    shown: list[PaperCard],
+    profile: list[Fact] = [],  # noqa: B006 (never mutated)
+    episodes: list[Episode] = [],  # noqa: B006
 ) -> ResearchRequest:
-    """The trust boundary for understand: a constraint or a priority must quote the user literally
-    (v1 rule); ids must be arXiv ids written in the conversation, not recalled by the model (v1
-    rule, DESIGN §13); positions must point at a paper shown; dates must parse; titles are kept
-    once each. A read request that names no paper becomes find-then-read."""
-    said = plain(" ".join(m.text for m in messages if isinstance(m, HumanMessage)))
-    written = " ".join(m.text for m in messages)
+    """The trust boundary for understand: a constraint or a priority must quote the user literally,
+    in this conversation or in a remembered fact (v1 rule, D27); ids must be arXiv ids written in
+    the conversation or in the user's earlier research, not recalled by the model (v1 rule, DESIGN
+    §13); positions must point at a paper shown; dates must parse; titles are kept once each. A
+    read request that names no paper becomes find-then-read."""
+    human = [m.text for m in messages if isinstance(m, HumanMessage)]
+    said = plain(" ".join([*human, *(f.quote for f in profile)]))
+    written = " ".join([*(m.text for m in messages), *(e.text() for e in episodes)])
     paper_ids = [
         i for i in request.paper_ids if (m := ARXIV_ID.match(i)) and _written(m[1], written)
     ]
@@ -224,6 +295,7 @@ async def run_read(state: ConversationState, runtime: Runtime[Context]) -> dict[
     )
     async with ctx.pool.connection() as conn:
         cards = await read_cards(conn, found["documents"])
+        await library.record_read(conn, ctx.user_id, found["documents"])
     order = [r.removeprefix("arxiv:").split("v")[0] for r in state["selected"]]
     cards.sort(key=lambda c: order.index(c.arxiv_id) if c.arxiv_id in order else len(order))
     return {"evidence": found["evidence"], "missing": found["missing"], "read": cards}
@@ -261,6 +333,48 @@ async def run_answer(state: ConversationState, runtime: Runtime[Context]) -> dic
     return {"answer": result["answer"]}
 
 
+async def find_in_library(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
+    """A question about papers read before: the user's papers nearest the question (HNSW over the
+    library, D27) are read again, from the stored text, and answered with verified citations."""
+    ctx = runtime.context
+    [vector] = await embed([_question(state)], pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope)
+    async with ctx.pool.connection() as conn:
+        papers = await library.closest_papers(conn, ctx.user_id, vector, MAX_READ)
+    return {"selected": papers}
+
+
+async def remember(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
+    """Keep what the user said about themselves (one Luna call, only when the turn is about memory
+    or stated constraints or priorities), then record a research turn as an episode (by code)."""
+    ctx, memory = runtime.context, runtime.store
+    if memory is None:
+        return {}
+    request = _request(state)
+    update = MemoryUpdate(facts=[], forget=[])
+    if request.intent == "memory" or request.constraints or request.priorities:
+        said = [
+            m.text for m in state["messages"][state["turn_start"] :] if isinstance(m, HumanMessage)
+        ]
+        update = await extract.propose(ctx.gateway, state["profile"], said, scope=ctx.scope)
+        for fact in update.facts:
+            await store.remember(memory, ctx.user_id, fact)
+        for key in update.forget:
+            await store.forget(memory, ctx.user_id, key)
+    if request.intent in RESEARCH and (papers := state["read"] or state["papers"]):
+        await store.record(memory, ctx.user_id, uuid4().hex, episode(state, ctx.today, papers))
+    return {"memory": update}
+
+
+def episode(state: ConversationState, today: date, papers: list[PaperCard]) -> Episode:
+    delivered = state["answer"]
+    return Episode(
+        day=today.isoformat(),
+        need=_request(state).need,
+        papers=[f"{p.arxiv_id}v{p.version} {p.title}" for p in papers],
+        answer=delivered.short if delivered and not delivered.abstained else "",
+    )
+
+
 def respond(state: ConversationState) -> dict[str, object]:
     """The papers a follow-up can point at: those a search listed, else those just read (D24)."""
     shown = state["papers"] or state["read"] or state.get("shown", [])
@@ -271,9 +385,15 @@ def reply(state: ConversationState) -> str:
     request = _request(state)
     if request.intent == "other":
         return OTHER
-    if request.intent == "library":
-        return LIBRARY
+    if request.intent == "memory":
+        return memory_reply(state)
+    if request.intent == "library" and not state["selected"]:
+        return EMPTY_LIBRARY
     parts = []
+    if request.intent == "library":
+        parts.append(
+            "From your library:\n" + "\n".join(_title(n, p) for n, p in enumerate(state["read"], 1))
+        )
     if state["papers"]:
         parts.append("\n".join(_listing(n, p) for n, p in enumerate(state["papers"], 1)))
     elif request.intent in ("discover", "discover_read"):
@@ -284,6 +404,18 @@ def reply(state: ConversationState) -> str:
     elif request.intent == "discover_read" and state["papers"] and not state["selected"]:
         parts.append("Nothing was chosen to read.")
     return "\n\n".join(parts)
+
+
+def memory_reply(state: ConversationState) -> str:
+    update = state["memory"] or MemoryUpdate(facts=[], forget=[])
+    known = {f.key: f.statement for f in state["profile"]}
+    lines = [f"Noted: {f.statement}" for f in update.facts]
+    lines += [f"Forgotten: {known[k]}" for k in update.forget]
+    return "\n".join(lines) or "There was nothing to remember or forget in that message."
+
+
+def _title(n: int, p: PaperCard) -> str:
+    return f"{n}. {p.title} (arXiv {p.arxiv_id}v{p.version})"
 
 
 def _listing(n: int, p: PaperCard) -> str:
@@ -304,15 +436,31 @@ def _question(state: ConversationState) -> str:
 
 def after_understand(state: ConversationState) -> str:
     request = _request(state)
-    if request.clarification and state["clarifications"] < MAX_CLARIFY:
+    # A library question is never clarified: the library search answers it or finds nothing (D27).
+    asks = request.clarification and request.intent != "library"
+    if asks and state["clarifications"] < MAX_CLARIFY:
         return "clarify"
     return {
         "discover": "discover",
         "discover_read": "discover",
         "read": "resolve",
-        "library": "respond",
+        "library": "library",
+        "memory": "remember",
         "other": "respond",
     }[request.intent]
+
+
+def after_library(state: ConversationState) -> str:
+    return "read" if state["selected"] else "respond"
+
+
+def after_respond(state: ConversationState) -> str:
+    """A memory turn has already remembered; every other turn remembers after replying."""
+    return END if _request(state).intent == "memory" else "remember"
+
+
+def after_remember(state: ConversationState) -> str:
+    return "respond" if _request(state).intent == "memory" else END
 
 
 def after_discover(state: ConversationState) -> str:
@@ -326,6 +474,7 @@ def after_choice(state: ConversationState) -> str:
 
 def build(
     checkpointer: BaseCheckpointSaver[Any] | None = None,
+    memory: BaseStore | None = None,
 ) -> CompiledStateGraph[ConversationState, Context, ConversationState, ConversationState]:
     graph = StateGraph(ConversationState, context_schema=Context)
     graph.add_node("load_context", load_context)
@@ -336,25 +485,31 @@ def build(
     graph.add_node("resolve", resolve)
     graph.add_node("read", run_read)
     graph.add_node("answer", run_answer)
+    graph.add_node("library", find_in_library)
     graph.add_node("respond", respond)
+    graph.add_node("remember", remember)
     graph.add_edge(START, "load_context")
     graph.add_edge("load_context", "understand")
     graph.add_conditional_edges(
-        "understand", after_understand, ["clarify", "discover", "resolve", "respond"]
+        "understand",
+        after_understand,
+        ["clarify", "discover", "resolve", "library", "remember", "respond"],
     )
     graph.add_edge("clarify", "understand")
     graph.add_conditional_edges("discover", after_discover, ["choose_papers", "respond"])
     graph.add_conditional_edges("choose_papers", after_choice, ["read", "respond"])
     graph.add_edge("resolve", "read")
     graph.add_edge("read", "answer")
+    graph.add_conditional_edges("library", after_library, ["read", "respond"])
     graph.add_edge("answer", "respond")
-    graph.add_edge("respond", END)
-    return graph.compile(checkpointer=checkpointer, name="ara")
+    graph.add_conditional_edges("respond", after_respond, ["remember", END])
+    graph.add_conditional_edges("remember", after_remember, ["respond", END])
+    return graph.compile(checkpointer=checkpointer, store=memory, name="ara")
 
 
 async def checkpointer(pool: Pool) -> AsyncPostgresSaver:
     """Checkpoints live in the app database; `setup` creates or upgrades LangGraph's own tables."""
-    saver = AsyncPostgresSaver(pool)
+    saver = AsyncPostgresSaver(pool, serde=JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINTED))
     await saver.setup()
     return saver
 

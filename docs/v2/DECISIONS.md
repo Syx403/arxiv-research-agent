@@ -483,3 +483,49 @@ decision gets a new entry that names the one it replaces.
     errors barely affect the user; the severe one is ids taken as `discover_read`.
 - Decision (Ewan): DESIGN §14.1 lists nine changes for the E rounds, each tuned on dev and reported
   on held-out against the M3 baseline. M4 starts now.
+
+## D27 — M4 memory: profile, research records, library, S6 (2026-10-09, Ewan approved the plan)
+- Ewan's choices:
+  - A new intent `memory` for messages that only state something about the user or ask to forget
+    something: understand → remember → respond, and the reply says what changed. Every other turn
+    replies first and remembers after (respond → remember, DESIGN §4.1).
+  - The profile reaches understand only (shared part, before the conversation), not synthesize as
+    DESIGN §7 first said: understand turns remembered facts into the turn's constraints and
+    priorities (their quotes pass the literal-quote check), and synthesize already receives
+    priorities (D24). Alternative: also send the profile to synthesize (a second path for the same
+    facts).
+  - Research records (episodes) are written by code, not summarised by a model as DESIGN §7 first
+    said: date, need, the papers listed or read, the delivered direct answer; indexed by the need in
+    the Store. understand sees the three closest to the message (item part), and an arXiv id
+    written in them passes the id check. Alternative: a Luna summary per turn (costs a call and can
+    invent).
+  - HNSW stays (DESIGN §5, §8), measured honestly (below).
+- Built: `ara/memory/` (`store.py`: `AsyncPostgresStore` on the app database, embeddings through
+  the cache and the ledger; `extract.py`: the remember call and its trust boundary; `library.py`),
+  migration 0004 (`library_items`, HNSW on `chunks.embedding`), the `remember` and `library`
+  nodes, `Context.user_id` ("local"). remember calls Luna only when the turn is a memory turn or
+  stated constraints or priorities; it keeps a fact only if the quote is this turn's user words, a
+  known key replaces its fact, and forgets only known keys. A library question embeds the question,
+  takes the user's three papers nearest it (HNSW with iterative scan, filtered to the library) and
+  runs the read and answer subgraphs on their stored text; the reply lists them.
+- HNSW measured (30 S1 questions, 686 chunks in 13 papers, cached vectors, free): top-10 overlap
+  with the exact scan 0.977; median 1.0 ms against 2.65 ms exact; at this size the planner still
+  chooses the exact scan (cost 148 against 1,548), so the index takes over only as the library grows.
+  The library query orders by distance alone, since a second sort key would prevent index use.
+- Found by the live check and fixed: understand asked a question on a library question about a
+  topic never read ("I don't have any previously read papers about diffusion models …"); a library
+  question is now never clarified (code rule in routing); the library search answers or abstains.
+  Also: LangGraph warned that our state types in checkpoints are unregistered (a future version
+  will refuse them; true since M3); the checkpointer now lists them (`CHECKPOINTED`), and the app
+  tests pass with `LANGGRAPH_STRICT_MSGPACK=true`.
+- S6 (`evals/datasets/s6_memory.json`, six scenarios, 14 turns, 2 dev / 4 held-out, drafted for
+  Ewan's review): remembered constraint in a new session, library answer and abstain, update,
+  forget, reference to a listed paper, a paper named through earlier research. Graded by code per
+  turn; a scenario passes when every check holds.
+- Live check (approved ≈ 40 requests, ≤ US$0.03): S6's first two scenarios
+  (`s6-20261008T162055`), 42 requests, US$0.0176. s6-carry passed; s6-library passed 7 of 8 checks
+  (the clarification above, fixed afterwards, not rerun). Observed, not changed: the library answer
+  to "which papers have we read about reasoning and acting" summarised ReAct's related-work section
+  (CoT, SayCan, WebGPT …), which reads as if those were read too; the reply's "From your library"
+  list shows only ReAct. Store embeddings (recall, episodes) are metered without a run id, so run
+  reports leave them out (a few hundred tokens a turn).

@@ -45,7 +45,7 @@ Constraints
 | Discover + read | "Find 2 papers on tool-call scheduling and compare their mechanisms" | understand → discover → choose_papers (⏸ if ambiguous) → read → answer → respond |
 | Read named/selected papers | "Read 2210.03629 and explain how it interleaves reasoning and actions" / "read the second one" | understand → read → answer → respond |
 | Ask the library | "Which papers did we read about MoE routing, and what did they conclude?" | understand → answer (library scope) → respond |
-| Remember / forget | "I only use hosted APIs, no fine-tuning" / "forget that" | any path → remember |
+| Remember / forget | "I only use hosted APIs, no fine-tuning" / "forget that" | any path → remember; a message that only does this: understand → remember → respond (D27) |
 
 Hard limits per turn: ≤ 5 papers listed, ≤ 3 papers read, ≤ 8 arXiv tool calls, one evidence
 requery, one answer repair.
@@ -147,6 +147,10 @@ After the M3 review (D23): `understand` receives the numbered papers shown last 
 before the latest message; an arXiv id survives only if the conversation wrote it (§13, v1 rule);
 `resolve` passes stored paper ids (`arxiv:<id>v<n>`), one per paper, and a bare id is pinned to its
 latest version from arXiv metadata before the stored-document check.
+After D27 (M4): `load_context` reads the profile and the three closest research records from the
+Store; a `memory` intent goes understand → remember → respond, every other turn respond → remember;
+a library question (never clarified) goes `library` (HNSW over the user's papers, top 3) → read →
+answer → respond; reading records the papers in `library_items`.
 After D24: `understand` also returns `priorities` (what the user cares about: quoted, steers
 relevance and the answer's focus, never removes a paper), `titles` (papers named without an id;
 the researcher looks them up first) and `prefer_recent` (asked for recent work, or any topic search
@@ -417,8 +421,8 @@ are not padded.
 | Kind | Where | Written by | Read by |
 |---|---|---|---|
 | Conversation | checkpoints (thread state) | graph | every turn (append-only) |
-| Profile facts (interests, constraints, preferences) | Store `("users", uid, "profile")` | `remember` | `understand`, `synthesize` (shared prompt part) |
-| Episodes (one summary per research turn) | Store `("users", uid, "episodes")`, semantic index | `remember` | `understand` when the user refers to earlier work |
+| Profile facts (interests, constraints, preferences) | Store `("users", uid, "profile")` | `remember` | `understand` (shared prompt part; D27: not synthesize, which gets them as priorities) |
+| Episodes (one record per research turn, written by code, D27) | Store `("users", uid, "episodes")`, semantic index on the need | `remember` | `understand` (the three closest to the message) |
 | Library (papers read or saved) | SQL `library_items` | `read`, UI | library questions, UI |
 
 - A profile fact must quote the user literally and keep its source turn (v1 rule). A newer fact
@@ -438,12 +442,12 @@ pinned (verified at M0). One database (`ara`; unit tests use `ara_test` on the s
 | `documents` | one parsed edition per (paper version, `PIPELINE_VERSION`); unique; written with its chunks in one transaction, so a row means complete (D16) |
 | `chunks` | `document_id`, `ord`, `heading_path`, `text`, `search_text`, sentence offsets, `embedding vector(1536)`, `tsv` (generated) |
 | `embedding_cache` | content hash → vector |
-| `library_items` | user, paper version, status, note |
+| `library_items` | user, paper version, status, first and last read (0004, D27) |
 | `llm_calls` | ledger + usage + cache tokens + latency + stage + turn/run ids |
 | `eval_runs`, `eval_results`, `labels` | evaluation outputs and Ewan's labels |
 | LangGraph tables | checkpoints, store (created by `setup()`) |
 
-Indexes: HNSW on `chunks.embedding` (M4); the ParadeDB (BM25) index on `chunks(id, document_id,
+Indexes: HNSW on `chunks.embedding` (0004; measured in D27); the ParadeDB (BM25) index on `chunks(id, document_id,
 search_text ×2 tokenizers)`; GIN on `chunks.tsv`; btree on `chunks(document_id)`, `llm_calls(turn_id)`,
 `llm_calls(run_id)`, `eval_results(run_id)`.
 Ingestion takes a per-paper advisory lock and writes a document in one transaction.
@@ -512,7 +516,7 @@ pre-ingested papers so a live demo turn stays short.
 | S3 discovery | PaSa: AutoScholarQuery (dev 15), RealScholarQuery (test 15), seed 20261009; manifest holds ids only, no LangSmith dataset (D22); 30 per round, confirmed by Ewan (D23); each query runs with today = its PaSa date (D24) | 30 | candidate-pool and shortlist recall, gold precision@5 (lower bound), hit@5; adjudication and constraint violations with the judge in E1 | code (M3); + DeepSeek judge + Ewan from E1 | $0.089 measured (D25) |
 | S4 understand/clarify | 12 of v1's questions (translated; 2 rewritten) + 50 drafted cases, each with the day it is asked; labels proposed by Claude and reviewed by Ewan (D22, D24) | 62 | intent accuracy, false-clarify, missed-clarify, per-field accuracy over every field (ids, positions, titles, count, constraints, priorities, dates, prefer_recent) | code | $0.0084 measured (D25) |
 | S5 verifier | QASPER evidence (one sentence per S1 item); 30 DeepSeek paraphrases, 30 perturbed: number 8 and negation 7 by code, entity 8 and over-generalisation 7 by DeepSeek; reviewed by Ewan; 58 after review (D19, D20) | 58 | P/R/F1 on "unsupported", recall per kind; Luna vs DeepSeek | code | $0.0093 measured (D20) |
-| S6 multi-turn + memory | scripted scenarios | 6 × ~3 turns | assertion pass rate (reference resolution, constraint retention, update, forget, abstain) | code | ≈ $0.13 |
+| S6 multi-turn + memory | scripted scenarios, drafted by Claude for Ewan's review (D27) | 6 scenarios, 14 turns | scenarios passed, checks passed (reference resolution, constraint retention, update, forget, library answer and abstain) | code | ≈ $0.05 |
 | S7 robustness | fault hooks + one prompt-injection document | 6 + 3 turns | graceful-degradation rate, injection success (must be 0) | code | ≈ $0.02 |
 
 Efficiency is reported for every suite: requests, tokens, cache-hit rate, $/task, latency p50/p95.

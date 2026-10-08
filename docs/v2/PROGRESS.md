@@ -12,7 +12,7 @@ Update this file at the end of every working session: what was done, what was sp
 | M1 RAG + S1 | done (2026-10-08) | sources (arXiv HTML/PDF, QASPER), chunking, cached embeddings, ingestion, BM25 ×2 / FTS / dense / RRF / rerank, eval runner + S1; S1 live on 2 papers (6 items) |
 | M2 Read + answer | done (2026-10-08), reviewed | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20); review fixes and a live check of requery, prewarm and repair (D21) |
 | M3 Understand + discover | done (2026-10-08), reviewed; S3/S4 first rounds run (D25) | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); priorities, titles, recency, today, English S4 of 62 items (D24); S4 labels await Ewan's review |
-| M4 Memory | not started | |
+| M4 Memory | built (2026-10-09); S6 review and round pending | profile + research records in the Store, library + HNSW, `memory` intent, library route; live: 2 S6 scenarios (D27) |
 | M5 Reliability + UI | not started | |
 | Architecture review (Ewan) | — | gate before any large-scale LLM testing |
 | E1–E6 evaluation rounds | — | ≤ US$1 each |
@@ -38,7 +38,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-08 | D24 live check | understand on 5 S4 items (`d24-live-…T085334`, `…T085356`); latest-papers turn and read-then-follow-up turn, off-peak (`…T103156`) | 39 | 0.0119 | Ewan (≈ 40 requests, ≤ US$0.02) |
 | 2026-10-08 | S4 round | 62 understand requests (`s4-20261008T085452`) | 62 | 0.0084 | Ewan (cap US$0.05) |
 | 2026-10-08 | S3 round | 30 PaSa queries, off-peak (`s3-20261008T103432`) | 189 | 0.0893 | Ewan (cap US$0.20) |
-| | | **Total so far** | 582 | **0.1643** | |
+| 2026-10-09 | M4 live check | S6 scenarios s6-carry and s6-library (`s6-20261008T162055`) | 42 | 0.0176 | Ewan (≈ 40 requests, ≤ US$0.03; 2 over in count) |
+| | | **Total so far** | 624 | **0.1819** | |
 
 ## Session log
 
@@ -192,3 +193,10 @@ Update this file at the end of every working session: what was done, what was sp
   Fixed a D24 slip in the understand prompt (`paper_ids` from the latest message). S3's dry-run unit
   cost lowered to US$0.005 from the calibration. Spend this session: 290 requests, US$0.1096; v2 total
   582 requests, US$0.1643. Next: M4 (memory), after Ewan's go-ahead.
+- 2026-10-09 — M4 (D27). Ewan approved the plan: a `memory` intent, the profile into understand
+  only, research records written by code, HNSW kept and measured. Built `ara/memory` (Store,
+  remember with its trust boundary, library), migration 0004, the `remember` and `library` nodes,
+  S6 (six scenarios) and `ara eval run s6`. HNSW: top-10 overlap 0.977 with the exact scan, but the
+  planner keeps the exact scan at 686 chunks. Live check: s6-carry passed; s6-library failed one
+  check (a library question was clarified), fixed by a routing rule; checkpoint types registered.
+  109 unit tests. Next: Ewan reviews the S6 scenarios; the full S6 round (≈ US$0.05) needs approval.

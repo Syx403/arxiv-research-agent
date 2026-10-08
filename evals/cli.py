@@ -24,12 +24,12 @@ def main() -> None:
     evals.add_parser("prepare", help="download QASPER and draw any missing S1/S2 manifest")
     for name in ("plan", "run"):
         sub = evals.add_parser(name)
-        sub.add_argument("suite", choices=["s1", "s2", "s3", "s4", "s5"])
+        sub.add_argument("suite", choices=["s1", "s2", "s3", "s4", "s5", "s6"])
         sub.add_argument("--papers", type=int, help="S1: only the first N papers of the manifest")
         sub.add_argument(
             "--limit",
             type=int,
-            help="S2/S4: first N items; S3: first N per split; S5: first N claim pairs",
+            help="S2/S4: first N items; S3: first N per split; S5: claim pairs; S6: scenarios",
         )
         if name == "run":
             sub.add_argument("--execute", action="store_true", help="send billable requests")
@@ -59,6 +59,7 @@ def main() -> None:
                     "s3": runner.run_s3,
                     "s4": runner.run_s4,
                     "s5": runner.run_s5,
+                    "s6": runner.run_s6,
                 }[args.suite]
                 run = suite_run(limit=args.limit, execute=execute, max_usd=max_usd)
             run_id = asyncio.run(run)

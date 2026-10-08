@@ -1,0 +1,190 @@
+{
+  "suite": "s6",
+  "labels": "drafted by Claude for Ewan's review (D27)",
+  "checks": {
+    "intent": "the request's intent",
+    "constraint": "a constraint quote covers this phrase",
+    "no_constraint": "no constraint quote contains this phrase",
+    "profile_has": "a remembered fact quotes this phrase",
+    "profile_lacks": "no remembered fact quotes this phrase",
+    "selected": "these bare arXiv ids are among the papers read",
+    "selected_positions": "the papers read are these positions of the list shown before the turn",
+    "answered": "true: a verified answer was delivered; false: the reply abstains or finds nothing"
+  },
+  "scenarios": [
+    {
+      "id": "s6-carry",
+      "split": "test",
+      "note": "a stated constraint is remembered and applied in a new session",
+      "sessions": [
+        [
+          {
+            "message": "I only use hosted model APIs, and I never fine-tune models.",
+            "expect": {
+              "intent": "memory",
+              "profile_has": "never fine-tune"
+            }
+          }
+        ],
+        [
+          {
+            "message": "Find papers on reducing the latency of tool calls in LLM agents.",
+            "expect": {
+              "intent": "discover",
+              "constraint": "never fine-tune"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-library",
+      "split": "test",
+      "note": "a later session answers from the library, and abstains on a topic never read",
+      "sessions": [
+        [
+          {
+            "message": "Read 2210.03629 and explain how it interleaves reasoning and actions.",
+            "expect": {
+              "intent": "read",
+              "selected": [
+                "2210.03629"
+              ],
+              "answered": true
+            }
+          }
+        ],
+        [
+          {
+            "message": "Which papers have we read about reasoning and acting in language models, and what did they find?",
+            "expect": {
+              "intent": "library",
+              "selected": [
+                "2210.03629"
+              ],
+              "answered": true
+            }
+          },
+          {
+            "message": "And what did the papers we read say about diffusion models for image generation?",
+            "expect": {
+              "intent": "library",
+              "answered": false
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-update",
+      "split": "dev",
+      "note": "a newer statement on the same topic replaces the old fact",
+      "sessions": [
+        [
+          {
+            "message": "Latency is what I care about most.",
+            "expect": {
+              "intent": "memory",
+              "profile_has": "Latency is what I care about most"
+            }
+          },
+          {
+            "message": "Actually, API cost matters more to me than latency now.",
+            "expect": {
+              "intent": "memory",
+              "profile_has": "API cost matters more",
+              "profile_lacks": "Latency is what I care about most"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-forget",
+      "split": "test",
+      "note": "a forgotten fact is gone and no longer constrains a search",
+      "sessions": [
+        [
+          {
+            "message": "I only use hosted model APIs.",
+            "expect": {
+              "intent": "memory",
+              "profile_has": "hosted model APIs"
+            }
+          },
+          {
+            "message": "Forget that I only use hosted APIs.",
+            "expect": {
+              "intent": "memory",
+              "profile_lacks": "hosted model APIs"
+            }
+          }
+        ],
+        [
+          {
+            "message": "Find papers on serving large language models cheaply.",
+            "expect": {
+              "intent": "discover",
+              "no_constraint": "hosted"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-refer",
+      "split": "dev",
+      "note": "a reference to a listed paper resolves within the session",
+      "sessions": [
+        [
+          {
+            "message": "Find 3 papers on KV-cache eviction for long-context inference.",
+            "expect": {
+              "intent": "discover"
+            }
+          },
+          {
+            "message": "Read the second one and explain its eviction policy.",
+            "expect": {
+              "intent": "read",
+              "selected_positions": [
+                2
+              ],
+              "answered": true
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-episode",
+      "split": "test",
+      "note": "earlier research lets a new session name a paper read before without its id",
+      "sessions": [
+        [
+          {
+            "message": "Read 2305.18323 and explain how its planner works.",
+            "expect": {
+              "intent": "read",
+              "selected": [
+                "2305.18323"
+              ],
+              "answered": true
+            }
+          }
+        ],
+        [
+          {
+            "message": "Go back to the ReWOO paper we read earlier: how does its Solver use the evidence?",
+            "expect": {
+              "selected": [
+                "2305.18323"
+              ],
+              "answered": true
+            }
+          }
+        ]
+      ]
+    }
+  ]
+}
