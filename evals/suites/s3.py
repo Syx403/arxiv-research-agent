@@ -19,9 +19,9 @@ SPLITS = {"dev": "AutoScholarQuery", "test": "RealScholarQuery"}
 ARMS = ("product",)
 PAIRS: tuple[tuple[str, str], ...] = ()
 LABELS: tuple[str, ...] = ()  # metrics that record the item's label, not an arm's output
-# Per query, from the M3 live turns (discovery ≈ $0.005: researcher, embeddings, 3 screen
-# batches), with room for a researcher that uses all 8 tool calls.
-UNIT_COST_USD = 0.008
+# Per query: the calibration round s3-20261008T052442 measured $0.0012-0.0031 (2-4 researcher
+# steps); the rest is room for a researcher that uses all 8 tool calls.
+UNIT_COST_USD = 0.005
 
 
 def build_manifest() -> dict[str, Any]:

@@ -11,7 +11,7 @@ Update this file at the end of every working session: what was done, what was sp
 | M0 Foundation | done (2026-10-07), reviewed | §16 verified; §6.2–6.3 confirmed (D10, D11); 29 unit tests on real Postgres; live checks passed (cache hits on both providers; a rejected request is released) |
 | M1 RAG + S1 | done (2026-10-08) | sources (arXiv HTML/PDF, QASPER), chunking, cached embeddings, ingestion, BM25 ×2 / FTS / dense / RRF / rerank, eval runner + S1; S1 live on 2 papers (6 items) |
 | M2 Read + answer | done (2026-10-08), reviewed | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20); review fixes and a live check of requery, prewarm and repair (D21) |
-| M3 Understand + discover | built (2026-10-08), reviewed; S3/S4 rounds pending | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); priorities, titles, recency, today, English S4 of 62 items (D24); S4 labels await Ewan's review |
+| M3 Understand + discover | done (2026-10-08), reviewed; S3/S4 first rounds run (D25) | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); priorities, titles, recency, today, English S4 of 62 items (D24); S4 labels await Ewan's review |
 | M4 Memory | not started | |
 | M5 Reliability + UI | not started | |
 | Architecture review (Ewan) | — | gate before any large-scale LLM testing |
@@ -35,7 +35,10 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-08 | M3 live check | clarify turn; discover → read turn, a crashed first run (embedding bug) and its rerun (`m3-live-20261007T183501`, `…183610`, `…183711`) | 49 | 0.0171 | Ewan (≈ 40 requests, ≤ US$0.05; count exceeded by the rerun, 5 of 49 are free reranks) |
 | 2026-10-08 | M3 review check | understand with the shown-papers block on two S4 items (`m3-review-20261008T051722`) | 2 | 0.0003 | rule-1 threshold, reported |
 | 2026-10-08 | S3 calibration | 2 dev + 2 held-out queries, off-peak (`s3-20261008T052442`): 11 researcher steps, 4 embedding requests, 10 screen batches | 25 | 0.0098 | Ewan (calibration first; cap US$0.05) |
-| | | **Total so far** | 292 | **0.0547** | |
+| 2026-10-08 | D24 live check | understand on 5 S4 items (`d24-live-…T085334`, `…T085356`); latest-papers turn and read-then-follow-up turn, off-peak (`…T103156`) | 39 | 0.0119 | Ewan (≈ 40 requests, ≤ US$0.02) |
+| 2026-10-08 | S4 round | 62 understand requests (`s4-20261008T085452`) | 62 | 0.0084 | Ewan (cap US$0.05) |
+| 2026-10-08 | S3 round | 30 PaSa queries, off-peak (`s3-20261008T103432`) | 189 | 0.0893 | Ewan (cap US$0.20) |
+| | | **Total so far** | 582 | **0.1643** | |
 
 ## Session log
 
@@ -180,3 +183,12 @@ Update this file at the end of every working session: what was done, what was sp
   become `shown`; all project data English; S4 rebuilt as 62 fully labelled English items graded
   per field. No billable calls in this step. 100 unit tests. Next: Ewan reviews the S4 draft; a
   live check of the changed turns (≈ 40 requests, ≤ US$0.02) needs approval; then S4 and S3.
+- 2026-10-08 — Ewan accepted every S4 label; first S4 and S3 rounds (D25). S4 held-out: intent
+  0.94, every field right 0.69, priorities the weakest field, no missed clarification. S3 held-out:
+  pool recall 0.44, hit@5 0.87; the researcher stops after 2-4 of its 8 steps, so search recall is
+  the bottleneck. Live check: the latest-papers turn passed; the read-then-follow-up turn failed at
+  its first step (ids taken as find-then-read). No change was tuned on held-out results: three
+  candidates (inclusive date limits, tighter priorities, an ids-means-read rule) go to the E rounds.
+  Fixed a D24 slip in the understand prompt (`paper_ids` from the latest message). S3's dry-run unit
+  cost lowered to US$0.005 from the calibration. Spend this session: 290 requests, US$0.1096; v2 total
+  582 requests, US$0.1643. Next: M4 (memory), after Ewan's go-ahead.

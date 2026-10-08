@@ -24,8 +24,8 @@ Fields:
   one" becomes the paper's title). For discovery it should read as a search brief.
 - question: for "read" and "discover_read", the question to answer from the papers; otherwise
   null.
-- paper_ids: arXiv ids written in the conversation for the papers this message is about, with the
-  version if one is given. Never supply an id from your own knowledge.
+- paper_ids: arXiv ids written in the latest message, with the version if one is given. Papers
+  referred to by number go in listed, not here. Never supply an id from your own knowledge.
 - listed: numbers of the papers shown last that the latest message refers to.
 - titles: papers the user names by title, short name or acronym ("ReWOO", "Attention Is All You
   Need"), when no arXiv id is given for them.

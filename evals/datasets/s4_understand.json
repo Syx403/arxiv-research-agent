@@ -1,6 +1,6 @@
 {
   "suite": "s4",
-  "labels": "proposed by Claude, reviewed by Ewan before use (D22, D24)",
+  "labels": "proposed by Claude, reviewed and accepted by Ewan on 2026-10-08 (D22, D24)",
   "items": [
     {
       "id": "v1-c01",
@@ -26,7 +26,7 @@
         "prefer_recent": false
       },
       "note": "translated from Chinese (D24)",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "v1-c02",
@@ -54,7 +54,7 @@
         "prefer_recent": false
       },
       "note": "Rewritten (Ewan): v1 asked which was submitted in 2024, a question built from its answer. Judging the technique needs the full text.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "v1-c03",
@@ -88,7 +88,7 @@
         "prefer_recent": false
       },
       "note": "translated from Chinese (D24); no ids, so find then read",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "v1-c03x",
@@ -122,7 +122,7 @@
         "prefer_recent": false
       },
       "note": "translated from Chinese (D24); ids given, so no titles",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "v1-c04",
@@ -136,7 +136,7 @@
         "clarify": true
       },
       "note": "translated from Chinese (D24); no papers were shown",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "v1-c05-1",
@@ -150,7 +150,7 @@
         "clarify": true
       },
       "note": "translated from Chinese (D24)",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "v1-c05-2",
@@ -191,7 +191,7 @@
         "prefer_recent": false
       },
       "note": "translated from Chinese (D24); the abstract is enough, so discover",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "v1-c06-1",
@@ -218,7 +218,7 @@
         "prefer_recent": false
       },
       "note": "translated from Chinese (D24); 'newest first' orders two named papers, it is not a request for recent work",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "v1-c06-2",
@@ -266,7 +266,7 @@
         "prefer_recent": false
       },
       "note": "translated from Chinese (D24)",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "v1-c07-1",
@@ -290,7 +290,7 @@
         "prefer_recent": false
       },
       "note": "Rewritten: v1 asked for LLMCompiler, whose date (2023-12-07) sits at the edge of the window, a trap built from the answer. The year is a date limit, not a constraint.",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "v1-c07-2",
@@ -332,7 +332,7 @@
         "prefer_recent": false
       },
       "note": "translated from Chinese (D24); the 2023 limit is lifted",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "v1-c12",
@@ -364,7 +364,7 @@
         "prefer_recent": false
       },
       "note": "translated from Chinese (D24) (Ewan): the two costs are priorities, the two papers are ids, the API-only build is a constraint",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d-kv",
@@ -388,7 +388,7 @@
         "prefer_recent": true
       },
       "note": "'Recent' sorts newest first; it is not a date limit (Ewan)",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d-spec",
@@ -412,7 +412,7 @@
         "prefer_recent": true
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d-rag-eval",
@@ -436,7 +436,7 @@
         "prefer_recent": true
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d-swe-2024",
@@ -460,7 +460,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d-moe",
@@ -484,7 +484,7 @@
         "prefer_recent": true
       },
       "note": "translated from Chinese (D24)",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d-cost-constraints",
@@ -511,7 +511,7 @@
         "prefer_recent": true
       },
       "note": "cutting API cost is the topic (need), not a priority",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d-short-moe",
@@ -535,7 +535,7 @@
         "prefer_recent": true
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d-acronym",
@@ -561,7 +561,7 @@
         "prefer_recent": false
       },
       "note": "search the GQA paper itself; the user asks a follow-up if they need one (Ewan)",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d-broad",
@@ -585,7 +585,7 @@
         "prefer_recent": true
       },
       "note": "broad topic: no clarification, newest first by default (Ewan)",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "d-title",
@@ -611,7 +611,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "n-count-moe",
@@ -635,7 +635,7 @@
         "prefer_recent": true
       },
       "note": "a count without reading",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "n-count-compress",
@@ -659,7 +659,7 @@
         "prefer_recent": true
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "dr-compare",
@@ -683,7 +683,7 @@
         "prefer_recent": true
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "dr-rewoo",
@@ -709,7 +709,7 @@
         "prefer_recent": false
       },
       "note": "a title, not an id: find first",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "dr-flash",
@@ -735,7 +735,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "dr-kv",
@@ -759,7 +759,7 @@
         "prefer_recent": true
       },
       "note": "translated from Chinese (D24)",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "r-react",
@@ -785,7 +785,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "r-two-ids",
@@ -812,7 +812,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "r-url",
@@ -838,7 +838,7 @@
         "prefer_recent": false
       },
       "note": "an id inside a URL",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "ref-second",
@@ -892,7 +892,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "ref-first-third",
@@ -947,7 +947,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "ref-last",
@@ -1001,7 +1001,7 @@
         "prefer_recent": false
       },
       "note": "translated from Chinese (D24)",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "ref-mixed",
@@ -1045,7 +1045,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "f-which",
@@ -1094,7 +1094,7 @@
         "prefer_recent": false
       },
       "note": "a follow-up on the two papers just read: they are the papers shown (D24); compare c-which, the same words with no context",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "f-limits",
@@ -1136,7 +1136,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "f-cheaper",
@@ -1185,7 +1185,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "g-since",
@@ -1237,7 +1237,7 @@
         "prefer_recent": false
       },
       "note": "narrows the last search by date: a new search, not a read of the shown papers",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "g-lift",
@@ -1283,7 +1283,7 @@
         "prefer_recent": true
       },
       "note": "the earlier constraint is lifted",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "g-exclude",
@@ -1332,7 +1332,7 @@
         "prefer_recent": true
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "p-code",
@@ -1358,7 +1358,7 @@
         "prefer_recent": true
       },
       "note": "'ideally' is a wish: a priority, never a filter",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "p-traffic",
@@ -1384,7 +1384,7 @@
         "prefer_recent": true
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "p-mixed",
@@ -1412,7 +1412,7 @@
         "prefer_recent": true
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "t-two-years",
@@ -1436,7 +1436,7 @@
         "prefer_recent": false
       },
       "note": "two years before asked_at",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "t-after",
@@ -1460,7 +1460,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "t-this-year",
@@ -1484,7 +1484,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "t-before",
@@ -1508,7 +1508,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "t-latest",
@@ -1532,7 +1532,7 @@
         "prefer_recent": true
       },
       "note": "'latest' is not a date limit",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "c-best",
@@ -1546,7 +1546,7 @@
         "clarify": true
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "c-improve",
@@ -1560,7 +1560,7 @@
         "clarify": true
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "c-second",
@@ -1574,7 +1574,7 @@
         "clarify": true
       },
       "note": "nothing was shown",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "c-that",
@@ -1588,7 +1588,7 @@
         "clarify": true
       },
       "note": "no paper in the conversation",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "k-colleague",
@@ -1602,7 +1602,7 @@
         "clarify": true
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "k-fourth",
@@ -1644,7 +1644,7 @@
         "clarify": true
       },
       "note": "only three papers were shown",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "k-startup",
@@ -1658,7 +1658,7 @@
         "clarify": true
       },
       "note": "depends on facts about the user",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "k-other-one",
@@ -1672,7 +1672,7 @@
         "clarify": true
       },
       "note": "no papers in the conversation",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "l-moe",
@@ -1696,7 +1696,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "l-tools",
@@ -1720,7 +1720,7 @@
         "prefer_recent": false
       },
       "note": "translated from Chinese (D24)",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "o-hello",
@@ -1744,7 +1744,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "o-poem",
@@ -1768,7 +1768,7 @@
         "prefer_recent": false
       },
       "note": "",
-      "reviewed": false
+      "reviewed": true
     },
     {
       "id": "c-which",
@@ -1792,7 +1792,7 @@
         "prefer_recent": false
       },
       "note": "no topic and no earlier papers: other, not a clarification (Ewan); f-which is the same words after a read",
-      "reviewed": false
+      "reviewed": true
     }
   ]
 }

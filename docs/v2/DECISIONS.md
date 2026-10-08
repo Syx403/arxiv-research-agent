@@ -426,3 +426,42 @@ decision gets a new entry that names the one it replaces.
   more clarifications (10: 5 dev, 5 held-out). "Which approach should I use?" alone is `other`.
 - Consequence: the understand, researcher, screen and synthesize prompts changed version; M2's S2
   smoke numbers are not strictly comparable with later S2 rounds (the full S2 round is in E1).
+
+## D25 — First S4 and S3 rounds; prompt changes wait for the E rounds (2026-10-08, Ewan)
+- Before the rounds: Ewan accepted every S4 label (all items `reviewed`). One D24 slip was fixed:
+  the rewritten understand prompt said `paper_ids` are ids "written in the conversation", which
+  invites copying ids of papers referred to by number (the first live check did exactly that on
+  f-which); it says "written in the latest message" again, as before D24 and as the labels assume.
+- S4 (`s4-20261008T085452`, 62 items, 0 failed, US$0.0084, 93% of input tokens from the cache;
+  report in `docs/v2/eval/`): held-out (37) intent 0.94 [0.84, 1.00], every field right 0.69
+  [0.53, 0.84], weakest field priorities 0.81 [0.66, 0.94]; false clarify 2/32, missed 0/5. Dev
+  (25): intent 1.00, every field right 0.85, false clarify 1/20, missed 0/5. Errors by kind:
+  - the model's: priorities over-extracted (the topic, the question itself, background sentences);
+    ids given but intent `discover_read` (r-two-ids, v1-c03x); a year limit also written as a
+    constraint; `prefer_recent` on despite a date limit; a clarification added to an `other`, a
+    `library` and a follow-up item; a count inferred from two named papers;
+  - ours: whether `published_before` includes its day is not stated (code includes it; the model
+    wrote 2023-01-01 for "before 2023", labels say 2022-12-31); g-since is ambiguous (the model
+    read "the ones" as the shown papers); on v1-c03/c03x the model read "I use off-the-shelf model
+    APIs" as a priority where Ewan's label says constraint.
+- S3 (`s3-20261008T103432`, 30 queries, 0 failed, 189 requests, US$0.0893, 19 minutes, off-peak):
+  held-out (RealScholarQuery, 15) pool recall 0.44 [0.32, 0.57], shortlist recall 0.36, gold
+  precision@5 ≥ 0.44, hit@5 0.87; dev (AutoScholarQuery, 15, mostly one gold paper, so precision@5
+  is at most 0.20 there) pool recall 0.70, hit@5 0.73. No paper went unjudged. The researcher used
+  2.4 steps per query on average and never more than 4 of its 8, so search recall, not screening,
+  is the bottleneck; prerank's cut to 24 loses 0.08 of held-out recall. Screening is 63% of the cost.
+- Decision (Ewan): no prompt or code change is tuned on these held-out results now. Three
+  candidates go to the E rounds, tuned on dev and reported on held-out: state that date limits
+  include their day; tighten `priorities` with counter-examples; a code rule that a request with
+  ids and no named titles is `read`.
+- Live check (D24 approval, ≈ 40 requests, ≤ US$0.02; 39 requests, US$0.0119): understand on five
+  S4 items (4 fully right; f-which resolved the papers just read but also asked a question); a
+  "latest papers on agentic RAG" turn listed five September 2026 papers, newest first within each
+  relevance grade (passed). The read-then-follow-up turn failed at its first step: "Compare
+  2305.18323 and 2312.04511 …" was taken as `discover_read`, so discovery ran instead of reading the
+  two ids, LLMCompiler was not found and the answer abstained — the r-two-ids error above, seen end
+  to end. The follow-up path is covered by unit tests and by S4's f-* items; the two-turn live
+  check is rerun after the ids rule (≈ 25 requests, ≈ US$0.01, needs approval).
+- Claude's change, reported: S3's dry-run unit cost went from US$0.008 to US$0.005 per query (the
+  calibration measured at most US$0.0031), because the old estimate (US$0.24) exceeded the approved
+  US$0.20 cap and the runner refused; the cap itself was not changed.
