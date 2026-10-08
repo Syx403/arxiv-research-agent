@@ -251,11 +251,14 @@ async def run_discover(state: ConversationState, runtime: Runtime[Context]) -> d
 
 
 def choose_papers(state: ConversationState) -> dict[str, object]:
-    """Deterministic when the user gave a count or one to three papers are direct matches;
-    otherwise the user picks (resume value: 1-based positions in the list)."""
+    """The papers the user named, when they named any (D28); else deterministic when the user gave
+    a count or one to three papers are direct matches; otherwise the user picks (resume value:
+    1-based positions in the list)."""
     papers, count = state["papers"], _request(state).count
     direct = [p for p in papers if p.relevance == 3]
-    if count:
+    if _request(state).titles:
+        chosen = [p for p in papers if p.named][:MAX_READ]
+    elif count:
         chosen = papers[: min(count, MAX_READ)]
     elif 1 <= len(direct) <= MAX_READ:
         chosen = direct
@@ -398,6 +401,9 @@ def reply(state: ConversationState) -> str:
         parts.append(
             "From your library:\n" + "\n".join(_title(n, p) for n, p in enumerate(state["read"], 1))
         )
+    found = {p.named for p in state["papers"]}
+    if missing := [t for t in request.titles if t not in found and request.intent != "read"]:
+        parts.append(f"I could not find on arXiv: {'; '.join(missing)}.")
     if state["papers"]:
         parts.append("\n".join(_listing(n, p) for n, p in enumerate(state["papers"], 1)))
     elif request.intent in ("discover", "discover_read"):

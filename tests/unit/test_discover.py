@@ -52,6 +52,14 @@ def test_the_loop_stops_when_the_model_stops_or_the_budget_is_spent() -> None:
     assert discover.after_tools(spent) == "prerank"
 
 
+def judge(
+    paper_id: str, relevance: Any, violated: list[str] | None = None, named: str | None = None
+) -> discover.Judgement:
+    return discover.Judgement(
+        id=paper_id, relevance=relevance, reason="", violated=violated or [], named=named
+    )
+
+
 def card(n: int, similarity: float) -> PaperCard:
     m = meta(n)
     return discover.card(m).model_copy(update={"similarity": similarity})
@@ -61,10 +69,10 @@ def test_rank_keeps_relevant_papers_that_break_no_quoted_constraint() -> None:
     constraint = Constraint(quote="no fine-tuning", meaning="no training")
     shortlist = [card(1, 0.9), card(2, 0.8), card(3, 0.7), card(4, 0.95)]
     judged = [
-        discover.Judgement(id="2401.00001", relevance=2, reason="", violated=[]),
-        discover.Judgement(id="2401.00002", relevance=3, reason="", violated=[]),
-        discover.Judgement(id="2401.00003", relevance=3, reason="", violated=["No  Fine-tuning"]),
-        discover.Judgement(id="2401.00004", relevance=1, reason="", violated=["made up"]),
+        judge("2401.00001", 2, []),
+        judge("2401.00002", 3, []),
+        judge("2401.00003", 3, ["No  Fine-tuning"]),
+        judge("2401.00004", 1, ["made up"]),
     ]
     state: Any = {
         "request": request(constraints=[constraint], count=5),
@@ -78,7 +86,7 @@ def test_rank_keeps_relevant_papers_that_break_no_quoted_constraint() -> None:
 
 def test_screen_judgements_are_matched_by_bare_id_within_the_batch() -> None:
     def judgement(paper_id: str) -> discover.Judgement:
-        return discover.Judgement(id=paper_id, relevance=3, reason="", violated=[])
+        return judge(paper_id, 3)
 
     batch = [card(1, 0.0), card(2, 0.0)]
     kept = discover.in_batch(
@@ -128,9 +136,9 @@ def test_recent_work_comes_first_within_a_relevance_grade() -> None:
     old, new, best = card(1, 0.9), card(2, 0.5), card(3, 0.1)
     new = new.model_copy(update={"published": "2026-01-01"})
     judged = [
-        discover.Judgement(id="2401.00001", relevance=2, reason="", violated=[]),
-        discover.Judgement(id="2401.00002", relevance=2, reason="", violated=[]),
-        discover.Judgement(id="2401.00003", relevance=3, reason="", violated=[]),
+        judge("2401.00001", 2, []),
+        judge("2401.00002", 2, []),
+        judge("2401.00003", 3, []),
     ]
     state: Any = {"request": request(), "shortlist": [old, new, best], "judged": judged}
     by_similarity: Any = discover.rank(state)
@@ -147,3 +155,31 @@ def test_recent_work_comes_first_within_a_relevance_grade() -> None:
 def test_the_request_block_carries_priorities_titles_and_recency() -> None:
     block = discover.request_block(request(titles=["ReWOO"], prefer_recent=True))
     assert '"titles": ["ReWOO"]' in block.text and '"prefer_recent": true' in block.text
+
+
+def test_a_named_paper_is_listed_first_whatever_screening_thought_of_it() -> None:
+    rewoo = card(1, 0.2).model_copy(update={"title": "ReWOO: Decoupling Reasoning"})
+    compiler = card(2, 0.1).model_copy(update={"title": "An LLM Compiler for Parallel Calls"})
+    other = card(3, 0.9)
+    state: Any = {
+        "request": request(titles=["ReWOO", "LLMCompiler"], constraints=[]),
+        "shortlist": [other, rewoo, compiler],
+        "judged": [
+            judge("2401.00003", 3),
+            judge("2401.00001", 1),  # off-topic for the need, but named by its title
+            judge("2401.00002", 2, named="LLMCompiler"),  # named, recognised by the screen
+        ],
+    }
+    ranked: Any = discover.rank(state)
+    assert [(p.arxiv_id, p.named) for p in ranked["papers"]] == [
+        ("2401.00001", "ReWOO"),
+        ("2401.00002", "LLMCompiler"),
+        ("2401.00003", None),
+    ]
+
+
+def test_a_title_names_a_paper_when_equal_or_its_prefix() -> None:
+    assert discover.name(["ReWOO"], "ReWOO: Decoupling Reasoning", None) == "ReWOO"
+    assert discover.name(["Attention Is All You Need"], "Attention is all you need", None)
+    assert discover.name(["ReWOO"], "Beyond ReWOO: planning", None) is None
+    assert discover.name(["GQA"], "Grouped queries", "gqa") == "GQA"

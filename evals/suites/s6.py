@@ -26,8 +26,8 @@ class Scenario:
     sessions: list[list[dict[str, Any]]]
 
 
-def load(limit: int | None = None) -> list[Scenario]:
-    raw = json.loads(DATA.read_text())["scenarios"]
+def load(limit: int | None = None, only: str | None = None) -> list[Scenario]:
+    raw = [s for s in json.loads(DATA.read_text())["scenarios"] if only in (None, s["id"])]
     return [Scenario(s["id"], s["split"], s["sessions"]) for s in raw[:limit]]
 
 

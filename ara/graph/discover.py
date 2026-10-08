@@ -57,6 +57,9 @@ class Judgement(BaseModel):
     relevance: Literal[0, 1, 2, 3]
     reason: str
     violated: list[str] = Field(description="Quotes of the constraints the paper breaks.")
+    named: str | None = Field(
+        description="The entry of the request's titles this paper is, if it is that paper."
+    )
 
 
 class Screening(BaseModel):
@@ -207,7 +210,10 @@ async def prerank(state: DiscoverState, runtime: Runtime[Context]) -> dict[str, 
         p.model_copy(update={"similarity": float(v @ need)})
         for p, v in zip(pool, vectors, strict=True)
     ]
-    shortlist = sorted(scored, key=lambda p: -p.similarity)[:SHORTLIST]
+    # papers the user named by title always reach screening, closest to the need or not (D28)
+    titles = state["request"].titles
+    shortlist = sorted(scored, key=lambda p: (not _named(titles, p.title), -p.similarity))
+    shortlist = shortlist[:SHORTLIST]
     return {
         "shortlist": shortlist,
         "candidates": [p.arxiv_id for p in pool],
@@ -253,10 +259,11 @@ def in_batch(judged: list[Judgement], batch: list[PaperCard]) -> list[Judgement]
 
 
 def rank(state: DiscoverState) -> dict[str, object]:
-    """Keep papers judged relevant (≥ 2) that break no stated constraint; order by relevance, then,
-    within a relevance grade, newest first when the request prefers recent work and by similarity
-    otherwise (D24). A violation counts only if it quotes one of the request's constraints
-    (compared as understand compares quotes: whitespace and case folded)."""
+    """The papers the user named come first, one per title, whatever their relevance or
+    constraints: the user asked for them (D28). Then papers judged relevant (≥ 2) that break no
+    stated constraint, by relevance, then, within a grade, newest first when the request prefers
+    recent work and by similarity otherwise (D24). A violation counts only if it quotes one of the
+    request's constraints (compared as understand compares quotes: whitespace and case folded)."""
     judged = {j.id: j for j in state.get("judged", [])}
     request = state["request"]
     quotes = {plain(c.quote): c.quote for c in request.constraints}
@@ -266,18 +273,35 @@ def rank(state: DiscoverState) -> dict[str, object]:
                 "relevance": j.relevance,
                 "reason": j.reason,
                 "violated": [quotes[plain(q)] for q in j.violated if plain(q) in quotes],
+                "named": name(request.titles, p.title, j.named),
             }
         )
         for p in state["shortlist"]
         if (j := judged.get(p.arxiv_id)) is not None
     ]
-    kept = [c for c in cards if (c.relevance or 0) >= 2 and not c.violated]
+    named = list({c.named: c for c in reversed(cards) if c.named}.values())[::-1]  # best per title
+    others = [c for c in cards if c not in named and (c.relevance or 0) >= 2 and not c.violated]
     within = _newest if request.prefer_recent else _closest
-    kept.sort(key=lambda c: (-(c.relevance or 0), within(c)))
+    others.sort(key=lambda c: (-(c.relevance or 0), within(c)))
+    limit = max(min(request.count or MAX_LISTED, MAX_LISTED), len(named))
     return {
-        "papers": kept[: min(request.count or MAX_LISTED, MAX_LISTED)],
+        "papers": [*named, *others][:limit],
         "unjudged": [p.arxiv_id for p in state["shortlist"] if p.arxiv_id not in judged],
     }
+
+
+def name(titles: list[str], title: str, judged: str | None) -> str | None:
+    """Which of the user's titles a paper is: by its own title first (code), else by the screen's
+    judgement, which knows that "LLMCompiler" is "An LLM Compiler for Parallel Function Calling"."""
+    by_code = next((t for t in titles if _named([t], title)), None)
+    by_model = next((t for t in titles if judged and plain(judged) == plain(t)), None)
+    return by_code or by_model
+
+
+def _named(titles: list[str], title: str) -> bool:
+    """The title is one the user named: equal, or starting with it ("ReWOO: Decoupling ...")."""
+    full = plain(title)
+    return any(full == plain(t) or full.startswith(plain(t) + ":") for t in titles)
 
 
 def after_researcher(state: DiscoverState) -> str:

@@ -541,3 +541,25 @@ decision gets a new entry that names the one it replaces.
   D27 lets through from research records could never be used; the prompt now also takes the id
   of a paper from earlier research the message refers to (fixed after the round, not rerun).
   Cause 2, open for Ewan: D22's choose_papers asks even when only one paper was listed.
+
+## D28 — Papers the user names are locked, not screened (2026-10-09, Ewan)
+- Context: in S6's s6-episode, "Go back to the ReWOO paper we read earlier: how does its Solver use
+  the evidence?" became find-then-read by title. The researcher found ReWOO (`ti:"ReWOO"`, then a
+  lookup); the screen gave it relevance 2 ("the abstract does not specify how the Solver uses
+  evidence produced by the Worker"), because screening judges whether an abstract answers the
+  need, not whether a paper is the one the user named; with no relevance-3 paper and no count,
+  choose_papers (D22) asked the user to pick from a list of one.
+- Decision (Ewan): when the user names papers by id or title, the papers to read are fixed by what
+  the user named. Ids were already read directly. For titles:
+  - identity is decided by code first (the paper's title equals the name or starts with "name:"),
+    else by the screen, which now also returns `named` (which entry of the request's titles the
+    paper is: "LLMCompiler" is "An LLM Compiler for Parallel Function Calling");
+  - prerank always passes title-matched papers to screening;
+  - rank lists named papers first, one per title, whatever their relevance or constraints (Claude's
+    default, since the user asked for them by name); then the relevant ones as before;
+  - choose_papers reads the named papers without asking; a name not found is reported ("I could not
+    find on arXiv: …"). Requests without named papers keep D22's rule.
+  This settles DESIGN §14.1 item 9 (D23 item 11) now instead of in the E rounds.
+- Rerun of s6-episode (approved; `s6-20261008T170341`, 21 requests, US$0.0026): passed. With the
+  D27 prompt fix, understand took the paper's id from the research record (`2305.18323v1`) and read
+  it directly; the named-title path is covered by unit tests, not by this run.

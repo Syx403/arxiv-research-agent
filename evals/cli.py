@@ -31,6 +31,7 @@ def main() -> None:
             type=int,
             help="S2/S4: first N items; S3: first N per split; S5: claim pairs; S6: scenarios",
         )
+        sub.add_argument("--scenario", help="S6: only this scenario id")
         if name == "run":
             sub.add_argument("--execute", action="store_true", help="send billable requests")
             sub.add_argument("--max-usd", type=Decimal, default=Decimal("1.0"))
@@ -53,13 +54,16 @@ def main() -> None:
             max_usd = getattr(args, "max_usd", Decimal("1.0"))
             if args.suite == "s1":
                 run = runner.run_s1(papers=args.papers, execute=execute, max_usd=max_usd)
+            elif args.suite == "s6":
+                run = runner.run_s6(
+                    limit=args.limit, execute=execute, max_usd=max_usd, only=args.scenario
+                )
             else:
                 suite_run = {
                     "s2": runner.run_s2,
                     "s3": runner.run_s3,
                     "s4": runner.run_s4,
                     "s5": runner.run_s5,
-                    "s6": runner.run_s6,
                 }[args.suite]
                 run = suite_run(limit=args.limit, execute=execute, max_usd=max_usd)
             run_id = asyncio.run(run)

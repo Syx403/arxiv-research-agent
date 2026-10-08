@@ -74,6 +74,7 @@ class PaperCard(BaseModel):
     relevance: int | None = None  # screen: 0-3
     reason: str = ""
     violated: list[str] = []  # quotes of the constraints the paper breaks
+    named: str | None = None  # the title the user named, when this is that paper (D28)
 
     @property
     def reference(self) -> str:

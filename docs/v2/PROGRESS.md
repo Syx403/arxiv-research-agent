@@ -40,7 +40,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-08 | S3 round | 30 PaSa queries, off-peak (`s3-20261008T103432`) | 189 | 0.0893 | Ewan (cap US$0.20) |
 | 2026-10-09 | M4 live check | S6 scenarios s6-carry and s6-library (`s6-20261008T162055`) | 42 | 0.0176 | Ewan (≈ 40 requests, ≤ US$0.03; 2 over in count) |
 | 2026-10-09 | S6 round | 6 scenarios, 14 turns, off-peak (`s6-20261008T164126`) | 108 | 0.0280 | Ewan (cap US$0.08) |
-| | | **Total so far** | 732 | **0.2099** | |
+| 2026-10-09 | S6 rerun | s6-episode after the D27 prompt fix and D28 (`s6-20261008T170341`) | 21 | 0.0026 | Ewan |
+| | | **Total so far** | 753 | **0.2125** | |
 
 ## Session log
 
@@ -204,3 +205,6 @@ Update this file at the end of every working session: what was done, what was sp
 - 2026-10-09 — S6 reviewed by Ewan (library misses now offer an arXiv search) and run: 5 of 6
   scenarios passed, US$0.0280. s6-episode failed: the understand prompt did not let records' ids be
   used (fixed, not rerun), and choose_papers asked about a single listed paper (open for Ewan).
+- 2026-10-09 — D28: papers named by id or title are locked (code title match, else the screen's
+  `named`; always shortlisted, listed first, read without asking; a name not found is reported).
+  s6-episode rerun passed (understand used the research record's id). 113 unit tests. Next: M5.

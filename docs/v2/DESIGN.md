@@ -167,7 +167,8 @@ The researcher has two tools, `search_arxiv(query)` (arXiv query syntax, ≤ 20 
 dropped. Prerank keeps 24 (three batches); rank keeps relevance ≥ 2 with no violated constraint
 quote, ordered by relevance then similarity, ≤ 5 (D22). Quotes are compared whitespace- and
 case-folded, screen ids by bare arXiv id, and shortlisted papers left unjudged are reported (D23).
-`search_arxiv` can order newest first; with `prefer_recent`, rank orders each relevance grade by
+Papers the user names are locked (D28): matched by title in code or by the screen's `named`,
+always shortlisted, listed first and read without asking. `search_arxiv` can order newest first; with `prefer_recent`, rank orders each relevance grade by
 date instead of similarity, and no date window is imposed (D24). Searches end at `Context.today`.
 
 read — `ingest` × paper (`Send`; idempotent, cached by paper version + pipeline version) →
@@ -610,7 +611,7 @@ per-round cap; nothing here is tuned on the M3 held-out results.
 | 6 | discovery | larger prerank shortlist than 24 (it lost 0.08 of held-out recall) | S3 shortlist recall, screen cost |
 | 7 | discovery | citation expansion from the reference lists of the best candidates' arXiv HTML (arXiv only, no new provider); design and cost estimate first | S3 pool recall |
 | 8 | discovery | researcher effort high as a paired arm (D23) | S3, latency, $ |
-| 9 | discovery | keep a paper the user named even when screening finds it off-topic (D23 item 11) | S4/S3 items with named papers |
+| 9 | discovery | ~~keep a paper the user named even when screening finds it off-topic~~ done in M4 (D28) | — |
 
 ---
 

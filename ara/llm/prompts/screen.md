@@ -8,6 +8,9 @@ paper in the batch, by its id:
 - relevance 1: shares the area or some terms, but would not serve the need.
 - relevance 0: unrelated.
 - reason: one sentence, from the abstract, saying what the paper does with respect to the need.
+- named: if the request names papers (titles) and this paper is one of them, the same paper and
+  not merely a related one, that entry of titles exactly as written; otherwise null. Naming is
+  about which paper it is, not about relevance.
 - violated: the quotes of the hard constraints the abstract shows the paper breaks (for example a
   constraint against fine-tuning, for a paper whose method trains the model). Leave it empty when
   the abstract does not show a violation; uncertainty is not a violation.

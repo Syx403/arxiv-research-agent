@@ -229,3 +229,12 @@ async def test_clarify_waits_with_the_question(pool: Pool) -> None:
         "question": "Which cost: API spend or latency?",
     }
     await ctx.gateway.aclose()
+
+
+def test_named_papers_are_read_without_asking_and_a_missing_one_is_reported() -> None:
+    named = card(1, relevance=2).model_copy(update={"named": "ReWOO"})
+    state = base_state(
+        request(intent="discover_read", titles=["ReWOO", "LLMCompiler"]), papers=[named, card(2)]
+    )
+    assert app.choose_papers(state)["selected"] == ["arxiv:2401.00001v1"]
+    assert "I could not find on arXiv: LLMCompiler." in app.reply(state)

@@ -641,10 +641,13 @@ async def _understand_items(
         await gateway.aclose()
 
 
-async def run_s6(*, limit: int | None, execute: bool, max_usd: Decimal) -> str | None:
-    """Print the plan; with `execute`, run the first `limit` scenarios through the conversation
-    graph, each as its own user, each session as its own thread (D27). Results stay in Postgres."""
-    scenarios = s6.load(limit)
+async def run_s6(
+    *, limit: int | None, execute: bool, max_usd: Decimal, only: str | None = None
+) -> str | None:
+    """Print the plan; with `execute`, run the first `limit` scenarios (or the one named `only`)
+    through the conversation graph, each as its own user, each session as its own thread (D27).
+    Results stay in Postgres."""
+    scenarios = s6.load(limit, only)
     usd = Decimal(str(s6.UNIT_COST_USD)) * len(scenarios)
     turns = sum(len(t) for s in scenarios for t in s.sessions)
     print(f"S6 plan: {len(scenarios)} scenarios, {turns} turns; estimated ${usd:.4f}")
