@@ -1,6 +1,6 @@
 {
   "suite": "s6",
-  "labels": "drafted by Claude, reviewed by Ewan on 2026-10-09 (D27); s6-episode moved to dev and five scenarios added for Ewan's review (D29)",
+  "labels": "drafted by Claude, reviewed by Ewan on 2026-10-09 (D27); s6-episode moved to dev and five scenarios added for Ewan's review (D29); s6-library-many changed and two scenarios added for Ewan's review (D30)",
   "checks": {
     "intent": "the request's intent",
     "constraint": "a constraint quote covers this phrase",
@@ -11,7 +11,9 @@
     "selected_positions": "the papers read are these positions of the list shown before the turn",
     "answered": "true: a verified answer was delivered; false: the reply abstains or finds nothing",
     "reply_has": "the reply contains this text",
-    "cited": "the delivered answer cites these bare arXiv ids"
+    "cited": "the delivered answer cites these bare arXiv ids",
+    "listed": "the reply lists these bare arXiv ids",
+    "read_at_most": "between one and this many papers were read"
   },
   "scenarios": [
     {
@@ -261,7 +263,7 @@
     {
       "id": "s6-library-many",
       "split": "test",
-      "note": "D29: a library question over several papers is searched once; the reply lists only the papers its answer cites",
+      "note": "D29/D30: a question about our history over several papers: every relevant paper is listed, each searched on its own",
       "sessions": [
         [
           {
@@ -281,10 +283,14 @@
         ],
         [
           {
-            "message": "Which papers have we read about planning all tool calls before any observation, and what did they find?",
+            "message": "Which papers have we read about LLM agents that reason and call tools, and how does each one order its reasoning and tool calls?",
             "expect": {
               "intent": "library",
               "answered": true,
+              "listed": [
+                "2210.03629",
+                "2305.18323"
+              ],
               "cited": [
                 "2305.18323"
               ]
@@ -307,6 +313,48 @@
                 "2305.18323",
                 "2312.04511"
               ],
+              "answered": true
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-library-fallback",
+      "split": "test",
+      "note": "D30: the papers we read are relevant but do not answer, so arXiv is searched once and the reply says so",
+      "sessions": [
+        [
+          {
+            "message": "Read 2210.03629 and explain how it interleaves reasoning and actions.",
+            "expect": {
+              "intent": "read",
+              "answered": true
+            }
+          }
+        ],
+        [
+          {
+            "message": "What did the papers we read about reasoning-and-acting agents say about how many tokens each task consumes?",
+            "expect": {
+              "intent": "library",
+              "reply_has": "do not say this; the following comes from a new arXiv search"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-no-ask",
+      "split": "dev",
+      "note": "D30: find and read without a count: no question to the user, at most three papers read, an answer",
+      "sessions": [
+        [
+          {
+            "message": "Find papers on speculative decoding for LLM inference and explain how they verify draft tokens.",
+            "expect": {
+              "intent": "discover_read",
+              "read_at_most": 3,
               "answered": true
             }
           }

@@ -17,8 +17,10 @@ Intent:
   paper and explain its planner", "of ReWOO and LLMCompiler, which method is more advanced?", "go
   deeper into the second one", or a follow-up question about the papers just read, which refers
   to all of them by number).
-- "library": a question about papers read before, in this or earlier sessions ("which papers did
-  we read about MoE routing?", "what did that ReAct paper find again?").
+- "library": only a message that explicitly refers back to what we read or discussed before, in
+  this or earlier sessions ("which papers did we read about MoE routing?", "in the paper we just
+  discussed, how is the planner trained?"). A question about a named paper without that reference
+  ("what mechanism does the ReAct paper use?") is "read"; a question about a topic is a search.
 - "memory": the user only tells something about themselves to remember ("I only use hosted
   APIs", "latency matters most to me") or asks to forget something ("forget that I use hosted
   APIs"), and asks for nothing else. A message that also asks for papers takes that intent.

@@ -22,6 +22,7 @@ from ara.memory import extract, library, store
 from ara.memory.extract import MemoryUpdate
 from ara.memory.store import Episode, Fact, Remembered
 from ara.rag.embed import cache_key
+from ara.rag.ingest import set_published
 from ara.settings import Settings
 from tests.unit.test_app import base_state, card, context, request
 from tests.unit.test_search import setup, unit
@@ -192,23 +193,39 @@ async def test_remember_calls_no_model_when_the_constraints_came_from_the_profil
     assert record.value["listed"] == ["2401.00001v1 Paper 1"]
 
 
-async def test_a_library_question_fuses_passage_distance_with_research_records(
+async def test_library_candidates_fuse_passage_distance_with_research_records(
     pool: Pool, memory: Any
 ) -> None:
     gateway, first, second = await setup(pool)  # identical papers: passages tie
     await cache(pool, {"what about cache eviction?": 1})
     async with pool.connection() as conn:
         await library.record_read(conn, "u", [first, second])
-        assert [p.arxiv_id for p in await library.papers(conn, "u")] == ["2401.00001", "2401.00002"]
+        await set_published(conn, {"2401.00001": date(2024, 1, 1)})
+        dated = await library.papers(conn, "u")
+        assert [(p.arxiv_id, p.published) for p in dated] == [
+            ("2401.00001", "2024-01-01"),
+            ("2401.00002", ""),
+        ]
+        nearest = await library.passages_near(conn, [p.reference for p in dated], unit(1), 2)
+        assert [len(v) for v in nearest.values()] == [2, 2]
+        assert (
+            nearest["arxiv:2401.00001v1"][0]
+            == "Cache › Method: Evicting keys by attention score reduces memory."
+        )
     record = Episode(
         day="d", need="n", read=["2401.00002v1 Cache", "2999.00001v1 X"], listed=[], answer=""
     )
-    state = base_state(
-        request(intent="library", question="what about cache eviction?"), episodes=[record]
-    )
     async with ArxivClient() as arxiv:
         ctx = replace(context(pool, arxiv), user_id="u")
-        chosen = await app.find_in_library(state, Runtime(context=ctx))
+        found, owned = await app.library_candidates(ctx, "what about cache eviction?", [record], 5)
+        alone = replace(ctx, user_id="nobody")
+        assert await app.library_candidates(alone, "never embedded", [record], 5) == ([], set())
+        empty: Any = base_state(request(intent="library", question="never embedded"))
+        assert await app.find_in_library(empty, Runtime(context=alone)) == {
+            "papers": [],
+            "selected": [],
+        }, "an empty library answers without a request"
         await ctx.gateway.aclose()
-    assert chosen["selected"] == ["arxiv:2401.00002v1", "arxiv:2401.00001v1"], "the record decides"
+    assert [p.arxiv_id for p in found] == ["2401.00002", "2401.00001"], "the record decides the tie"
+    assert owned == {"2401.00001", "2401.00002"}
     await gateway.aclose()

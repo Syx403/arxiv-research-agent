@@ -637,3 +637,66 @@ decision gets a new entry that names the one it replaces.
 - Alternatives: keep D28's discovery path for titles (one researcher loop and screening per named
   title, and the screen's relevance mixed with identity); check named papers' constraints without
   the screen (a new prompt for the same judgement).
+
+## D30 — arXiv first, the library a quick look; no paper-choice question; per-paper evidence (2026-10-09, Ewan)
+- Context: reviewing D29's library route, Ewan asked what "the top three" and "eight passages"
+  meant. The route picked three library papers with no relevance judgement, and three papers
+  shared one top 8, while S1 (one paper, 30 questions, stored rankings, free) gives evidence recall
+  by passages kept of 2 → 0.78, 3 → 0.85, 4 → 0.88, 6 → 0.97, 8 → 1.00. In a side discussion Ewan
+  then set the product's stance (below). Ewan's D29 confirmations (four S4 labels, five S6 drafts,
+  the named-paper rule, conflict warnings) stand.
+- Stance (Ewan): arXiv search is the main path; the user's library is a quick look before it.
+  "We have not discussed this" is only for a message that refers to a shared history that does not
+  exist. A user who asks gets an answer: choosing papers never asks. Clarification stays.
+- Decisions:
+  - understand: `library` only for a message that explicitly refers back to what we read or
+    discussed ("which papers did we read about …", "in the paper we just discussed …"); "what
+    mechanism does the ReAct paper use?" is a named-title `read`. The two S4 `library` items (l-moe,
+    l-tools) are such references and keep their labels.
+  - Topic search: discovery adds up to five of the user's papers close to the need (HNSW over their
+    passages and the papers read in the closest research records, fused by RRF; within the
+    request's dates, which end today) to the arXiv candidates. They go through prerank, screen and
+    rank like any candidate, with no guaranteed place (Claude's default, confirmed by Ewan); the
+    researcher's arXiv search runs in full. A listed paper in the library is marked "read before".
+    Migration 0005 adds `papers.published`, written at ingestion from arXiv metadata; rows stored
+    before it were dated by `ara db backfill` (one free lookup; 5 rows in `ara`); read cards show
+    the date. An undated library paper is not added, since it cannot be placed in a date window.
+  - `choose_papers` never interrupts (replaces D22's question): named papers (D28, D29); else the
+    first `count` (≤ 3); else the relevance-3 papers (≤ 3); else the top three of the list. The
+    paper-choice interrupt, `_positions` and their tests are removed; DESIGN §9 loses the
+    paper-choice card.
+  - A library question that names no paper: the user's papers closest to the question (HNSW +
+    research records, RRF, up to eight: one screen batch) are screened with their abstract and the
+    two passages nearest the question (≤ 1,000 characters each); the screen prompt gains one
+    paragraph for passages (shared with discovery, which sends none; new version, Claude's default
+    confirmed by Ewan). None relevant (≥ 2): NOT_DISCUSSED, now only for this case (narrows D27).
+    Otherwise every relevant paper is listed (≤ 5, by relevance, "From your library") and the most
+    relevant three read. If the answer abstains, `search_instead` keeps those papers as `earlier`
+    and the same question goes to discovery (as find-then-read, once per turn); the reply opens
+    "The papers we read before (…) do not say this; the following comes from a new arXiv search."
+    Papers just tried are not offered again as library candidates in that search (Claude's
+    choice). A library question that names a paper keeps D29(d).
+  - Evidence, on every reading path (replaces D29's `merged`): each paper's own BM25 + dense
+    candidates fused by RRF, its top 30; one Cohere rerank call over all papers' candidates; each
+    paper keeps its top 8 (Ewan: 8, from the S1 figures above); one `select_evidence` per paper; at
+    most one requery, a search per paper and missing aspect (one rerank each, as before). One call
+    orders a paper's passages as separate calls would, because a reranker scores each (query,
+    passage) pair on its own: inferred from how cross-encoders work, not measured on Cohere. The
+    read subgraph is now `search` → `staged` → `select` × paper → `collect`; `Passage` joins the
+    checkpoint allowlist.
+  - Citations: "Sources: <ids>" is replaced by one line per cited sentence:
+    "[E1] <title › section> (arXiv 2305.18323v1)".
+  - S6: s6-library-many now checks that the list holds both papers and that the answer cites
+    2305.18323; its question was reworded so both papers are relevant ("… LLM agents that reason and
+    call tools, and how does each one order its reasoning and tool calls?"), since the D29 wording
+    asked about planning before any observation, which ReAct does not do (Claude's change, for
+    Ewan's review). Two drafts: s6-library-fallback (held-out) and s6-no-ask (dev); checks `listed`
+    and `read_at_most`.
+- Replaced: D22's paper-choice question; D27's use of NOT_DISCUSSED (narrowed to an absent shared
+  history); D29's merged library search and D29's "reply lists only cited papers" for library
+  questions (it now lists every paper the screen judged relevant; the research record still links
+  only cited ones).
+- Alternatives: a fixed three library papers searched together (D29; cheapest, but no relevance
+  judgement and about 0.85 evidence recall per paper); a per-paper quota in one merged list (one
+  rerank, still no relevance judgement); separate rerank calls per paper (same order, two more
+  calls spaced 6 s on the Cohere trial).

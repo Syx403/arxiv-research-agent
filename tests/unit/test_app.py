@@ -28,7 +28,6 @@ from ara.graph.state import (
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
 from ara.memory import library
-from ara.memory.store import Episode
 from ara.settings import Settings
 from tests.unit.test_search import setup
 
@@ -128,12 +127,19 @@ def base_state(r: ResearchRequest, **fields: Any) -> Any:
     return state | fields
 
 
-def test_paper_choice_is_deterministic_when_the_count_or_direct_matches_decide() -> None:
-    papers = [card(1), card(2), card(3, relevance=2)]
-    counted = base_state(request(intent="discover_read", count=3), papers=papers)
-    assert app.choose_papers(counted)["selected"] == [p.reference for p in papers]
+def test_paper_choice_never_asks() -> None:
+    """D30: the count, else the direct matches, else the top of the list; at most three."""
+    papers = [card(1, relevance=2), card(2), card(3), card(4), card(5, relevance=2)]
+    counted = base_state(request(intent="discover_read", count=2), papers=papers)
+    assert app.choose_papers(counted)["selected"] == [p.reference for p in papers[:2]]
     direct = base_state(request(intent="discover_read"), papers=papers)
-    assert app.choose_papers(direct)["selected"] == ["arxiv:2401.00001v1", "arxiv:2401.00002v1"]
+    assert app.choose_papers(direct)["selected"] == [p.reference for p in papers[1:4]]
+    weak = [card(n, relevance=2) for n in range(1, 6)]
+    top = base_state(request(intent="discover_read"), papers=weak)
+    assert app.choose_papers(top)["selected"] == [p.reference for p in weak[:3]]
+    many = base_state(request(intent="discover_read", count=9), papers=papers)
+    chosen: Any = app.choose_papers(many)["selected"]
+    assert len(chosen) == 3
 
 
 async def resolved(pool: Pool, state: Any) -> Any:
@@ -186,11 +192,6 @@ def test_the_understand_prompt_extends_the_previous_turn() -> None:
     assert latest.text == "read the first one"
 
 
-def test_resume_positions_accept_a_list_or_text() -> None:
-    assert app._positions([1, 3]) == [1, 3]
-    assert app._positions("1 and 3") == [1, 3]
-
-
 def context(pool: Pool, arxiv: ArxivClient) -> Context:
     """A real gateway with unused keys: the paths below never reach a model."""
     settings = Settings(
@@ -205,33 +206,6 @@ def context(pool: Pool, arxiv: ArxivClient) -> Context:
         raise AssertionError(f"fetched {reference}")
 
     return Context(pool, gateway, Scope(), fetch, arxiv)
-
-
-async def test_an_ambiguous_choice_waits_for_the_user_and_resumes(pool: Pool) -> None:
-    graph = app.build(await app.checkpointer(pool))
-    thread = str(uuid4())
-    config: Any = {"configurable": {"thread_id": thread}}
-    papers = [card(n) for n in range(1, 5)]  # four direct matches, more than can be read
-    await graph.aupdate_state(
-        config,
-        {
-            "messages": [HumanMessage("find and read")],
-            **app.fresh_turn(),
-            "request": request(intent="discover_read"),
-            "papers": papers,
-        },
-        as_node="discover",
-    )
-    async with ArxivClient() as arxiv:
-        ctx = context(pool, arxiv)
-        waiting = await graph.ainvoke(None, config, context=ctx)
-        assert waiting["__interrupt__"][0].value["kind"] == "choose_papers"
-        assert len(waiting["__interrupt__"][0].value["papers"]) == 4
-        turn = await app.send(graph, thread, ctx, resume="none of them")
-    assert turn.waiting is None and turn.reply is not None
-    assert "Nothing was chosen to read." in turn.reply
-    assert turn.state["status"] == "complete"
-    await ctx.gateway.aclose()
 
 
 async def test_clarify_waits_with_the_question(pool: Pool) -> None:
@@ -328,38 +302,95 @@ def test_the_reply_says_when_a_named_paper_does_not_fit_or_breaks_a_constraint()
     assert 'I took "LLMCompiler" to be "Paper 4"' in text
 
 
-def test_a_library_answer_lists_and_records_only_the_papers_it_cites() -> None:
-    cited = card(2)
-    answer = Answer(
+def answer_citing(*papers: PaperCard, abstained: bool = False) -> Answer:
+    return Answer(
         question="q",
-        short="yes",
-        abstained=False,
+        short="Not stated in the provided papers." if abstained else "yes",
+        abstained=abstained,
         sentences=[],
         dropped=[],
         checked=1,
         rejected=[],
         evidence=[
             Evidence(
-                id="E1", paper_id=cited.reference, chunk_id=1, paragraph=0, heading_path="", text=""
+                id=f"E{n}",
+                paper_id=p.reference,
+                chunk_id=n,
+                paragraph=0,
+                heading_path=f"{p.title} › Method",
+                text="",
             )
+            for n, p in enumerate(papers, 1)
         ],
     )
-    state = base_state(request(intent="library"), read=[card(1), cited, card(3)], answer=answer)
-    result: Any = app.respond(state)
-    assert "From your library:\n1. Paper 2 (arXiv 2401.00002v1)" in result["messages"][0].text
-    assert "Paper 1" not in result["messages"][0].text and result["shown"] == [cited]
-    record = app.episode(state, date(2026, 10, 9))
-    assert record is not None and record.read == ["2401.00002v1 Paper 2"] and record.listed == []
-    miss = base_state(request(intent="library"), read=[card(1)], answer=None)
-    assert app.episode(miss, date(2026, 10, 9)) is None, "a miss links no paper to the topic"
-    listing = base_state(request(), papers=[card(1)])
-    assert app.episode(listing, date(2026, 10, 9)) == Episode(
-        day="2026-10-09",
-        need="KV-cache eviction",
-        read=[],
-        listed=["2401.00001v1 Paper 1"],
-        answer="",
+
+
+def test_a_question_about_our_history_lists_relevant_papers_or_says_we_never_discussed_it() -> None:
+    """D30: nothing relevant in the library → NOT_DISCUSSED; relevant papers → all listed, the
+    answer cited per sentence, and the record links only what the answer cites."""
+    asked = request(intent="library")
+    nothing = base_state(asked, papers=[], selected=[])
+    assert app.after_library(nothing) == "respond" and app.reply(nothing) == app.NOT_DISCUSSED
+    assert app.episode(nothing, date(2026, 10, 9)) is None, "a miss links no paper to the topic"
+    first, second = card(1, relevance=2), card(2)
+    state = base_state(
+        asked, papers=[second, first], read=[second, first], answer=answer_citing(second)
     )
+    assert app.after_answer(state) == "respond"
+    result: Any = app.respond(state)
+    text = result["messages"][0].text
+    assert text.startswith("From your library:\n1. Paper 2 (arXiv 2401.00002v1, 2024-01-01)")
+    assert "\n2. Paper 1" in text and result["shown"] == [second, first]
+    assert "\n[E1] Paper 2 › Method (arXiv 2401.00002v1)" in text
+    record = app.episode(state, date(2026, 10, 9))
+    assert record is not None and record.read == ["2401.00002v1 Paper 2"]
+    assert record.listed == ["2401.00001v1 Paper 1"]
+    assert app.relevant_first(
+        [card(5, relevance=1), card(6, relevance=2), card(7, relevance=3), card(8, relevance=2)]
+    ) == [card(7), card(6, relevance=2), card(8, relevance=2)]
+
+
+def test_library_papers_that_do_not_answer_lead_to_one_arxiv_search() -> None:
+    read_first = [card(1)]
+    unanswered = base_state(
+        request(intent="library"),
+        papers=read_first,
+        read=read_first,
+        answer=answer_citing(abstained=True),
+    )
+    assert app.after_answer(unanswered) == "search_instead"
+    moved: Any = {**unanswered, **app.search_instead(unanswered)}
+    assert moved["earlier"] == read_first and moved["read"] == [] and moved["answer"] is None
+    found: Any = {**moved, "papers": [card(3)]}
+    assert app.after_discover(found) == "choose_papers"
+    searched: Any = {
+        **moved,
+        "papers": [card(3)],
+        "read": [card(3)],
+        "answer": answer_citing(card(3)),
+    }
+    assert app.after_answer(searched) == "respond", "only once"
+    text = app.reply(searched)
+    assert text.startswith('The papers we read before ("Paper 1") do not say this')
+    assert (
+        "From your library" not in text and "\n[E1] Paper 3 › Method (arXiv 2401.00003v1)" in text
+    )
+    nothing: Any = {**moved, "answer": answer_citing(abstained=True)}
+    assert "I found no arXiv papers that match this request." in app.reply(nothing)
+
+
+def test_discovery_marks_papers_read_before_and_keeps_library_papers_in_the_dates() -> None:
+    papers = app.marked([card(1), card(2)], {"2401.00002"})
+    assert [p.read_before for p in papers] == [False, True]
+    assert "(arXiv 2401.00002v1, 2024-01-01, read before)" in app._listing(2, papers[1])
+    async_ctx: Any = type("Ctx", (), {"today": date(2026, 10, 9)})()
+    windowed = request(published_after="2024-01-01", published_before="2025-12-31")
+    old = card(3).model_copy(update={"published": "2023-12-31"})
+    undated = card(4).model_copy(update={"published": ""})
+    assert app._within(windowed, card(1), async_ctx) and not app._within(windowed, old, async_ctx)
+    assert not app._within(request(), undated, async_ctx), "an undated paper cannot be placed"
+    late = card(5).model_copy(update={"published": "2026-10-10"})
+    assert not app._within(request(), late, async_ctx), "nothing after today"
 
 
 def test_every_type_a_checkpoint_holds_is_registered() -> None:
@@ -386,7 +417,8 @@ def test_every_type_a_checkpoint_holds_is_registered() -> None:
         discover.DiscoverState,
         discover.ScreenTask,
         read.ReadState,
-        read.GatherTask,
+        read.SearchTask,
+        read.SelectTask,
         read.IngestTask,
         answer.AnswerState,
         answer.VerifyTask,
@@ -394,5 +426,5 @@ def test_every_type_a_checkpoint_holds_is_registered() -> None:
         walk(schema)
     assert found - set(app.CHECKPOINTED) == set()
     serde = JsonPlusSerializer(allowed_msgpack_modules=app.CHECKPOINTED)
-    sample = read.Found(round=0, documents=[1], query="q", sentences=[], missing=[])
+    sample = read.Found(round=0, document=1, query="q", sentences=[], missing=[])
     assert serde.loads_typed(serde.dumps_typed(sample)) == sample

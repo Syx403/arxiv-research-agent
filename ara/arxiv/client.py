@@ -5,7 +5,7 @@ import asyncio
 import re
 import time
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from types import TracebackType
 
@@ -123,12 +123,14 @@ class ArxivClient:
         html = await self.get(f"https://arxiv.org/html/{arxiv_id}v{version}")
         if html.status_code != 404:
             html.raise_for_status()
-            return arxiv_html_paper(html.text, arxiv_id, version)
-        pdf = await self.get(f"https://arxiv.org/pdf/{arxiv_id}v{version}")
-        pdf.raise_for_status()
-        return arxiv_pdf_paper(
-            pdf.content, arxiv_id, version, title=meta.title, abstract=meta.abstract
-        )
+            parsed_paper = arxiv_html_paper(html.text, arxiv_id, version)
+        else:
+            pdf = await self.get(f"https://arxiv.org/pdf/{arxiv_id}v{version}")
+            pdf.raise_for_status()
+            parsed_paper = arxiv_pdf_paper(
+                pdf.content, arxiv_id, version, title=meta.title, abstract=meta.abstract
+            )
+        return replace(parsed_paper, published=meta.published)
 
 
 def _metadata(entry: ET.Element) -> Metadata | None:

@@ -1,6 +1,9 @@
 """Ingestion (DESIGN §5, §8): parse → chunk → embed → store one document per (paper, pipeline).
 Idempotent: a paper already ingested with this PIPELINE_VERSION is returned without any work."""
 
+from datetime import date
+
+from ara.arxiv.client import ArxivClient
 from ara.db.pool import Connection, Pool, fetch_one
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Scope
@@ -14,9 +17,10 @@ from ara.rag.sources import ParsedPaper
 PIPELINE_VERSION = f"parse1-chunk{MAX_TOKENS}-{EMBEDDING_MODEL}"
 
 UPSERT_PAPER = """
-INSERT INTO papers (id, source, arxiv_id, version, title, abstract)
-VALUES (%(id)s, %(source)s, %(arxiv_id)s, %(version)s, %(title)s, %(abstract)s)
-ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, abstract = EXCLUDED.abstract
+INSERT INTO papers (id, source, arxiv_id, version, title, abstract, published)
+VALUES (%(id)s, %(source)s, %(arxiv_id)s, %(version)s, %(title)s, %(abstract)s, %(published)s)
+ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, abstract = EXCLUDED.abstract,
+    published = coalesce(EXCLUDED.published, papers.published)
 """
 INSERT_DOCUMENT = """
 INSERT INTO documents (paper_id, pipeline_version, format)
@@ -82,4 +86,34 @@ def _paper_row(paper: ParsedPaper) -> dict[str, object]:
         "version": paper.version,
         "title": paper.title,
         "abstract": paper.abstract,
+        "published": paper.published,
     }
+
+
+async def backfill_published(pool: Pool, arxiv: ArxivClient) -> int:
+    """Fill `papers.published` for arXiv rows stored before migration 0005: one metadata request
+    (free) for all of them. Returns the number of rows filled."""
+    async with pool.connection() as conn:
+        ids = await undated(conn)
+        found = await arxiv.lookup(ids) if ids else []
+        return await set_published(conn, {m.arxiv_id: m.published for m in found})
+
+
+async def undated(conn: Connection) -> list[str]:
+    cursor = await conn.execute(
+        "SELECT DISTINCT arxiv_id FROM papers WHERE source = 'arxiv' AND published IS NULL"
+        " ORDER BY arxiv_id"
+    )
+    return [row["arxiv_id"] for row in await cursor.fetchall()]
+
+
+async def set_published(conn: Connection, dates: dict[str, date]) -> int:
+    """Date the arXiv rows of these papers (every version); returns the rows changed."""
+    changed = 0
+    for arxiv_id, day in dates.items():
+        cursor = await conn.execute(
+            "UPDATE papers SET published = %s WHERE source = 'arxiv' AND arxiv_id = %s",
+            (day, arxiv_id),
+        )
+        changed += cursor.rowcount
+    return changed

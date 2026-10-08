@@ -141,7 +141,7 @@ async def test_one_repair_rewrites_the_rejected_line(gateway: Gateway) -> None:
 async def test_the_read_graph_requeries_an_uncovered_aspect(gateway: Gateway) -> None:
     question = f"{QUESTION[:-1]}, and how many GPUs were used to train them?"
     result = await READ.ainvoke(
-        {"question": question, "papers": [f"qasper:{PAPER}"], "merged": False},
+        {"question": question, "papers": [f"qasper:{PAPER}"]},
         context=context(gateway),
     )
     selections = [r for r in await gateway.ledger.calls(RUN_ID) if r["stage"] == "select_evidence"]

@@ -1,12 +1,15 @@
-"""`ara eval prepare|plan|run|report|hnsw` (DESIGN §11.5); `run` is a dry run without --execute."""
+"""`ara eval prepare|plan|run|report|hnsw` (DESIGN §11.5; `run` is a dry run without --execute)
+and `ara db backfill` (paper dates, D30)."""
 
 import argparse
 import asyncio
 import json
 from decimal import Decimal
 
+from ara.arxiv.client import ArxivClient
 from ara.db.migrate import migrate
 from ara.db.pool import make_pool
+from ara.rag.ingest import backfill_published
 from ara.settings import ROOT, get_settings
 from evals import hnsw, runner
 from evals.report import report
@@ -40,6 +43,10 @@ def main() -> None:
     perturb.add_argument("--max-usd", type=Decimal, default=Decimal("0.01"))
     evals.add_parser("report").add_argument("run_id")
     evals.add_parser("hnsw", help="HNSW against the exact scan on cached S1 vectors (free)")
+    database = commands.add_parser("db", help="database upkeep").add_subparsers(
+        dest="command", required=True
+    )
+    database.add_parser("backfill", help="date papers stored before migration 0005 (free)")
     args = parser.parse_args()
 
     match args.command:
@@ -76,6 +83,15 @@ def main() -> None:
             print(asyncio.run(_report(args.run_id)))
         case "hnsw":
             print(json.dumps(asyncio.run(hnsw.measure()), indent=2))
+        case "backfill":
+            print(f"dated {asyncio.run(_backfill())} paper rows")
+
+
+async def _backfill() -> int:
+    settings = get_settings()
+    migrate(settings.database_url)
+    async with make_pool(settings.database_url) as pool, ArxivClient() as arxiv:
+        return await backfill_published(pool, arxiv)
 
 
 async def _report(run_id: str) -> str:

@@ -5,6 +5,7 @@ import re
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import date
 from io import BytesIO
 from typing import Any, Literal
 
@@ -32,6 +33,7 @@ class ParsedPaper:
     abstract: str
     format: Literal["html", "pdf", "qasper"]
     paragraphs: tuple[Paragraph, ...]
+    published: date | None = None  # first submission, from arXiv metadata (D30)
 
 
 def qasper_paper(record: Mapping[str, Any]) -> ParsedPaper:

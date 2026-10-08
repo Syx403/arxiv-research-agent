@@ -208,9 +208,17 @@ async def test_prerank_always_shortlists_a_paper_named_by_title(pool: Pool) -> N
     found = {c.arxiv_id: c for c in [*others, named]}
     vectors = {"need": 1, **{f"T{n}. a": 1 for n in range(1, 26)}, "ReWOO: Decoupling. a": 2}
     await cache(pool, vectors)
-    state: Any = {"request": request(need="need", titles=["ReWOO"]), "found": found}
+    library = card(77, 0.0).model_copy(update={"title": "T77", "abstract": "a"})
+    await cache(pool, {"T77. a": 3})
+    state: Any = {
+        "request": request(need="need", titles=["ReWOO"]),
+        "found": found,
+        "library": [library, named],
+    }
     async with ArxivClient() as arxiv:
         ctx = context(pool, arxiv)
         result: Any = await discover.prerank(state, Runtime(context=ctx))
         await ctx.gateway.aclose()
     assert result["shortlisted"][0] == named.arxiv_id and len(result["shortlisted"]) == 24
+    assert library.arxiv_id in result["candidates"], "the user's paper joins the pool (D30)"
+    assert result["candidates"].count(named.arxiv_id) == 1, "a paper found twice counts once"

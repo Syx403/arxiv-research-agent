@@ -9,9 +9,7 @@ ANSWER = answer.build()
 
 
 async def answer_question(question: str, papers: list[str], context: Context) -> Answer:
-    found = await READ.ainvoke(
-        {"question": question, "papers": papers, "merged": False}, context=context
-    )
+    found = await READ.ainvoke({"question": question, "papers": papers}, context=context)
     result = await ANSWER.ainvoke(
         {
             "question": question,

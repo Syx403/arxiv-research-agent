@@ -50,7 +50,7 @@ def test_only_the_direct_answer_is_verified_with_its_question() -> None:
 def found(round: int, document: int, query: str, n: list[int], missing: list[str]) -> Found:
     return Found(
         round=round,
-        documents=[document],
+        document=document,
         query=query,
         sentences=[evidence(i) for i in n],
         missing=missing,
@@ -71,13 +71,18 @@ def test_collect_numbers_sentences_and_requeries_each_document_for_its_own_gaps(
         ([8], "dataset", 1),
         ([8], "metric", 1),
     ]
+    assert all(s.node == "search" for s in sends)
 
 
-def test_each_paper_is_searched_alone_unless_a_library_question_merges_them() -> None:
-    state: Any = {"question": "q", "documents": [7, 8], "merged": False}
-    assert [s.arg["documents"] for s in read.to_gather(state)] == [[7], [8]]
-    merged: Any = {**state, "merged": True}
-    assert [s.arg["documents"] for s in read.to_gather(merged)] == [[7, 8]]
+def test_the_question_is_searched_once_over_all_papers_and_selected_per_paper() -> None:
+    state: Any = {"question": "q", "documents": [7, 8, 7]}
+    [search] = read.to_search(state)
+    assert search.arg["documents"] == [7, 8] and search.arg["round"] == 0
+    first = [select_task(7, 0), select_task(8, 0)]
+    staged: Any = {"staged": first}
+    assert [s.arg["document"] for s in read.to_select(staged)] == [7, 8]
+    later: Any = {"staged": [*first, select_task(8, 1)], "requeried": True}
+    assert [(s.arg["document"], s.arg["round"]) for s in read.to_select(later)] == [(8, 1)]
 
 
 def test_after_the_requery_only_aspects_no_search_covered_are_missing() -> None:
@@ -212,9 +217,13 @@ def test_no_evidence_goes_straight_to_an_abstention() -> None:
 
 
 def test_the_subgraphs_compile() -> None:
-    assert {"ingest", "gather", "collect"} <= set(read.build().get_graph().nodes)
+    assert {"ingest", "search", "select", "collect"} <= set(read.build().get_graph().nodes)
     assert {"synthesize", "verify", "repair", "finalize"} <= set(answer.build().get_graph().nodes)
 
 
 def test_selection_labels_tolerate_appended_sentences() -> None:
     assert read._labels(["S8: All techniques ...", " S10", "none"]) == ["S8", "S10"]
+
+
+def select_task(document: int, round: int) -> Any:
+    return {"question": "q", "query": "q", "document": document, "round": round, "passages": []}

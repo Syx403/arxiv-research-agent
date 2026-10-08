@@ -245,6 +245,12 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
         "messages": [reply],
     }
     assert s6.check({"cited": ["2401.00002"]}, state, [], shown) == ["cited=['2401.00002']"]
+    listed = {**state, "papers": shown}
+    assert (
+        s6.check({"listed": ["2401.00001", "2401.00002"], "read_at_most": 1}, listed, [], shown)
+        == []
+    )
+    assert s6.check({"read_at_most": 1}, {**state, "selected": []}, [], shown) == ["read_at_most=1"]
     profile = [Fact(key="k", quote="I never fine-tune models", statement="s")]
     passing = {
         "intent": "read",
@@ -270,4 +276,6 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
         "s6-conflict",
         "s6-library-many",
         "s6-compare-ids",
+        "s6-library-fallback",
+        "s6-no-ask",
     ]

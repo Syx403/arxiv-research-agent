@@ -64,6 +64,8 @@ def check(
         "selected_positions": lambda v: read == [shown[n - 1].arxiv_id for n in v],
         "answered": lambda v: answered == v,
         "cited": lambda v: set(v) <= cited,
+        "listed": lambda v: set(v) <= {p.arxiv_id for p in state["papers"]},
+        "read_at_most": lambda v: 1 <= len(read) <= v,
         "reply_has": lambda v: v in reply,
     }
     return [f"{name}={value!r}" for name, value in expect.items() if not tests[name](value)]

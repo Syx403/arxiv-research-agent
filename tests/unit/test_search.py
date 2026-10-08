@@ -1,6 +1,9 @@
 """Ingestion and search against the real test database. Embeddings are placed in the cache first, so
 the gateway is never called: no API request is made."""
 
+from dataclasses import replace
+from datetime import date
+
 import numpy as np
 from langgraph.runtime import Runtime
 from pydantic import SecretStr
@@ -12,10 +15,10 @@ from ara.graph.read import ingest_paper
 from ara.graph.state import Context
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
-from ara.rag import search
+from ara.rag import retrieve, search
 from ara.rag.chunking import chunk
 from ara.rag.embed import cache_key, embed
-from ara.rag.ingest import ingest
+from ara.rag.ingest import ingest, set_published, undated
 from ara.rag.sources import Paragraph, ParsedPaper
 from ara.settings import Settings
 
@@ -122,4 +125,36 @@ async def test_the_papers_just_read_become_cards_for_follow_ups(pool: Pool) -> N
         ("2401.00001", 1, "Cache"),
         ("2401.00002", 1, "Cache"),
     ]
+    await gateway.aclose()
+
+
+async def test_each_paper_brings_its_own_candidates_and_keeps_its_own_best(pool: Pool) -> None:
+    """D30: candidates per paper, one reranked list, then each paper's first TOP_K."""
+    gateway, first, second = await setup(pool)
+    async with pool.connection() as conn:
+        found = await retrieve.candidates(conn, "eviction", unit(1), [first, second])
+        cursor = await conn.execute("SELECT id, document_id FROM chunks")
+        owner = {row["id"]: row["document_id"] for row in await cursor.fetchall()}
+    assert [owner[c] for c in found] == [first] * 3 + [second] * 3
+
+    def passage(n: int, document: int) -> retrieve.Passage:
+        return retrieve.Passage(n, document, "p", 0, "h", "t", "t", (0,))
+
+    ranked = [passage(n, first) for n in range(10)] + [passage(10, second)]
+    kept = retrieve.best_of_each(ranked, [first, second, 99])
+    assert [len(kept[d]) for d in (first, second, 99)] == [retrieve.TOP_K, 1, 0]
+    assert kept[first][0].chunk_id == 0, "the reranked order is kept within a paper"
+    await gateway.aclose()
+
+
+async def test_ingestion_stores_the_date_and_read_cards_show_it(pool: Pool) -> None:
+    gateway, _, _ = await setup(pool)
+    dated = replace(paper("2401.00003"), published=date(2023, 5, 23))
+    document = await ingest(dated, pool=pool, gateway=gateway, scope=Scope())
+    async with pool.connection() as conn:
+        [card] = await app.read_cards(conn, [document])
+        assert card.published == "2023-05-23"
+        assert await undated(conn) == ["2401.00001", "2401.00002"]
+        assert await set_published(conn, {"2401.00001": date(2024, 1, 1)}) == 1
+        assert await undated(conn) == ["2401.00002"]
     await gateway.aclose()

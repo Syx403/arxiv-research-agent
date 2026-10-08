@@ -8,6 +8,7 @@ orders what survived.
 
 import operator
 import re
+from collections.abc import Mapping
 from datetime import date
 from typing import Annotated, Literal, TypedDict
 
@@ -69,6 +70,7 @@ class Screening(BaseModel):
 
 class DiscoverInput(TypedDict):
     request: ResearchRequest
+    library: list[PaperCard]  # the user's papers close to the need: candidates too (D30)
 
 
 class DiscoverOutput(TypedDict):
@@ -199,9 +201,11 @@ def _closest(card: PaperCard) -> float:
 
 
 async def prerank(state: DiscoverState, runtime: Runtime[Context]) -> dict[str, object]:
-    """Embedding similarity of each abstract to the need (deterministic, cached embeddings)."""
+    """Embedding similarity of each abstract to the need (deterministic, cached embeddings). The
+    user's papers close to the need join the arXiv results on equal terms (D30)."""
     ctx = runtime.context
-    pool = list(state.get("found", {}).values())
+    found = state.get("found", {})
+    pool = [*found.values(), *(p for p in state["library"] if p.arxiv_id not in found)]
     if not pool:
         return {"shortlist": [], "candidates": [], "shortlisted": []}
     texts = [state["request"].need, *(f"{p.title}. {p.abstract}" for p in pool)]
@@ -224,9 +228,16 @@ async def prerank(state: DiscoverState, runtime: Runtime[Context]) -> dict[str, 
     }
 
 
-def screen_prompt(request: ResearchRequest, batch: list[PaperCard]) -> Prompt:
+def screen_prompt(
+    request: ResearchRequest,
+    batch: list[PaperCard],
+    passages: Mapping[str, list[str]] | None = None,
+) -> Prompt:
+    """The batch as the screen sees it; a library paper also brings the full-text passages
+    nearest the question, so what only the body says can count (D30)."""
     papers = [
         {"id": p.arxiv_id, "title": p.title, "published": p.published, "abstract": p.abstract}
+        | ({"passages": passages[p.reference]} if passages and passages.get(p.reference) else {})
         for p in batch
     ]
     return Prompt(SCREEN, shared=(request_block(request),), item=(data("Papers", papers),))
@@ -323,12 +334,15 @@ async def find_title(name: str, ctx: Context) -> list[PaperCard]:
     return [card(m) for m in found if titled(name, m.title)]
 
 
-async def check_constraints(
-    request: ResearchRequest, papers: list[PaperCard], ctx: Context
+async def judge(
+    request: ResearchRequest,
+    papers: list[PaperCard],
+    ctx: Context,
+    passages: Mapping[str, list[str]] | None = None,
 ) -> list[PaperCard]:
-    """The screen's judgement on papers that were not screened (the user named them, D29), so the
-    reply can warn when one breaks a constraint; one call for up to three papers."""
-    prompt = screen_prompt(request, papers)
+    """The screen's judgement on papers outside discovery, in one call (≤ one batch): named papers,
+    for their constraints (D29); library papers, for their relevance (D30)."""
+    prompt = screen_prompt(request, papers, passages)
     result = await ctx.gateway.structured(STAGES["screen"], prompt, Screening, scope=ctx.scope)
     judged = {j.id: j for j in in_batch(result.papers, papers)}
     return [judged_card(request, p, j) if (j := judged.get(p.arxiv_id)) else p for p in papers]

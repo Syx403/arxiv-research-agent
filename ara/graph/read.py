@@ -1,9 +1,10 @@
-"""The read subgraph (DESIGN §4.2): ingest per paper → gather per (scope, query) → collect, with
-at most one requery for the aspects the evidence left uncovered. A scope is one document, so each
-paper is searched on its own, or, for a library question, all documents at once (D29).
+"""The read subgraph (DESIGN §4.2, D30): ingest per paper → search (each paper on its own, one
+rerank for all) → select evidence per paper → collect, with at most one requery, per paper, for
+the aspects its evidence left uncovered.
 
-    START ─(Send ingest per paper)→ ingest → ready ─(Send gather per scope)→ gather → collect
-    collect ─(Send gather per scope and the aspects it missed, once)→ gather …  or → END
+    START ─(Send ingest per paper)→ ingest → ready ─(Send search)→ search → staged
+    staged ─(Send select per paper)→ select → collect
+    collect ─(Send search per paper and aspect it missed, once)→ search → staged …  or → END
 """
 
 import operator
@@ -22,7 +23,7 @@ from ara.llm.stages import STAGES
 from ara.rag.ingest import document_id, ingest
 from ara.rag.retrieve import Passage, retrieve
 
-MAX_REQUERIES = 3  # missing aspects searched again, per scope (D21)
+MAX_REQUERIES = 3  # missing aspects searched again, per paper (D21)
 LABEL = re.compile(r"S\d+")
 BARE_ARXIV = re.compile(r"^arxiv:(\d{4}\.\d{4,5})$")
 SELECT = Instructions.load("select_evidence")
@@ -35,7 +36,7 @@ class EvidenceSelection(BaseModel):
 
 class Found(BaseModel):
     round: int
-    documents: list[int]  # the scope searched
+    document: int
     query: str
     sentences: list[Evidence]  # ids are assigned in collect
     missing: list[str]  # aspects of the question these passages leave open
@@ -44,7 +45,6 @@ class Found(BaseModel):
 class ReadInput(TypedDict):
     question: str
     papers: list[str]  # references the context's `fetch` understands
-    merged: bool  # one search over all the papers instead of one per paper (library, D29)
 
 
 class ReadOutput(TypedDict):
@@ -57,16 +57,25 @@ class IngestTask(TypedDict):
     reference: str
 
 
-class GatherTask(TypedDict):
+class SearchTask(TypedDict):
     question: str
     query: str
     documents: list[int]
     round: int
 
 
+class SelectTask(TypedDict):
+    question: str
+    query: str
+    document: int
+    round: int
+    passages: list[Passage]
+
+
 class ReadState(ReadInput, ReadOutput):
+    staged: Annotated[list[SelectTask], operator.add]  # passages awaiting selection, by round
     found: Annotated[list[Found], operator.add]
-    requery: list[GatherTask]
+    requery: list[SearchTask]
     requeried: bool
 
 
@@ -86,16 +95,39 @@ async def ingest_paper(state: IngestTask, runtime: Runtime[Context]) -> dict[str
 
 
 def ready(state: ReadState) -> dict[str, object]:
-    """Joins the ingest branches: the gather fan-out starts once every paper is stored."""
+    """Joins the ingest branches: the search starts once every paper is stored."""
     return {}
 
 
-async def gather(state: GatherTask, runtime: Runtime[Context]) -> dict[str, list[Found]]:
-    """Search one scope for one query, then let the model pick the sentences that matter."""
+async def search(state: SearchTask, runtime: Runtime[Context]) -> dict[str, list[SelectTask]]:
+    """The best passages of each paper for one query (one rerank call for all of them)."""
     ctx = runtime.context
-    passages = await retrieve(
+    found = await retrieve(
         state["query"], state["documents"], pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope
     )
+    return {
+        "staged": [
+            SelectTask(
+                question=state["question"],
+                query=state["query"],
+                document=document,
+                round=state["round"],
+                passages=passages,
+            )
+            for document, passages in found.items()
+        ]
+    }
+
+
+def staged(state: ReadState) -> dict[str, object]:
+    """Joins the search branches: selection starts once every search of the round is done."""
+    return {}
+
+
+async def select(state: SelectTask, runtime: Runtime[Context]) -> dict[str, list[Found]]:
+    """Let the model pick the sentences of one paper's passages that matter for the question."""
+    ctx = runtime.context
+    passages = state["passages"]
     if not passages:
         return {"found": [_found(state, [], [])]}
     labelled = labels(passages)
@@ -119,10 +151,10 @@ async def gather(state: GatherTask, runtime: Runtime[Context]) -> dict[str, list
     return {"found": [_found(state, chosen, selection.missing)]}
 
 
-def _found(task: GatherTask, sentences: list[Evidence], missing: list[str]) -> Found:
+def _found(task: SelectTask, sentences: list[Evidence], missing: list[str]) -> Found:
     return Found(
         round=task["round"],
-        documents=task["documents"],
+        document=task["document"],
         query=task["query"],
         sentences=sentences,
         missing=missing,
@@ -160,7 +192,7 @@ def _passage_text(passage: Passage, labelled: dict[str, Evidence]) -> str:
 
 
 def collect(state: ReadState) -> dict[str, object]:
-    """Number the distinct sentences E1, E2, ... After the first round, search each scope once
+    """Number the distinct sentences E1, E2, ... After the first round, search each paper once
     more for the aspects it reported missing; after the requery, report what is still uncovered."""
     seen: dict[tuple[int, str], Evidence] = {}
     for found in state["found"]:
@@ -170,7 +202,7 @@ def collect(state: ReadState) -> dict[str, object]:
     if state.get("requeried", False):
         return {"evidence": evidence, "missing": uncovered(state["found"]), "requery": []}
     requery = [
-        GatherTask(question=state["question"], query=aspect, documents=f.documents, round=1)
+        SearchTask(question=state["question"], query=aspect, documents=[f.document], round=1)
         for f in state["found"]
         for aspect in list(dict.fromkeys(f.missing))[:MAX_REQUERIES]
     ]
@@ -178,7 +210,7 @@ def collect(state: ReadState) -> dict[str, object]:
 
 
 def uncovered(found: list[Found]) -> list[str]:
-    """Requeried aspects that no search covered: no first-round scope answered them (it chose
+    """Requeried aspects that no search covered: no first-round paper answered them (it chose
     sentences and did not list the aspect) and their own search chose nothing. The `missing` lists
     of the requery are not used: they judge the whole question from one aspect's passages."""
     first = [f for f in found if f.round == 0]
@@ -196,20 +228,24 @@ def to_ingest(state: ReadState) -> list[Send]:
     return [Send("ingest", IngestTask(reference=r)) for r in dict.fromkeys(state["papers"])]
 
 
-def to_gather(state: ReadState) -> list[Send]:
-    documents = state["documents"]
-    scopes = [documents] if state["merged"] else [[d] for d in documents]
-    return [
-        Send(
-            "gather",
-            GatherTask(question=state["question"], query=state["question"], documents=s, round=0),
-        )
-        for s in scopes
-    ]
+def to_search(state: ReadState) -> list[Send]:
+    """The question, once, over every paper read: one rerank call, each paper's own passages."""
+    task = SearchTask(
+        question=state["question"],
+        query=state["question"],
+        documents=list(dict.fromkeys(state["documents"])),
+        round=0,
+    )
+    return [Send("search", task)]
+
+
+def to_select(state: ReadState) -> list[Send]:
+    current = 1 if state.get("requeried", False) else 0
+    return [Send("select", t) for t in state["staged"] if t["round"] == current]
 
 
 def after_collect(state: ReadState) -> list[Send] | str:
-    return [Send("gather", task) for task in state["requery"]] or END
+    return [Send("search", task) for task in state["requery"]] or END
 
 
 def build() -> CompiledStateGraph[ReadState, Context, ReadInput, ReadOutput]:
@@ -218,11 +254,15 @@ def build() -> CompiledStateGraph[ReadState, Context, ReadInput, ReadOutput]:
     )
     graph.add_node("ingest", ingest_paper, input_schema=IngestTask)
     graph.add_node("ready", ready)
-    graph.add_node("gather", gather, input_schema=GatherTask)
+    graph.add_node("search", search, input_schema=SearchTask)
+    graph.add_node("staged", staged)
+    graph.add_node("select", select, input_schema=SelectTask)
     graph.add_node("collect", collect)
     graph.add_conditional_edges(START, to_ingest, ["ingest"])
     graph.add_edge("ingest", "ready")
-    graph.add_conditional_edges("ready", to_gather, ["gather"])
-    graph.add_edge("gather", "collect")
-    graph.add_conditional_edges("collect", after_collect, ["gather", END])
+    graph.add_conditional_edges("ready", to_search, ["search"])
+    graph.add_edge("search", "staged")
+    graph.add_conditional_edges("staged", to_select, ["select"])
+    graph.add_edge("select", "collect")
+    graph.add_conditional_edges("collect", after_collect, ["search", END])
     return graph.compile(name="read")

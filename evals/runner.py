@@ -522,7 +522,7 @@ async def run_s3(*, limit: int | None, execute: bool, max_usd: Decimal) -> str |
                 async with pool.connection() as conn:
                     try:
                         found = await discover.ainvoke(
-                            {"request": s3.request(query)},
+                            {"request": s3.request(query), "library": []},  # no user library
                             {"recursion_limit": 60, "metadata": {"run_id": run_id}},
                             context=context,
                         )

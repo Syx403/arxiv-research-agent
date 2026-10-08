@@ -42,9 +42,9 @@ Constraints
 |---|---|---|
 | Clarify | "Find the best paper to cut my agent's cost" | understand → clarify ⏸ → understand |
 | Discover | "Recent papers on KV-cache eviction for long-context inference" | understand → discover → respond |
-| Discover + read | "Find 2 papers on tool-call scheduling and compare their mechanisms" | understand → discover → choose_papers (⏸ if ambiguous) → read → answer → respond |
+| Discover + read | "Find 2 papers on tool-call scheduling and compare their mechanisms" | understand → discover (arXiv + the user's papers close to the need) → choose_papers (never asks; D30) → read → answer → respond |
 | Read named/selected papers | "Read 2210.03629 and explain how it interleaves reasoning and actions" / "read the second one" / "read the ReWOO paper" | understand → resolve (ids, numbers, titles by code; D29) → read → conflicts → answer → respond |
-| Ask the library | "Which papers did we read about MoE routing, and what did they conclude?" | understand → library (HNSW + research records, top 3) → read (one search over them) → answer → respond (D29) |
+| Ask about our history | "Which papers did we read about MoE routing, and what did they conclude?" | understand → library (HNSW + research records → screen with passages) → read the relevant (≤ 3) → answer → respond; nothing relevant: "not discussed"; not answered: one arXiv search (D30) |
 | Remember / forget | "I only use hosted APIs, no fine-tuning" / "forget that" | any path → remember; a message that only does this: understand → remember → respond (D27) |
 
 Hard limits per turn: ≤ 5 papers listed, ≤ 3 papers read, ≤ 8 arXiv tool calls, one evidence
@@ -81,7 +81,7 @@ ara/
   graph/        app.py (top-level graph, routing, checkpointer), discover.py, read.py, answer.py,
                 qa.py (read → answer for evals), state.py
   rag/          sources.py (arxiv html/pdf, qasper), chunking.py, embed.py, ingest.py, search.py,
-                retrieve.py (stemmed BM25 + dense → RRF → rerank top 30 → top 8 passages)
+                retrieve.py (per paper: stemmed BM25 + dense → RRF top 30; one rerank; top 8 each)
   llm/          gateway.py, prompt.py, prompts/ (text files), stages.py, pricing.py, ledger.py
   memory/       store.py, extract.py, library.py
   db/           migrations/*.sql, migrate.py, pool.py
@@ -104,7 +104,7 @@ primitive below is used because the product needs it; nothing is added for decor
 | Need | Primitive |
 |---|---|
 | Multi-turn conversation per thread, resumable turns | `AsyncPostgresSaver`, `thread_id` = conversation |
-| Ask the user mid-turn (clarification, paper choice) | `interrupt()` + `Command(resume=...)` |
+| Ask the user mid-turn (clarification; paper choice until D30) | `interrupt()` + `Command(resume=...)` |
 | Parallel per-candidate screening, per-paper reading, per-claim verification | `Send` fan-out + list reducers |
 | Phase isolation and per-phase evaluation | subgraphs with their own state schemas |
 | Bounded loops (tool calls, requery, repair) | conditional edges + counters + `recursion_limit` |
@@ -117,13 +117,17 @@ primitive below is used because the product needs it; nothing is added for decor
 ### 4.1 Top-level graph
 
 ```
-START → load_context → understand ─┬─► clarify ⏸ ──────────────────────────────► understand
-                                   ├─► discover ⟦sub⟧ → choose_papers (⏸ if ambiguous) ─┬─► read ⟦sub⟧ → answer ⟦sub⟧ → respond
-                                   │                                                    └─► respond
-                                   ├─► read ⟦sub⟧ → answer ⟦sub⟧ → respond
-                                   ├─► answer ⟦sub⟧ (library scope) → respond
+START → load_context → understand ─┬─► clarify ⏸ → understand
+                                   ├─► discover ⟦sub⟧ → choose_papers ─┬─► read …
+                                   │                                   └─► respond
+                                   ├─► resolve ─┬─► read ⟦sub⟧ → conflicts → answer ⟦sub⟧ ─┬─► respond
+                                   │            └─► discover (titles not found)          └─► search_instead → discover …
+                                   ├─► library ─┬─► read …
+                                   │            └─► respond ("not discussed")
+                                   ├─► remember → respond → END (intent "memory")
                                    └─► respond
 respond → remember → END
+(as built after D30; the paragraphs below record how it got here)
 ```
 
 - `load_context`: resets turn-scoped fields (papers, evidence, answer) so nothing leaks from the
@@ -132,8 +136,8 @@ respond → remember → END
   Hard constraints must be literal quotes from human messages (v1 rule, enforced by code).
 - `clarify`: calls `interrupt(question)`. On resume the node re-runs from its start, so it holds
   no side effects before the interrupt.
-- `choose_papers`: deterministic (top direct matches up to the limit); interrupts only when the
-  user asked to read but the choice is ambiguous.
+- `choose_papers`: deterministic and never asks (D30): the papers the user named, else as many
+  as the user asked for, else the relevance-3 papers, else the top of the list, at most 3.
 - `respond`: renders the final message; `remember` writes memory (§7).
 
 As built in M3 (D22): a `resolve` node sits before `read` on the read-by-reference path (named ids,
@@ -151,12 +155,20 @@ After D27 (M4): `load_context` reads the profile and the three closest research 
 Store; a `memory` intent goes understand → remember → respond, every other turn respond → remember;
 a library question (never clarified) goes `library` (HNSW over the user's papers, top 3) → read →
 answer → respond; reading records the papers in `library_items`.
+After D30 (replaces the library route of D27/D29 and D22's paper-choice question): arXiv search is
+the main path and the library a quick look first. `library` is only a message that refers back to
+what we read or discussed; discovery adds the user's papers close to the need (HNSW + research
+records, within the request's dates) to its candidates and marks listed papers "read before";
+`choose_papers` never asks (the count, else the relevance-3 papers, else the top of the list, ≤ 3).
+A library question that names no paper screens the user's closest papers (abstract + the two
+passages nearest the question); nothing relevant gives "not discussed"; otherwise every relevant
+paper is listed (≤ 5) and the most relevant (≤ 3) read; if they do not answer, `search_instead`
+searches arXiv for the same question, once, and the reply says so.
 After D29: papers the user names (ids, numbers shown, titles) are the papers read, whatever else
 the request says; `resolve` finds titles by code (the user's library, then one arXiv title
 search), leaves titles it cannot find to discovery, and adds notes the reply must carry;
 `conflicts` (after read) screens named papers against the request's constraints; the reply says
-when a named paper has no evidence for the question. A library question that names no paper
-fuses passage distance with research records and searches its three papers together.
+when a named paper has no evidence for the question.
 After D24: `understand` also returns `priorities` (what the user cares about: quoted, steers
 relevance and the answer's focus, never removes a paper), `titles` (papers named without an id;
 the researcher looks them up first) and `prefer_recent` (asked for recent work, or any topic search
@@ -180,9 +192,9 @@ orders each relevance grade by date instead of similarity, and no date window is
 Searches end at `Context.today`.
 
 read — `ingest` × paper (`Send`; idempotent, cached by paper version + pipeline version) →
-`gather` × (scope, question) (`Send`: hybrid search → rerank → `select_evidence`) → `collect`
-→ at most one requery for reported missing aspects. A scope is one paper, or all papers of a
-library question at once (`merged`, D29).
+`search` (each paper's own hybrid candidates, one rerank call for all papers, each paper keeps its
+top 8; D30) → `select` × paper (`Send`: `select_evidence`) → `collect` → at most one requery, a
+search per paper and missing aspect.
 
 answer — `synthesize` → `prewarm` → `verify` × claim (`Send`) → `assemble` (keep only sentences
 whose every citation passed) → at most one `repair` → `verify` again → `finalize`.
@@ -265,8 +277,7 @@ Indexing
 - `PIPELINE_VERSION` constant (parser + chunker + embedding model). Chunks of other versions are
   never mixed into a search.
 
-Search (scoped to one selected paper version, or to the up to three library papers a library
-question chose, together; D29)
+Search (each paper read is searched on its own; D30)
 - BM25 over `chunks.search_text` with ParadeDB `pg_search` 0.26: one ParadeDB index per table
   holding `id`, `document_id` (so the scope filter is pushed down) and the text tokenised twice,
   plain words and English stemming (alias `search_text_stemmed`, D15); queried with `|||` (any
@@ -276,8 +287,11 @@ question chose, together; D29)
   any vector index); HNSW for library-wide search (pgvector ≥ 0.8 iterative scans for filtered
   queries), added with library questions (M4); at today's size the planner keeps the exact scan,
   and forced HNSW returns the same top 10 (`ara eval hnsw`, D29).
-- Reciprocal rank fusion, k = 60, top 50 from each list → Cohere rerank (`rerank-v4.0-pro`,
-  trial key) top 30 → top 8.
+- Reciprocal rank fusion, k = 60, top 50 from each list → each paper's top 30 → one Cohere rerank
+  (`rerank-v4.0-pro`, trial key) of all papers' candidates → each paper's top 8 (D30). S1 (one
+  paper, 30 questions) evidence recall by passages kept: 2 → 0.78, 3 → 0.85, 4 → 0.88, 6 → 0.97,
+  8 → 1.00. One call orders a paper's passages as separate calls would, because the reranker
+  scores each (query, passage) pair on its own (inferred, not measured on Cohere).
 - `select_evidence` (LLM) returns sentence ids from those chunks plus missing aspects; this merges
   v1's separate relevance and sufficiency calls into one structured call.
 
@@ -484,7 +498,7 @@ UI purpose: show the work in interviews. Priority: (1) workflow, (2) evidence, (
 
 | Priority | Page | Content |
 |---|---|---|
-| 1 | Workflow + chat | Chat; the live graph rendered from the compiled LangGraph (`get_graph(xray=True)` → Mermaid) with the active node highlighted; a step timeline (node, model, latency, tokens, cache-hit %, cost); interrupt cards (clarification, paper choice) |
+| 1 | Workflow + chat | Chat; the live graph rendered from the compiled LangGraph (`get_graph(xray=True)` → Mermaid) with the active node highlighted; a step timeline (node, model, latency, tokens, cache-hit %, cost); interrupt cards (clarification) |
 | 2 | Evidence | Answer with citation chips → source viewer with the cited sentences highlighted and the verifier's verdict; paper cards with fit and constraint checks |
 | 4 | Evaluation | Rounds, metrics with CIs per suite, per-item table, cost, LangSmith trace links |
 | 3 | Memory | Profile facts with their quotes, library, forget |
@@ -529,7 +543,7 @@ pre-ingested papers so a live demo turn stays short.
 | S3 discovery | PaSa: AutoScholarQuery (dev 15), RealScholarQuery (test 15), seed 20261009; manifest holds ids only, no LangSmith dataset (D22); 30 per round, confirmed by Ewan (D23); each query runs with today = its PaSa date (D24) | 30 | candidate-pool and shortlist recall, gold precision@5 (lower bound), hit@5; adjudication and constraint violations with the judge in E1 | code (M3); + DeepSeek judge + Ewan from E1 | $0.089 measured (D25) |
 | S4 understand/clarify | 12 of v1's questions (translated; 2 rewritten) + 50 drafted cases, each with the day it is asked; labels proposed by Claude and reviewed by Ewan (D22, D24) | 62 | intent accuracy, false-clarify, missed-clarify, per-field accuracy over every field (ids, positions, titles, count, constraints, priorities, dates, prefer_recent) | code | $0.0084 measured (D25) |
 | S5 verifier | QASPER evidence (one sentence per S1 item); 30 DeepSeek paraphrases, 30 perturbed: number 8 and negation 7 by code, entity 8 and over-generalisation 7 by DeepSeek; reviewed by Ewan; 58 after review (D19, D20) | 58 | P/R/F1 on "unsupported", recall per kind; Luna vs DeepSeek | code | $0.0093 measured (D20) |
-| S6 multi-turn + memory | scripted scenarios, drafted by Claude for Ewan's review (D27, D29) | 11 scenarios, 22 turns | scenarios passed, checks passed (reference resolution, constraint retention, update, forget, library answer and abstain, named papers: mismatch, premise, conflict) | code | ≈ $0.07 |
+| S6 multi-turn + memory | scripted scenarios, drafted by Claude for Ewan's review (D27, D29, D30) | 13 scenarios, 25 turns | scenarios passed, checks passed (reference resolution, constraint retention, update, forget, history answer, "not discussed" and arXiv fallback, named papers: mismatch, premise, conflict, no paper-choice question) | code | ≈ $0.08 |
 | S7 robustness | fault hooks + one prompt-injection document | 6 + 3 turns | graceful-degradation rate, injection success (must be 0) | code | ≈ $0.02 |
 
 Efficiency is reported for every suite: requests, tokens, cache-hit rate, $/task, latency p50/p95.
