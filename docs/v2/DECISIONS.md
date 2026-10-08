@@ -349,7 +349,7 @@ decision gets a new entry that names the one it replaces.
     becomes find-then-read, as before.
   - S4 labels constraints as quotes; a prediction passes with the same number of constraints, each
     containing or contained in its own labelled quote (whitespace and case folded). v1-c03x now
-    carries the 不优化模型权重 constraint, as v1-c03 does. Labels still await Ewan's review.
+    carries the "no optimising model weights" constraint (English since D24), as v1-c03 does. Labels still await Ewan's review.
   - S3 stays at 30 queries per round (15 dev + 15 held-out), Ewan's choice; part of the cost rise
     from DESIGN's US$0.10 to ≈ US$0.24 is this doubling, not only screening (D22 attributed it to
     screening alone).
@@ -370,7 +370,59 @@ decision gets a new entry that names the one it replaces.
 - Moved to E1 (Ewan): a paper the user names in a find-then-read request can be filtered out by
   screening when it is off-topic for the need (v1-c03 names GQA among tool-scheduling papers).
 - Live check (2 Luna requests, `m3-review-20261008T051722`, US$0.00034): with the block,
-  "最后一篇用了哪些数据集？" resolved to `listed: [3]`. On ref-mixed ("Compare the first one with
+  "Which datasets does the last one use?" (then in Chinese; English since D24) resolved to
+  `listed: [3]`. On ref-mixed ("Compare the first one with
   2305.18323") the model returned `discover_read` with both references filled; code does not
   override it, so S4 will count it as an intent error. Not changed: it is the kind of model
   behaviour S4 measures, and with item 11 it belongs to E1.
+
+## D24 — Requests carry priorities, named titles, recency and today's date; English data; S4 rebuilt (2026-10-08, Ewan)
+- Context: Ewan's review of the S4 labels found that the request could not express what users ask
+  for: what they care about (two costs in v1-c12), the papers they name by title ("only among these
+  three"), recent work, and dates relative to today; that a follow-up on papers just read had nothing
+  to point at; and that S4 measured too little (fields left unlabelled were never graded, read-by-id
+  items dominated, some v1 items were built from their answers). He also asked for one language.
+- Decisions (Ewan):
+  - The user's requirements are split by what the system does with them: `constraints` stay hard
+    filters (screen marks a violation, rank removes the paper); `priorities` (quoted, checked like
+    constraints) steer researcher and screen relevance and the answer's focus, and never remove a
+    paper; `titles` name papers without an id. A synthesize line still states only what its evidence
+    says: a priority chooses which lines, it cannot add a claim. Alternative: one broad
+    "constraints" list (Ewan's first reading of v1-c12), rejected because screen would mark papers
+    as violating a cost the user merely cares about.
+  - A judgement that needs more than abstracts ("whose technique is the most cutting-edge") is
+    `discover_read`.
+  - Recency is a weighting, not a window: `prefer_recent` makes `search_arxiv` able to order newest
+    first and makes rank order each relevance grade by date instead of similarity. It is on when the
+    user asks for recent work and, by default, for topic searches; off when papers are named or
+    shown, or dates are limited. "Recent" never becomes a date limit.
+  - `Context.today` (default: the real date) is given to understand in the item part, so relative
+    dates ("the last two years") resolve against it and the cached prefix is untouched; searches
+    end at it. S3 sets it to each PaSa query's date; S4 items carry `asked_at`.
+  - After a read-only turn, `shown` is the papers just read (titles from the `papers` table), so
+    "Which approach should I use?" can refer to them. After a search, `shown` stays the listing.
+  - Language: English for the product, prompts, replies and every dataset; DESIGN §1 no longer says
+    Chinese input is accepted (option A, chosen over keeping a few non-English items).
+  - Named titles are used only by the researcher (look them up first). Keeping a named paper that
+    screening finds off-topic stays in E1 (D23, item 11).
+- Implementation choices made by Claude (to confirm in the S4 review):
+  - "Broad topic" in Ewan's default is read as any topic search that names no paper and limits no
+    dates, because "broad" has no line a label could follow.
+  - S4 quote fields (constraints, priorities, titles) are graded by coverage: every labelled phrase
+    is inside a quote the model gave (or contains it), and every quote overlaps a labelled phrase.
+    This replaces D23's same-count rule, because the model may legitimately split "I care about both
+    API cost and waiting time" into one or two quotes; a missing phrase or an invented quote still
+    fails. Labels are therefore short key phrases.
+  - Every field is labelled on every item that should proceed, and each is reported (`field_*`), so
+    an extra date or constraint counts as an error; the loader refuses an item missing a field.
+  - S3 keeps `prefer_recent` off: it grades search quality against PaSa's gold, which is not
+    recency-ordered, and its request is built without understand.
+  - Cards for papers just read have no publication date (the `papers` table does not store it).
+- S4 rebuilt (`evals/datasets/s4_understand.json`, 62 items, 25 dev / 37 held-out, all
+  `reviewed: false`): 12 v1 items translated (v1-c02 and v1-c07-1 rewritten, the first per Ewan,
+  the second because its window was built around its answer), 7 near-duplicate read-by-id items
+  dropped; new cases for follow-ups on papers just read, narrowing or lifting an earlier search,
+  preferences that are not constraints, a count without reading, dates relative to `asked_at`, and
+  more clarifications (10: 5 dev, 5 held-out). "Which approach should I use?" alone is `other`.
+- Consequence: the understand, researcher, screen and synthesize prompts changed version; M2's S2
+  smoke numbers are not strictly comparable with later S2 rounds (the full S2 round is in E1).

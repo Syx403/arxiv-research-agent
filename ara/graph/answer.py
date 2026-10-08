@@ -34,6 +34,7 @@ class AnswerInput(TypedDict):
     question: str
     evidence: list[Evidence]
     missing: list[str]
+    priorities: list[str]  # what the user cares about: the explanation's focus (D24)
 
 
 class AnswerOutput(TypedDict):
@@ -81,6 +82,8 @@ def pack(evidence: list[Evidence]) -> Block:
 
 def synthesis_prompt(state: AnswerInput) -> Prompt:
     question = f"Question: {state['question']}"
+    if state["priorities"]:
+        question += "\nThe user cares about: " + "; ".join(state["priorities"])
     if state["missing"]:
         question += "\nThe evidence search found nothing on: " + "; ".join(state["missing"])
     return Prompt(SYNTHESIZE, shared=(pack(state["evidence"]),), item=(Block("user", question),))

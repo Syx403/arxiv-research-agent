@@ -11,7 +11,7 @@ Update this file at the end of every working session: what was done, what was sp
 | M0 Foundation | done (2026-10-07), reviewed | §16 verified; §6.2–6.3 confirmed (D10, D11); 29 unit tests on real Postgres; live checks passed (cache hits on both providers; a rejected request is released) |
 | M1 RAG + S1 | done (2026-10-08) | sources (arXiv HTML/PDF, QASPER), chunking, cached embeddings, ingestion, BM25 ×2 / FTS / dense / RRF / rerank, eval runner + S1; S1 live on 2 papers (6 items) |
 | M2 Read + answer | done (2026-10-08), reviewed | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20); review fixes and a live check of requery, prewarm and repair (D21) |
-| M3 Understand + discover | built (2026-10-08), reviewed; S3/S4 rounds pending | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); S4 labels await Ewan's review |
+| M3 Understand + discover | built (2026-10-08), reviewed; S3/S4 rounds pending | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); priorities, titles, recency, today, English S4 of 62 items (D24); S4 labels await Ewan's review |
 | M4 Memory | not started | |
 | M5 Reliability + UI | not started | |
 | Architecture review (Ewan) | — | gate before any large-scale LLM testing |
@@ -34,7 +34,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-08 | M2 review check | requery, prewarm + cached verify, off-question verify, repair (`m2-review-20261007T180521`, `…180557` a mistaken rerun, `…180728`) | 23 | 0.0025 | Ewan (≈ 10 requests, < US$0.005; exceeded in count by the rerun) |
 | 2026-10-08 | M3 live check | clarify turn; discover → read turn, a crashed first run (embedding bug) and its rerun (`m3-live-20261007T183501`, `…183610`, `…183711`) | 49 | 0.0171 | Ewan (≈ 40 requests, ≤ US$0.05; count exceeded by the rerun, 5 of 49 are free reranks) |
 | 2026-10-08 | M3 review check | understand with the shown-papers block on two S4 items (`m3-review-20261008T051722`) | 2 | 0.0003 | rule-1 threshold, reported |
-| | | **Total so far** | 267 | **0.0449** | |
+| 2026-10-08 | S3 calibration | 2 dev + 2 held-out queries, off-peak (`s3-20261008T052442`): 11 researcher steps, 4 embedding requests, 10 screen batches | 25 | 0.0098 | Ewan (calibration first; cap US$0.05) |
+| | | **Total so far** | 292 | **0.0547** | |
 
 ## Session log
 
@@ -64,7 +65,7 @@ Update this file at the end of every working session: what was done, what was sp
   (D14). CI: the first run failed because setup-uv has no moving `v10` tag (pinned v10.2.0);
   the second run passed (ruff, mypy, 28 unit tests against the ParadeDB service).
   Next: M1 (RAG + S1), after Ewan's review of M0 and the Cohere quota check.
-- 2026-10-07 — M0 strict review (严格审核). Re-read every file against DESIGN, DECISIONS and
+- 2026-10-07 — M0 strict review. Re-read every file against DESIGN, DECISIONS and
   CLAUDE.md. Fixed: D14 overstated that a prompt cannot be built from an inline string (only
   the version is guaranteed); D11's prewarm rule was missing from code (`worth_prewarming`,
   tested); DESIGN §6.4 showed the wrong `prewarm` signature and no `scope`; an unknown-outcome
@@ -94,7 +95,7 @@ Update this file at the end of every working session: what was done, what was sp
   0.55; plain BM25 0.51. Paired: stemming never loses top-8 recall but is neutral on ordering;
   rerank is the only clear gain; RRF ties dense. D15 confirmed as D17. Report and paired table in
   `docs/v2/eval/`. Cohere: Ewan reports the trial quota unused this month (1,000 calls); 36 used.
-- 2026-10-08 — M1 strict review (严格审核), then fixes approved by Ewan. Fixed: the S1 report
+- 2026-10-08 — M1 strict review, then fixes approved by Ewan. Fixed: the S1 report
   pooled dev and test and had no paired comparison (now split, paired bootstrap Δ with items
   better/worse; D17 restated as D18: the tokenizer choice holds on dev and held-out, rerank's
   ordering gain holds on dev only, dense is the strongest single arm on held-out); the request
@@ -130,7 +131,7 @@ Update this file at the end of every working session: what was done, what was sp
   failed): held-out both models F1 1.00; dev DeepSeek 1.00, Luna 0.96 (one false alarm on an
   ambiguous paraphrase). Luna stays the verifier; the suite is at its ceiling (D20). 65 unit
   tests. M2 remaining: Ewan's review of M2; the full S2 round belongs to E1.
-- 2026-10-08 — M2 strict review (严格审核), then fixes approved by Ewan (D21). Found: the requery
+- 2026-10-08 — M2 strict review, then fixes approved by Ewan (D21). Found: the requery
   told synthesize that aspects other searches had covered were missing; the verifier never saw the
   question, so a direct answer was checked as a bare phrase; a failed direct answer still
   delivered its explanation lines (against D19); repair calls carried only the synthesize version;
@@ -155,7 +156,7 @@ Update this file at the end of every working session: what was done, what was sp
   the clarify turn and the discover → read turn passed (49 requests, US$0.0171; over the
   approved count because of the crashed run). 93 unit tests. Next: Ewan reviews the S4 labels;
   then the S3 (≈ US$0.24) and S4 (≈ US$0.025) rounds, which need approval.
-- 2026-10-08 — M3 strict review (严格审核), then fixes approved by Ewan (D23). Found and fixed:
+- 2026-10-08 — M3 strict review, then fixes approved by Ewan (D23). Found and fixed:
   understand's prompt promised the shown papers but never received them (now a data block before
   the latest message); ids were checked by pattern only (now they must appear in the conversation);
   S4 graded constraints by count (now by quote; v1-c03x label added); violation quotes compared
@@ -168,3 +169,14 @@ Update this file at the end of every working session: what was done, what was sp
   ref-mixed showed the model choosing `discover_read` with both references filled (left for S4).
   97 unit tests. Next: Ewan reviews the S4 labels; S3 (suggested: `--limit 2` first to calibrate the
   unit cost) and S4 rounds need approval.
+- 2026-10-08 — S3 calibration (`s3-20261008T052442`, 4 queries, 0 failed, US$0.0098): US$0.0012-0.0031
+  per query (screening 63% of it), 30-37 s each, so a 30-query round is ≈ US$0.07-0.09 and ≈ 18
+  minutes, well under the D22 estimate of US$0.24. The researcher used 2-4 steps per query (budget
+  8) and gathered 5-56 candidates; pool recall 0.28 held-out, 0.33 dev (n = 2 each, directional).
+- 2026-10-08 — D24, after Ewan's S4 label review. Built: `priorities`, `titles` and `prefer_recent`
+  in the request (understand prompt rewritten, quotes checked in code), `Context.today` in the
+  understand item and as the search end (S3 pins it to the PaSa date), `search_arxiv(newest_first)`
+  and date order within a relevance grade, priorities in the synthesize item, papers just read
+  become `shown`; all project data English; S4 rebuilt as 62 fully labelled English items graded
+  per field. No billable calls in this step. 100 unit tests. Next: Ewan reviews the S4 draft; a
+  live check of the changed turns (≈ 40 requests, ≤ US$0.02) needs approval; then S4 and S3.

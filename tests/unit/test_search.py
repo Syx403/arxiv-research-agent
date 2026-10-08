@@ -7,6 +7,7 @@ from pydantic import SecretStr
 
 from ara.arxiv.client import ArxivClient
 from ara.db.pool import Pool
+from ara.graph import app
 from ara.graph.read import ingest_paper
 from ara.graph.state import Context
 from ara.llm.gateway import Gateway
@@ -110,4 +111,15 @@ async def test_cached_embeddings_come_back_as_numpy_vectors(pool: Pool) -> None:
         [chunk(PARAGRAPHS)[1].search_text], pool=pool, gateway=gateway, scope=Scope()
     )
     assert isinstance(vector, np.ndarray) and vector.shape == (1536,) and vector @ unit(1) == 1.0
+    await gateway.aclose()
+
+
+async def test_the_papers_just_read_become_cards_for_follow_ups(pool: Pool) -> None:
+    gateway, first, second = await setup(pool)
+    async with pool.connection() as conn:
+        cards = await app.read_cards(conn, [second, first])
+    assert sorted((c.arxiv_id, c.version, c.title) for c in cards) == [
+        ("2401.00001", 1, "Cache"),
+        ("2401.00002", 1, "Cache"),
+    ]
     await gateway.aclose()

@@ -24,6 +24,9 @@ def request(**fields: Any) -> ResearchRequest:
         "listed": [],
         "count": None,
         "constraints": [],
+        "priorities": [],
+        "titles": [],
+        "prefer_recent": False,
         "published_after": None,
         "published_before": None,
     }
@@ -119,3 +122,28 @@ def test_a_tool_turn_is_sent_back_with_its_reasoning_and_call_ids() -> None:
         "tool_call_id": "call_1",
         "content": "2401.00001 (2024) Paper 1",
     }
+
+
+def test_recent_work_comes_first_within_a_relevance_grade() -> None:
+    old, new, best = card(1, 0.9), card(2, 0.5), card(3, 0.1)
+    new = new.model_copy(update={"published": "2026-01-01"})
+    judged = [
+        discover.Judgement(id="2401.00001", relevance=2, reason="", violated=[]),
+        discover.Judgement(id="2401.00002", relevance=2, reason="", violated=[]),
+        discover.Judgement(id="2401.00003", relevance=3, reason="", violated=[]),
+    ]
+    state: Any = {"request": request(), "shortlist": [old, new, best], "judged": judged}
+    by_similarity: Any = discover.rank(state)
+    assert [p.arxiv_id for p in by_similarity["papers"]] == [
+        "2401.00003",
+        "2401.00001",
+        "2401.00002",
+    ]
+    state["request"] = request(prefer_recent=True)
+    by_date: Any = discover.rank(state)
+    assert [p.arxiv_id for p in by_date["papers"]] == ["2401.00003", "2401.00002", "2401.00001"]
+
+
+def test_the_request_block_carries_priorities_titles_and_recency() -> None:
+    block = discover.request_block(request(titles=["ReWOO"], prefer_recent=True))
+    assert '"titles": ["ReWOO"]' in block.text and '"prefer_recent": true' in block.text

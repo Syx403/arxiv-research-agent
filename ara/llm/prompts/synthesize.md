@@ -15,6 +15,8 @@ Rules:
   every evidence sentence it relies on, in square brackets.
 - State only what the cited evidence says. Do not add facts, numbers or interpretations of your
   own, and do not generalise beyond it.
+- If the user's priorities are given, choose the explanation lines that speak to them, as far as
+  the evidence does; never add a claim the evidence does not make because a priority asks for it.
 - If the evidence does not answer the question, the first line is exactly
   "Answer: Not stated in the provided papers." with no citation, and you may add one line saying
   what the evidence does cover, with its citation.

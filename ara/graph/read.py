@@ -48,6 +48,7 @@ class ReadInput(TypedDict):
 class ReadOutput(TypedDict):
     evidence: list[Evidence]
     missing: list[str]
+    documents: Annotated[list[int], operator.add]  # one per paper read
 
 
 class IngestTask(TypedDict):
@@ -62,7 +63,6 @@ class GatherTask(TypedDict):
 
 
 class ReadState(ReadInput, ReadOutput):
-    documents: Annotated[list[int], operator.add]
     found: Annotated[list[Found], operator.add]
     requery: list[GatherTask]
     requeried: bool

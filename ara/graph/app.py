@@ -26,7 +26,7 @@ from langgraph.runtime import Runtime
 from langgraph.types import Command, interrupt
 
 from ara.arxiv.client import ARXIV_ID
-from ara.db.pool import Pool
+from ara.db.pool import Connection, Pool
 from ara.graph import answer, discover, read
 from ara.graph.state import (
     MAX_READ,
@@ -58,8 +58,9 @@ class ConversationState(TypedDict):
     shown: list[PaperCard]  # the papers listed last, which "the second one" refers to
     request: ResearchRequest | None  # turn-scoped from here on
     clarifications: int
-    papers: list[PaperCard]
+    papers: list[PaperCard]  # listed by discovery
     selected: list[str]  # paper references to read
+    read: list[PaperCard]  # the papers read, in the order selected
     evidence: list[Evidence]
     missing: list[str]
     answer: Answer | None
@@ -74,6 +75,7 @@ def load_context(state: ConversationState) -> dict[str, object]:
         "clarifications": 0,
         "papers": [],
         "selected": [],
+        "read": [],
         "evidence": [],
         "missing": [],
         "answer": None,
@@ -82,18 +84,19 @@ def load_context(state: ConversationState) -> dict[str, object]:
     }
 
 
-def understand_prompt(messages: list[AnyMessage], shown: list[PaperCard]) -> Prompt:
-    """The conversation so far is the shared part; the numbered papers shown last (when there are
-    any) and the latest message are the item. Each turn extends the previous turn's cached prefix
-    (DESIGN §6.3: understand caches all three parts); after a turn that had papers to show, the
-    hit ends before the previous latest message, because the papers block is not repeated."""
+def understand_prompt(messages: list[AnyMessage], shown: list[PaperCard], today: date) -> Prompt:
+    """The conversation so far is the shared part; today's date, the numbered papers shown last
+    (when there are any) and the latest message are the item. Each turn extends the previous
+    turn's cached prefix, which ends just before the previous turn's item (DESIGN §6.3: understand
+    caches all three parts; the date is never placed before the item, D24)."""
     blocks = tuple(_block(m) for m in messages)
     listing = [
         {"n": n, "id": f"{p.arxiv_id}v{p.version}", "title": p.title, "published": p.published}
         for n, p in enumerate(shown, 1)
     ]
     papers = (data("Papers shown last", listing),) if listing else ()
-    return Prompt(UNDERSTAND, shared=blocks[:-1], item=(*papers, *blocks[-1:]))
+    when = Block("user", f"Today: {today.isoformat()}")
+    return Prompt(UNDERSTAND, shared=blocks[:-1], item=(when, *papers, *blocks[-1:]))
 
 
 def _block(message: AnyMessage) -> Block:
@@ -103,7 +106,7 @@ def _block(message: AnyMessage) -> Block:
 async def understand(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
     ctx = runtime.context
     shown = state.get("shown", [])
-    prompt = understand_prompt(state["messages"], shown)
+    prompt = understand_prompt(state["messages"], shown, ctx.today)
     request = await ctx.gateway.structured(
         STAGES["understand"], prompt, ResearchRequest, scope=ctx.scope
     )
@@ -113,10 +116,10 @@ async def understand(state: ConversationState, runtime: Runtime[Context]) -> dic
 def checked(
     request: ResearchRequest, messages: list[AnyMessage], shown: list[PaperCard]
 ) -> ResearchRequest:
-    """The trust boundary for understand: a constraint must quote the user literally (v1 rule);
-    ids must be arXiv ids written in the conversation, not recalled by the model (v1 rule, DESIGN
-    §13); positions must point at a paper shown; dates must parse. A read request that names no
-    paper becomes find-then-read."""
+    """The trust boundary for understand: a constraint or a priority must quote the user literally
+    (v1 rule); ids must be arXiv ids written in the conversation, not recalled by the model (v1
+    rule, DESIGN §13); positions must point at a paper shown; dates must parse; titles are kept
+    once each. A read request that names no paper becomes find-then-read."""
     said = plain(" ".join(m.text for m in messages if isinstance(m, HumanMessage)))
     written = " ".join(m.text for m in messages)
     paper_ids = [
@@ -132,6 +135,8 @@ def checked(
             "paper_ids": paper_ids,
             "listed": listed,
             "constraints": [c for c in request.constraints if plain(c.quote) in said],
+            "priorities": [p for p in request.priorities if plain(p.quote) in said],
+            "titles": list(dict.fromkeys(t.strip() for t in request.titles if t.strip())),
             "count": request.count if request.count and request.count > 0 else None,
             "published_after": _iso(request.published_after),
             "published_before": _iso(request.published_before),
@@ -213,27 +218,53 @@ def resolve(state: ConversationState) -> dict[str, object]:
 
 
 async def run_read(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
+    ctx = runtime.context
     found = await READ.ainvoke(
-        {"question": _question(state), "papers": state["selected"]}, context=runtime.context
+        {"question": _question(state), "papers": state["selected"]}, context=ctx
     )
-    return {"evidence": found["evidence"], "missing": found["missing"]}
+    async with ctx.pool.connection() as conn:
+        cards = await read_cards(conn, found["documents"])
+    order = [r.removeprefix("arxiv:").split("v")[0] for r in state["selected"]]
+    cards.sort(key=lambda c: order.index(c.arxiv_id) if c.arxiv_id in order else len(order))
+    return {"evidence": found["evidence"], "missing": found["missing"], "read": cards}
+
+
+async def read_cards(conn: Connection, documents: list[int]) -> list[PaperCard]:
+    """The papers behind the documents just read, so a follow-up can point at them by number."""
+    cursor = await conn.execute(
+        "SELECT p.arxiv_id, p.version, p.title, p.abstract FROM documents d"
+        " JOIN papers p ON p.id = d.paper_id WHERE d.id = ANY(%s) AND p.source = 'arxiv'",
+        (documents,),
+    )
+    return [
+        PaperCard(
+            arxiv_id=row["arxiv_id"],
+            version=row["version"],
+            title=row["title"],
+            abstract=row["abstract"],
+            published="",  # not stored with the paper; the listing shows it only after a search
+        )
+        for row in await cursor.fetchall()
+    ]
 
 
 async def run_answer(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
     result = await ANSWER.ainvoke(
-        {"question": _question(state), "evidence": state["evidence"], "missing": state["missing"]},
+        {
+            "question": _question(state),
+            "evidence": state["evidence"],
+            "missing": state["missing"],
+            "priorities": [p.meaning for p in _request(state).priorities],
+        },
         context=runtime.context,
     )
     return {"answer": result["answer"]}
 
 
 def respond(state: ConversationState) -> dict[str, object]:
-    papers = state["papers"]
-    return {
-        "messages": [AIMessage(reply(state))],
-        "shown": papers or state.get("shown", []),
-        "status": "complete",
-    }
+    """The papers a follow-up can point at: those a search listed, else those just read (D24)."""
+    shown = state["papers"] or state["read"] or state.get("shown", [])
+    return {"messages": [AIMessage(reply(state))], "shown": shown, "status": "complete"}
 
 
 def reply(state: ConversationState) -> str:

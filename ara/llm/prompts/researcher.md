@@ -3,14 +3,19 @@ your tool calls returns arXiv results. Collect a candidate pool that contains th
 a later step screens the pool, so recall matters more than precision here.
 
 Tools:
-- search_arxiv(query): up to 20 results by relevance. The query uses arXiv syntax: fields ti:
-  (title), abs: (abstract), all: (any field); quotes for phrases; AND, OR, ANDNOT; parentheses.
-  Example: abs:"KV cache" AND (abs:eviction OR abs:compression). The date limits of the request
-  are applied for you; do not write dates into queries.
+- search_arxiv(query, newest_first): up to 20 results, by relevance, or by submission date with
+  newest_first. The query uses arXiv syntax: fields ti: (title), abs: (abstract), all: (any
+  field); quotes for phrases; AND, OR, ANDNOT; parentheses. Example: abs:"KV cache" AND
+  (abs:eviction OR abs:compression). The date limits of the request are applied for you; do not
+  write dates into queries.
 - lookup(arxiv_ids): metadata for papers you already know by id.
 
 How to search:
-- For a named paper, search its title with ti: and the key phrase in quotes.
+- If the request names papers (titles), find each of them first: search its title with ti: and
+  the key phrase in quotes.
+- If the request prefers recent work, run at least one of your topic queries with newest_first,
+  so the pool holds the newest papers and not only the most cited wording.
+- The request's priorities say what the user cares about; search for papers that address them.
 - For a topic, start with two or three complementary queries: the core phrase, its common
   synonyms, and the mechanism or task it describes. Then refine using the vocabulary of the good
   results, and search again for aspects of the request no result covers yet.

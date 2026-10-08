@@ -1,59 +1,103 @@
 {
   "suite": "s4",
-  "seed": 20261010,
-  "labels": "proposed by Claude, reviewed by Ewan before use",
+  "labels": "proposed by Claude, reviewed by Ewan before use (D22, D24)",
   "items": [
     {
       "id": "v1-c01",
       "source": "v1 c01-exact-title",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "找 ReWOO: Decoupling Reasoning from Observations for Efficient Augmented Language Models 这篇论文。给出 arXiv 链接、首次提交日期和一句摘要介绍即可。",
+      "message": "Find the paper 'ReWOO: Decoupling Reasoning from Observations for Efficient Augmented Language Models'. Just give its arXiv link, first submission date and a one-sentence summary.",
       "expected": {
         "clarify": false,
-        "intent": "discover"
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [
+          "ReWOO: Decoupling Reasoning from Observations"
+        ],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "note": "translated from Chinese (D24)",
+      "reviewed": false
     },
     {
       "id": "v1-c02",
       "source": "v1 c02-date-and-version",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "只在 ReWOO、An LLM Compiler for Parallel Function Calling、Agentless: Demystifying LLM-based Software Engineering Agents 这三篇中筛选：哪篇首次提交 arXiv 在 2024 年？给出结果",
+      "message": "Of these three papers, ReWOO, An LLM Compiler for Parallel Function Calling and Agentless: Demystifying LLM-based Software Engineering Agents, whose technique is the most cutting-edge? Compare them and tell me.",
       "expected": {
         "clarify": false,
-        "intent": "discover"
+        "intent": "discover_read",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [
+          "ReWOO",
+          "An LLM Compiler for Parallel Function Calling",
+          "Agentless"
+        ],
+        "count": 3,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "metadata only: dates come from arXiv, no full text",
-      "reviewed": false,
-      "split": "test"
+      "note": "Rewritten (Ewan): v1 asked which was submitted in 2024, a question built from its answer. Judging the technique needs the full text.",
+      "reviewed": false
     },
     {
       "id": "v1-c03",
       "source": "v1 c03-mechanism-ranking",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "只比较 LLMCompiler、ReWOO、GQA 三篇原文。我用现成模型 API 执行多个外部工具，首要目标是按依赖关系并行调度、缩短等待。请按对这个目标的直接匹配程度排列这三篇，并简短解释各自机制；不优化模型权重。",
+      "message": "Compare only the original papers of LLMCompiler, ReWOO and GQA, these three. I use off-the-shelf model APIs to run several external tools, and my main goal is to schedule them in parallel by their dependencies to cut waiting time. Rank the three by how directly they match this goal and briefly explain each one's mechanism; no optimising model weights.",
       "expected": {
         "clarify": false,
         "intent": "discover_read",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [
+          "LLMCompiler",
+          "ReWOO",
+          "GQA"
+        ],
+        "count": 3,
         "constraints": [
-          "不优化模型权重"
-        ]
+          "off-the-shelf model APIs",
+          "no optimising model weights"
+        ],
+        "priorities": [
+          "in parallel by their dependencies",
+          "cut waiting time"
+        ],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "v1 route read; no ids, so v2 finds then reads. Constraint: 不优化模型权重",
-      "reviewed": false,
-      "split": "dev"
+      "note": "translated from Chinese (D24); no ids, so find then read",
+      "reviewed": false
     },
     {
       "id": "v1-c03x",
       "source": "v1 c03-explicit-mechanism-ranking",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "只比较 LLMCompiler（2312.04511v3）、ReWOO（2305.18323v1）、GQA（2305.13245v3，分组查询注意力）三篇原文。我用现成模型 API 执行多个外部工具，首要目标是按依赖关系并行调度、缩短等待。请按对这个目标的直接匹配程度排列这三篇，并简短解释各自机制；不优化模型权重。",
+      "message": "Compare only the original papers of LLMCompiler (2312.04511v3), ReWOO (2305.18323v1) and GQA (2305.13245v3, grouped-query attention), these three. I use off-the-shelf model APIs to run several external tools, and my main goal is to schedule them in parallel by their dependencies to cut waiting time. Rank the three by how directly they match this goal and briefly explain each one's mechanism; no optimising model weights.",
       "expected": {
         "clarify": false,
         "intent": "read",
@@ -62,47 +106,61 @@
           "2305.18323v1",
           "2305.13245v3"
         ],
+        "listed": [],
+        "titles": [],
+        "count": 3,
         "constraints": [
-          "不优化模型权重"
-        ]
+          "off-the-shelf model APIs",
+          "no optimising model weights"
+        ],
+        "priorities": [
+          "in parallel by their dependencies",
+          "cut waiting time"
+        ],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "Constraint: 不优化模型权重 (as v1-c03)",
-      "reviewed": false,
-      "split": "test"
+      "note": "translated from Chinese (D24); ids given, so no titles",
+      "reviewed": false
     },
     {
       "id": "v1-c04",
       "source": "v1 c04-missing-reference",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "继续深入第二篇，告诉我它的方法细节。",
+      "message": "Go deeper into the second paper and tell me its method in detail.",
       "expected": {
         "clarify": true
       },
-      "note": "no papers were shown",
-      "reviewed": false,
-      "split": "test"
+      "note": "translated from Chinese (D24); no papers were shown",
+      "reviewed": false
     },
     {
       "id": "v1-c05-1",
       "source": "v1 c05-clarify-then-act turn 1",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "我想降低 Agent 成本，帮我找最适合我的论文。",
+      "message": "I want to cut my agent's cost. Find me the paper that suits me best.",
       "expected": {
         "clarify": true
       },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
+      "note": "translated from Chinese (D24)",
+      "reviewed": false
     },
     {
       "id": "v1-c05-2",
       "source": "v1 c05-clarify-then-act turn 2",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [
         {
           "role": "user",
-          "text": "我想降低 Agent 成本，帮我找最适合我的论文。"
+          "text": "I want to cut my agent's cost. Find me the paper that suits me best."
         },
         {
           "role": "assistant",
@@ -110,40 +168,67 @@
         }
       ],
       "shown": [],
-      "message": "主要是等待时间。一个任务有多个工具调用，有些独立、有些依赖前面的结果；只用现成模型 API，不训练。先只在 ReWOO 与 LLMCompiler 两篇里挑更直接相关的一篇，按摘要介绍即可。",
+      "message": "Mostly waiting time. One task makes several tool calls; some are independent, some depend on earlier results. I only use off-the-shelf model APIs, no training. For now just pick the more directly relevant one of ReWOO and LLMCompiler, and describe it from its abstract.",
       "expected": {
         "clarify": false,
         "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [
+          "ReWOO",
+          "LLMCompiler"
+        ],
+        "count": 1,
         "constraints": [
-          "只用现成模型 API",
-          "不训练"
-        ]
+          "only use off-the-shelf model APIs",
+          "no training"
+        ],
+        "priorities": [
+          "waiting time"
+        ],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "constraints: 只用现成模型 API, 不训练",
-      "reviewed": false,
-      "split": "test"
+      "note": "translated from Chinese (D24); the abstract is enough, so discover",
+      "reviewed": false
     },
     {
       "id": "v1-c06-1",
       "source": "v1 c06-ordered-followup turn 1",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "找到 ReWOO 和 GQA 两篇原始论文，按首次提交 arXiv 的日期从新到旧列出，只给标题、日期和摘要简介。",
+      "message": "Find the original ReWOO and GQA papers and list them by first arXiv submission date, newest first; just titles, dates and a short summary.",
       "expected": {
         "clarify": false,
-        "intent": "discover"
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [
+          "ReWOO",
+          "GQA"
+        ],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
+      "note": "translated from Chinese (D24); 'newest first' orders two named papers, it is not a request for recent work",
+      "reviewed": false
     },
     {
       "id": "v1-c06-2",
       "source": "v1 c06-ordered-followup turn 2",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [
         {
           "role": "user",
-          "text": "找到 ReWOO 和 GQA 两篇原始论文，按首次提交 arXiv 的日期从新到旧列出，只给标题、日期和摘要简介。"
+          "text": "Find the original ReWOO and GQA papers and list them by first arXiv submission date, newest first; just titles, dates and a short summary."
         },
         {
           "role": "assistant",
@@ -164,41 +249,58 @@
           "published": "2023-05-22"
         }
       ],
-      "message": "只深入第二篇的方法：假设 12 个 query heads 均分成 3 组，key heads、value heads 总数各是多少，每组有几个 query heads？给计算和原文依据。",
+      "message": "Go deeper into the second one's method only: if 12 query heads are split evenly into 3 groups, how many key heads and value heads are there in total, and how many query heads per group? Show the calculation and the paper's basis.",
       "expected": {
         "clarify": false,
         "intent": "read",
+        "paper_ids": [],
         "listed": [
           2
-        ]
+        ],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
+      "note": "translated from Chinese (D24)",
+      "reviewed": false
     },
     {
       "id": "v1-c07-1",
       "source": "v1 c07-topic-and-constraint-reset turn 1",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "我先只看首次发表于 2023 年的工具编排论文。找一下 LLMCompiler，给日期和摘要介绍。",
+      "message": "For now I only want tool-orchestration papers first published in 2023. Find a few on parallel tool calling.",
       "expected": {
         "clarify": false,
         "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
         "published_after": "2023-01-01",
-        "published_before": "2023-12-31"
+        "published_before": "2023-12-31",
+        "prefer_recent": false
       },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
+      "note": "Rewritten: v1 asked for LLMCompiler, whose date (2023-12-07) sits at the edge of the window, a trap built from the answer. The year is a date limit, not a constraint.",
+      "reviewed": false
     },
     {
       "id": "v1-c07-2",
       "source": "v1 c07-topic-and-constraint-reset turn 2",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [
         {
           "role": "user",
-          "text": "我先只看首次发表于 2023 年的工具编排论文。找一下 LLMCompiler，给日期和摘要介绍。"
+          "text": "For now I only want tool-orchestration papers first published in 2023. Find a few on parallel tool calling."
         },
         {
           "role": "assistant",
@@ -213,346 +315,457 @@
           "published": "2023-12-07"
         }
       ],
-      "message": "换个方向，年份不限了。现在读 Mixtral of Experts 原论文 2401.04088v1：Mixtral 8x7B 是否让每个 token 经过全部 8 个专家再平均？请说明每层每个 token 的专家选择数、专家是什么模块、输出如何合并。",
+      "message": "Change of direction, and no year limit any more. Now read the original Mixtral of Experts paper, 2401.04088v1: does Mixtral 8x7B send every token through all 8 experts and average them? Explain how many experts each token picks per layer, what an expert is, and how the outputs are combined.",
       "expected": {
         "clarify": false,
         "intent": "read",
         "paper_ids": [
           "2401.04088v1"
         ],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
         "published_after": null,
-        "published_before": null
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "the 2023 limit is lifted",
-      "reviewed": false,
-      "split": "dev"
-    },
-    {
-      "id": "v1-c08",
-      "source": "v1 c08-agentless-version-scope",
-      "context": [],
-      "shown": [],
-      "message": "严格阅读 Agentless 的 2407.01489v1，按表格列出它的顶层阶段和定位阶段的三个步骤，并说明修复阶段怎么筛选、选出最终补丁。不要拿后续版本代替。",
-      "expected": {
-        "clarify": false,
-        "intent": "read",
-        "paper_ids": [
-          "2407.01489v1"
-        ]
-      },
-      "note": "",
-      "reviewed": false,
-      "split": "dev"
-    },
-    {
-      "id": "v1-c09",
-      "source": "v1 c09-dependency-example",
-      "context": [],
-      "shown": [],
-      "message": "读 LLMCompiler 的 2312.04511v3 方法。假设 A、B 是互不依赖的查询，C 必须使用 A、B 的结果做计算。请列出依赖边、可并行的任务和 C 的启动条件，并解释上游输出如何传给 C；引用原文。",
-      "expected": {
-        "clarify": false,
-        "intent": "read",
-        "paper_ids": [
-          "2312.04511v3"
-        ]
-      },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
-    },
-    {
-      "id": "v1-c10",
-      "source": "v1 c10-rewoo-observation-boundary",
-      "context": [],
-      "shown": [],
-      "message": "严格读 ReWOO 2305.18323v1：Reasoning Without Observation 是不是说整个系统从不使用工具返回内容？请分别说明 Planner、Worker、Solver 是否以及如何接触真实 observation，并说明为什么能减少重复提示。",
-      "expected": {
-        "clarify": false,
-        "intent": "read",
-        "paper_ids": [
-          "2305.18323v1"
-        ]
-      },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
-    },
-    {
-      "id": "v1-c11",
-      "source": "v1 c11-unavailable-original",
-      "context": [],
-      "shown": [],
-      "message": "请读取 2305.13245v3 的方法原文，给我 GQA 每组 query 与 key/value 共享关系的原文依据。不要仅根据摘要或已有印象作答。",
-      "expected": {
-        "clarify": false,
-        "intent": "read",
-        "paper_ids": [
-          "2305.13245v3"
-        ]
-      },
-      "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "note": "translated from Chinese (D24); the 2023 limit is lifted",
+      "reviewed": false
     },
     {
       "id": "v1-c12",
       "source": "v1 c12-open-recommendation",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "我用现成模型 API 做多工具研究助手，同时在意 API 费用和等待时间。对照 ReWOO 2305.18323v1 与 LLMCompiler 2312.04511v3 的原文，给一个有条件的原型方案和小规模对照实验建议。请区分论文事实、推断和需要我实测的部分。",
+      "message": "I build on off-the-shelf model APIs only, for a multi-tool research assistant, and I care about both API cost and waiting time. Using the original papers of ReWOO 2305.18323v1 and LLMCompiler 2312.04511v3, give me a conditional prototype plan and a small controlled experiment. Separate paper facts, inferences, and what I need to measure myself.",
       "expected": {
         "clarify": false,
         "intent": "read",
         "paper_ids": [
           "2305.18323v1",
           "2312.04511v3"
-        ]
+        ],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [
+          "off-the-shelf model APIs only"
+        ],
+        "priorities": [
+          "API cost",
+          "waiting time"
+        ],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
-    },
-    {
-      "id": "v1-s-gqa",
-      "source": "v1 structured_cases_v6 (GQA)",
-      "context": [],
-      "shown": [],
-      "message": "严格读 GQA 2305.13245v3：假设 12 个 query heads 均分成 3 组，请用原文定义计算 key heads、value heads 总数和每组 query heads 数量。将其标注为推导例子。",
-      "expected": {
-        "clarify": false,
-        "intent": "read",
-        "paper_ids": [
-          "2305.13245v3"
-        ]
-      },
-      "note": "",
-      "reviewed": false,
-      "split": "dev"
-    },
-    {
-      "id": "v1-s-mixtral",
-      "source": "v1 structured_cases_v6 (Mixtral)",
-      "context": [],
-      "shown": [],
-      "message": "严格读 Mixtral of Experts 2401.04088v1：说明每层可用专家数、每个 token 选择数、专家模块类型以及专家输出如何组合。给原文依据。",
-      "expected": {
-        "clarify": false,
-        "intent": "read",
-        "paper_ids": [
-          "2401.04088v1"
-        ]
-      },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
+      "note": "translated from Chinese (D24) (Ewan): the two costs are priorities, the two papers are ids, the API-only build is a constraint",
+      "reviewed": false
     },
     {
       "id": "d-kv",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Recent papers on KV-cache eviction for long-context inference",
       "expected": {
         "clarify": false,
-        "intent": "discover"
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
       },
-      "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "note": "'Recent' sorts newest first; it is not a date limit (Ewan)",
+      "reviewed": false
     },
     {
       "id": "d-spec",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Papers about speculative decoding with small draft models",
       "expected": {
         "clarify": false,
-        "intent": "discover"
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
       },
       "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "reviewed": false
     },
     {
       "id": "d-rag-eval",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Find benchmarks for evaluating retrieval-augmented generation",
       "expected": {
         "clarify": false,
-        "intent": "discover"
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
       },
       "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "reviewed": false
     },
     {
       "id": "d-swe-2024",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Show me papers on LLM agents for software engineering published since 2024",
       "expected": {
         "clarify": false,
         "intent": "discover",
-        "published_after": "2024-01-01"
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": "2024-01-01",
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "reviewed": false
     },
     {
-      "id": "d-moe-zh",
+      "id": "d-moe",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "有哪些关于 mixture-of-experts 路由负载均衡的论文？",
+      "message": "What papers are there on load balancing in mixture-of-experts routing?",
       "expected": {
         "clarify": false,
-        "intent": "discover"
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
       },
-      "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "note": "translated from Chinese (D24)",
+      "reviewed": false
     },
     {
       "id": "d-cost-constraints",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Find papers on cutting the API cost of tool-using agents. I only use hosted APIs, no fine-tuning.",
       "expected": {
         "clarify": false,
         "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
         "constraints": [
-          "I only use hosted APIs",
+          "only use hosted APIs",
           "no fine-tuning"
-        ]
+        ],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
       },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
+      "note": "cutting API cost is the topic (need), not a priority",
+      "reviewed": false
     },
     {
       "id": "d-short-moe",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "MoE routing papers",
       "expected": {
         "clarify": false,
-        "intent": "discover"
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
     },
     {
       "id": "d-acronym",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "GQA",
       "expected": {
         "clarify": false,
-        "intent": "discover"
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [
+          "GQA"
+        ],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "an acronym of a known paper: search, do not ask",
-      "reviewed": false,
-      "split": "dev"
+      "note": "search the GQA paper itself; the user asks a follow-up if they need one (Ewan)",
+      "reviewed": false
     },
     {
       "id": "d-broad",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Find papers on LLM agents",
       "expected": {
         "clarify": false,
-        "intent": "discover"
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
       },
-      "note": "broad, but it names a topic",
-      "reviewed": false,
-      "split": "test"
+      "note": "broad topic: no clarification, newest first by default (Ewan)",
+      "reviewed": false
     },
     {
-      "id": "d-title-en",
+      "id": "d-title",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Find the paper 'Attention Is All You Need' and give its submission date",
       "expected": {
         "clarify": false,
-        "intent": "discover"
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [
+          "Attention Is All You Need"
+        ],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
+    },
+    {
+      "id": "n-count-moe",
+      "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
+      "context": [],
+      "shown": [],
+      "message": "Give me 3 papers on mixture-of-experts inference serving.",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": 3,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
+      },
+      "note": "a count without reading",
+      "reviewed": false
+    },
+    {
+      "id": "n-count-compress",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [],
+      "shown": [],
+      "message": "List 4 papers on prompt compression.",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": 4,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
+      },
+      "note": "",
+      "reviewed": false
     },
     {
       "id": "dr-compare",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Find 2 papers on tool-call scheduling and compare their mechanisms",
       "expected": {
         "clarify": false,
         "intent": "discover_read",
-        "count": 2
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": 2,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
       },
       "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "reviewed": false
     },
     {
       "id": "dr-rewoo",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Read the ReWOO paper and explain how its planner avoids repeated observations",
       "expected": {
         "clarify": false,
-        "intent": "discover_read"
+        "intent": "discover_read",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [
+          "ReWOO"
+        ],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "a title, not an id: find first",
-      "reviewed": false,
-      "split": "dev"
+      "reviewed": false
     },
     {
       "id": "dr-flash",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "How does FlashAttention's tiling reduce memory traffic? Read the original paper.",
       "expected": {
         "clarify": false,
-        "intent": "discover_read"
+        "intent": "discover_read",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [
+          "FlashAttention"
+        ],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
     },
     {
-      "id": "dr-kv-zh",
+      "id": "dr-kv",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "找两篇关于 KV cache 压缩的论文，读原文比较它们的淘汰策略。",
+      "message": "Find two papers on KV-cache compression and compare their eviction strategies from the full text.",
       "expected": {
         "clarify": false,
         "intent": "discover_read",
-        "count": 2
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": 2,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
       },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
+      "note": "translated from Chinese (D24)",
+      "reviewed": false
     },
     {
       "id": "r-react",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Read 2210.03629 and explain how it interleaves reasoning and actions",
@@ -561,15 +774,24 @@
         "intent": "read",
         "paper_ids": [
           "2210.03629"
-        ]
+        ],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "reviewed": false
     },
     {
       "id": "r-two-ids",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Compare 2305.18323 and 2312.04511 on how they handle tool outputs",
@@ -579,32 +801,24 @@
         "paper_ids": [
           "2305.18323",
           "2312.04511"
-        ]
+        ],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
-    },
-    {
-      "id": "r-mixtral-zh",
-      "source": "drafted",
-      "context": [],
-      "shown": [],
-      "message": "读 2401.04088，每个 token 选几个专家？",
-      "expected": {
-        "clarify": false,
-        "intent": "read",
-        "paper_ids": [
-          "2401.04088"
-        ]
-      },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
     },
     {
       "id": "r-url",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "What dataset does arxiv.org/abs/1706.03762v7 train on?",
@@ -613,15 +827,24 @@
         "intent": "read",
         "paper_ids": [
           "1706.03762v7"
-        ]
+        ],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "an id inside a URL",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
     },
     {
       "id": "ref-second",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [
         {
           "role": "user",
@@ -656,17 +879,26 @@
       "expected": {
         "clarify": false,
         "intent": "read",
+        "paper_ids": [],
         "listed": [
           2
-        ]
+        ],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
     },
     {
       "id": "ref-first-third",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [
         {
           "role": "user",
@@ -701,18 +933,27 @@
       "expected": {
         "clarify": false,
         "intent": "read",
+        "paper_ids": [],
         "listed": [
           1,
           3
-        ]
+        ],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
     },
     {
-      "id": "ref-last-zh",
+      "id": "ref-last",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [
         {
           "role": "user",
@@ -743,21 +984,30 @@
           "published": "2024-04-22"
         }
       ],
-      "message": "最后一篇用了哪些数据集？",
+      "message": "Which datasets does the last one use?",
       "expected": {
         "clarify": false,
         "intent": "read",
+        "paper_ids": [],
         "listed": [
           3
-        ]
+        ],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "",
-      "reviewed": false,
-      "split": "test"
+      "note": "translated from Chinese (D24)",
+      "reviewed": false
     },
     {
       "id": "ref-mixed",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [
         {
           "role": "user",
@@ -780,20 +1030,515 @@
       "expected": {
         "clarify": false,
         "intent": "read",
+        "paper_ids": [
+          "2305.18323"
+        ],
         "listed": [
           1
         ],
-        "paper_ids": [
-          "2305.18323"
-        ]
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
+    },
+    {
+      "id": "f-which",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [
+        {
+          "role": "user",
+          "text": "Compare 2305.18323 and 2312.04511 on how they handle tool outputs"
+        },
+        {
+          "role": "assistant",
+          "text": "Answer: ReWOO plans every tool call before seeing any output, while LLMCompiler runs independent calls in parallel as their inputs become ready [E1, E4]\nReWOO's Solver reads the observations only after all Workers finish [E2]\nLLMCompiler's Task Fetching Unit replaces placeholders with earlier outputs [E5]\nSources: arxiv:2305.18323v1, arxiv:2312.04511v3"
+        }
+      ],
+      "shown": [
+        {
+          "arxiv_id": "2305.18323",
+          "version": 1,
+          "title": "ReWOO: Decoupling Reasoning from Observations for Efficient Augmented Language Models",
+          "published": ""
+        },
+        {
+          "arxiv_id": "2312.04511",
+          "version": 3,
+          "title": "An LLM Compiler for Parallel Function Calling",
+          "published": ""
+        }
+      ],
+      "message": "Which approach should I use?",
+      "expected": {
+        "clarify": false,
+        "intent": "read",
+        "paper_ids": [],
+        "listed": [
+          1,
+          2
+        ],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
+      },
+      "note": "a follow-up on the two papers just read: they are the papers shown (D24); compare c-which, the same words with no context",
+      "reviewed": false
+    },
+    {
+      "id": "f-limits",
+      "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
+      "context": [
+        {
+          "role": "user",
+          "text": "Read 2210.03629 and explain how it interleaves reasoning and actions"
+        },
+        {
+          "role": "assistant",
+          "text": "Answer: ReAct alternates a reasoning trace with an action and its observation at each step [E1]\nSources: arxiv:2210.03629v3"
+        }
+      ],
+      "shown": [
+        {
+          "arxiv_id": "2210.03629",
+          "version": 3,
+          "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+          "published": ""
+        }
+      ],
+      "message": "What are its main limitations?",
+      "expected": {
+        "clarify": false,
+        "intent": "read",
+        "paper_ids": [],
+        "listed": [
+          1
+        ],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
+      },
+      "note": "",
+      "reviewed": false
+    },
+    {
+      "id": "f-cheaper",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [
+        {
+          "role": "user",
+          "text": "Find two papers on KV-cache compression and compare their eviction strategies from the full text."
+        },
+        {
+          "role": "assistant",
+          "text": "1. H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models (arXiv 2306.14048v3, 2023-06-24) — summary\n2. SnapKV: LLM Knows What You are Looking for Before Generation (arXiv 2404.14469v2, 2024-04-22) — summary\n\nAnswer: H2O keeps heavy-hitter tokens by accumulated attention, while SnapKV selects tokens from an observation window at the end of the prompt [E1, E3]\nSources: arxiv:2306.14048v3, arxiv:2404.14469v2"
+        }
+      ],
+      "shown": [
+        {
+          "arxiv_id": "2306.14048",
+          "version": 3,
+          "title": "H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models",
+          "published": "2023-06-24"
+        },
+        {
+          "arxiv_id": "2404.14469",
+          "version": 2,
+          "title": "SnapKV: LLM Knows What You are Looking for Before Generation",
+          "published": "2024-04-22"
+        }
+      ],
+      "message": "Which of the two is cheaper to run?",
+      "expected": {
+        "clarify": false,
+        "intent": "read",
+        "paper_ids": [],
+        "listed": [
+          1,
+          2
+        ],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
+      },
+      "note": "",
+      "reviewed": false
+    },
+    {
+      "id": "g-since",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [
+        {
+          "role": "user",
+          "text": "Recent papers on KV-cache eviction for long-context inference"
+        },
+        {
+          "role": "assistant",
+          "text": "1. H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models (arXiv 2306.14048v3, 2023-06-24) — summary\n2. Model Tells You What to Discard: Adaptive KV Cache Compression for LLMs (arXiv 2310.01801v4, 2023-10-03) — summary\n3. SnapKV: LLM Knows What You are Looking for Before Generation (arXiv 2404.14469v2, 2024-04-22) — summary"
+        }
+      ],
+      "shown": [
+        {
+          "arxiv_id": "2306.14048",
+          "version": 3,
+          "title": "H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models",
+          "published": "2023-06-24"
+        },
+        {
+          "arxiv_id": "2310.01801",
+          "version": 4,
+          "title": "Model Tells You What to Discard: Adaptive KV Cache Compression for LLMs",
+          "published": "2023-10-03"
+        },
+        {
+          "arxiv_id": "2404.14469",
+          "version": 2,
+          "title": "SnapKV: LLM Knows What You are Looking for Before Generation",
+          "published": "2024-04-22"
+        }
+      ],
+      "message": "Only the ones from 2024 onwards, please.",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": "2024-01-01",
+        "published_before": null,
+        "prefer_recent": false
+      },
+      "note": "narrows the last search by date: a new search, not a read of the shown papers",
+      "reviewed": false
+    },
+    {
+      "id": "g-lift",
+      "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
+      "context": [
+        {
+          "role": "user",
+          "text": "Find papers on cutting the API cost of tool-using agents. No fine-tuning."
+        },
+        {
+          "role": "assistant",
+          "text": "1. ReWOO: Decoupling Reasoning from Observations for Efficient Augmented Language Models (arXiv 2305.18323v1, 2023-05-23) — summary\n2. An LLM Compiler for Parallel Function Calling (arXiv 2312.04511v3, 2023-12-07) — summary"
+        }
+      ],
+      "shown": [
+        {
+          "arxiv_id": "2305.18323",
+          "version": 1,
+          "title": "ReWOO: Decoupling Reasoning from Observations for Efficient Augmented Language Models",
+          "published": "2023-05-23"
+        },
+        {
+          "arxiv_id": "2312.04511",
+          "version": 3,
+          "title": "An LLM Compiler for Parallel Function Calling",
+          "published": "2023-12-07"
+        }
+      ],
+      "message": "Fine-tuning is OK after all. Search again.",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
+      },
+      "note": "the earlier constraint is lifted",
+      "reviewed": false
+    },
+    {
+      "id": "g-exclude",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [
+        {
+          "role": "user",
+          "text": "Papers on speculative decoding"
+        },
+        {
+          "role": "assistant",
+          "text": "1. Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads (arXiv 2401.10774v3, 2024-01-19) — summary\n2. EAGLE: Speculative Sampling Requires Rethinking Feature Uncertainty (arXiv 2401.15077v3, 2024-01-26) — summary"
+        }
+      ],
+      "shown": [
+        {
+          "arxiv_id": "2401.10774",
+          "version": 3,
+          "title": "Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads",
+          "published": "2024-01-19"
+        },
+        {
+          "arxiv_id": "2401.15077",
+          "version": 3,
+          "title": "EAGLE: Speculative Sampling Requires Rethinking Feature Uncertainty",
+          "published": "2024-01-26"
+        }
+      ],
+      "message": "Exclude surveys, and keep only methods that need no extra draft model.",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [
+          "Exclude surveys",
+          "no extra draft model"
+        ],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
+      },
+      "note": "",
+      "reviewed": false
+    },
+    {
+      "id": "p-code",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [],
+      "shown": [],
+      "message": "Find papers on long-context retrieval, ideally ones with released code.",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [
+          "released code"
+        ],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
+      },
+      "note": "'ideally' is a wish: a priority, never a filter",
+      "reviewed": false
+    },
+    {
+      "id": "p-traffic",
+      "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
+      "context": [],
+      "shown": [],
+      "message": "Papers on routing between cheap and expensive LLMs; I'd rather they evaluate on real traffic, but it's not a must.",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [
+          "evaluate on real traffic"
+        ],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
+      },
+      "note": "",
+      "reviewed": false
+    },
+    {
+      "id": "p-mixed",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [],
+      "shown": [],
+      "message": "Find work on agent memory. It must not require fine-tuning, and I'd like it to be simple to implement.",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [
+          "must not require fine-tuning"
+        ],
+        "priorities": [
+          "simple to implement"
+        ],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
+      },
+      "note": "",
+      "reviewed": false
+    },
+    {
+      "id": "t-two-years",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [],
+      "shown": [],
+      "message": "Papers on LLM-based code review from the last two years",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": "2024-10-08",
+        "published_before": null,
+        "prefer_recent": false
+      },
+      "note": "two years before asked_at",
+      "reviewed": false
+    },
+    {
+      "id": "t-after",
+      "source": "drafted",
+      "split": "dev",
+      "asked_at": "2025-06-15",
+      "context": [],
+      "shown": [],
+      "message": "Speculative decoding papers published after 2023",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": "2024-01-01",
+        "published_before": null,
+        "prefer_recent": false
+      },
+      "note": "",
+      "reviewed": false
+    },
+    {
+      "id": "t-this-year",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-03-01",
+      "context": [],
+      "shown": [],
+      "message": "Anything on KV-cache quantization from this year?",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": "2026-01-01",
+        "published_before": null,
+        "prefer_recent": false
+      },
+      "note": "",
+      "reviewed": false
+    },
+    {
+      "id": "t-before",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [],
+      "shown": [],
+      "message": "Papers on tool-learning benchmarks published before 2023",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": "2022-12-31",
+        "prefer_recent": false
+      },
+      "note": "",
+      "reviewed": false
+    },
+    {
+      "id": "t-latest",
+      "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
+      "context": [],
+      "shown": [],
+      "message": "What are the latest papers on agentic RAG?",
+      "expected": {
+        "clarify": false,
+        "intent": "discover",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": true
+      },
+      "note": "'latest' is not a date limit",
+      "reviewed": false
     },
     {
       "id": "c-best",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Find the best paper for my use case",
@@ -801,12 +1546,13 @@
         "clarify": true
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
     },
     {
       "id": "c-improve",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Find papers that will make my system better",
@@ -814,12 +1560,13 @@
         "clarify": true
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
     },
     {
       "id": "c-second",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Read the second one",
@@ -827,12 +1574,13 @@
         "clarify": true
       },
       "note": "nothing was shown",
-      "reviewed": false,
-      "split": "dev"
+      "reviewed": false
     },
     {
       "id": "c-that",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Tell me more about that paper",
@@ -840,90 +1588,211 @@
         "clarify": true
       },
       "note": "no paper in the conversation",
-      "reviewed": false,
-      "split": "dev"
+      "reviewed": false
     },
     {
-      "id": "c-which",
+      "id": "k-colleague",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "Which approach should I use?",
+      "message": "Find the paper my colleague mentioned yesterday",
       "expected": {
         "clarify": true
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
     },
     {
-      "id": "c-zh",
+      "id": "k-fourth",
       "source": "drafted",
-      "context": [],
-      "shown": [],
-      "message": "帮我找最适合我的论文",
+      "split": "dev",
+      "asked_at": "2026-10-08",
+      "context": [
+        {
+          "role": "user",
+          "text": "Papers on KV-cache eviction"
+        },
+        {
+          "role": "assistant",
+          "text": "1. H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models (arXiv 2306.14048v3, 2023-06-24) — summary\n2. Model Tells You What to Discard: Adaptive KV Cache Compression for LLMs (arXiv 2310.01801v4, 2023-10-03) — summary\n3. SnapKV: LLM Knows What You are Looking for Before Generation (arXiv 2404.14469v2, 2024-04-22) — summary"
+        }
+      ],
+      "shown": [
+        {
+          "arxiv_id": "2306.14048",
+          "version": 3,
+          "title": "H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models",
+          "published": "2023-06-24"
+        },
+        {
+          "arxiv_id": "2310.01801",
+          "version": 4,
+          "title": "Model Tells You What to Discard: Adaptive KV Cache Compression for LLMs",
+          "published": "2023-10-03"
+        },
+        {
+          "arxiv_id": "2404.14469",
+          "version": 2,
+          "title": "SnapKV: LLM Knows What You are Looking for Before Generation",
+          "published": "2024-04-22"
+        }
+      ],
+      "message": "Read the fourth one",
       "expected": {
         "clarify": true
       },
-      "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "note": "only three papers were shown",
+      "reviewed": false
+    },
+    {
+      "id": "k-startup",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [],
+      "shown": [],
+      "message": "Which model should I pick for my startup? Find papers.",
+      "expected": {
+        "clarify": true
+      },
+      "note": "depends on facts about the user",
+      "reviewed": false
+    },
+    {
+      "id": "k-other-one",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [],
+      "shown": [],
+      "message": "Compare it with the other one",
+      "expected": {
+        "clarify": true
+      },
+      "note": "no papers in the conversation",
+      "reviewed": false
     },
     {
       "id": "l-moe",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Which papers did we read about MoE routing, and what did they conclude?",
       "expected": {
         "clarify": false,
-        "intent": "library"
+        "intent": "library",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
     },
     {
-      "id": "l-zh",
+      "id": "l-tools",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
-      "message": "上次我们读过哪些关于工具调用的论文？",
+      "message": "Which papers on tool calling did we read last time?",
       "expected": {
         "clarify": false,
-        "intent": "library"
+        "intent": "library",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
-      "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "note": "translated from Chinese (D24)",
+      "reviewed": false
     },
     {
       "id": "o-hello",
       "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Hello, what can you do?",
       "expected": {
         "clarify": false,
-        "intent": "other"
+        "intent": "other",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "",
-      "reviewed": false,
-      "split": "test"
+      "reviewed": false
     },
     {
       "id": "o-poem",
       "source": "drafted",
+      "split": "dev",
+      "asked_at": "2026-10-08",
       "context": [],
       "shown": [],
       "message": "Write me a poem about transformers",
       "expected": {
         "clarify": false,
-        "intent": "other"
+        "intent": "other",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
       },
       "note": "",
-      "reviewed": false,
-      "split": "dev"
+      "reviewed": false
+    },
+    {
+      "id": "c-which",
+      "source": "drafted",
+      "split": "test",
+      "asked_at": "2026-10-08",
+      "context": [],
+      "shown": [],
+      "message": "Which approach should I use?",
+      "expected": {
+        "clarify": false,
+        "intent": "other",
+        "paper_ids": [],
+        "listed": [],
+        "titles": [],
+        "count": null,
+        "constraints": [],
+        "priorities": [],
+        "published_after": null,
+        "published_before": null,
+        "prefer_recent": false
+      },
+      "note": "no topic and no earlier papers: other, not a clarification (Ewan); f-which is the same words after a read",
+      "reviewed": false
     }
   ]
 }

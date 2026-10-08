@@ -17,7 +17,7 @@ from langgraph.runtime import Runtime
 from langgraph.types import Send
 from pydantic import BaseModel, Field, ValidationError
 
-from ara.arxiv.client import ArxivClient, Metadata, SearchError
+from ara.arxiv.client import Metadata, SearchError
 from ara.graph.state import MAX_LISTED, Context, PaperCard, ResearchRequest, plain
 from ara.llm.gateway import Tool, worth_prewarming
 from ara.llm.prompt import Block, Instructions, Prompt, ToolCall, data
@@ -35,6 +35,9 @@ PAPER_ID = re.compile(r"\d{4}\.\d{4,5}")  # inside "2401.00001v2" or "arXiv:2401
 
 class SearchArgs(BaseModel):
     query: str = Field(description='arXiv query, e.g. abs:"KV cache" AND abs:eviction')
+    newest_first: bool = Field(
+        default=False, description="Order by submission date, newest first, instead of relevance."
+    )
 
 
 class LookupArgs(BaseModel):
@@ -42,7 +45,9 @@ class LookupArgs(BaseModel):
 
 
 TOOLS = (
-    Tool("search_arxiv", "Search arXiv; up to 20 results by relevance.", SearchArgs),
+    Tool(
+        "search_arxiv", "Search arXiv; up to 20 results, by relevance or newest first.", SearchArgs
+    ),
     Tool("lookup", "Metadata for papers known by arXiv id.", LookupArgs),
 )
 
@@ -89,6 +94,9 @@ def request_block(request: ResearchRequest) -> Block:
         {
             "need": request.need,
             "constraints": [c.model_dump() for c in request.constraints],
+            "priorities": [p.model_dump() for p in request.priorities],
+            "titles": request.titles,
+            "prefer_recent": request.prefer_recent,
             "published_after": request.published_after,
             "published_before": request.published_before,
         },
@@ -111,7 +119,7 @@ async def arxiv_tools(state: DiscoverState, runtime: Runtime[Context]) -> dict[s
     for call in state["transcript"][-1].calls:
         if used < MAX_TOOL_CALLS:
             used += 1
-            text = await run_tool(call, state["request"], found, runtime.context.arxiv)
+            text = await run_tool(call, state["request"], found, runtime.context)
         else:
             text = "Not run: the tool-call budget is used up."
         results.append(Block("tool", text, call_id=call.id))
@@ -119,18 +127,26 @@ async def arxiv_tools(state: DiscoverState, runtime: Runtime[Context]) -> dict[s
 
 
 async def run_tool(
-    call: ToolCall, request: ResearchRequest, found: dict[str, PaperCard], arxiv: ArxivClient
+    call: ToolCall, request: ResearchRequest, found: dict[str, PaperCard], ctx: Context
 ) -> str:
     """One tool call. Bad arguments and rejected queries go back to the model as text; results
-    outside the request's date window are dropped here, whatever the query said."""
-    after, before = _date(request.published_after), _date(request.published_before)
+    outside the request's date window, which ends today at the latest, are dropped here, whatever
+    the query said."""
+    after = _date(request.published_after)
+    before = _date(request.published_before) or ctx.today
     try:
         if call.name == "search_arxiv":
-            query = SearchArgs.model_validate_json(call.arguments).query
-            papers = await arxiv.search(query, after=after, before=before, max_results=RESULTS)
+            args = SearchArgs.model_validate_json(call.arguments)
+            papers = await ctx.arxiv.search(
+                args.query,
+                after=after,
+                before=before,
+                newest_first=args.newest_first,
+                max_results=RESULTS,
+            )
         elif call.name == "lookup":
             ids = LookupArgs.model_validate_json(call.arguments).arxiv_ids[:RESULTS]
-            papers = await arxiv.lookup(ids)
+            papers = await ctx.arxiv.lookup(ids)
         else:
             return f"Unknown tool {call.name}."
     except ValidationError as error:
@@ -138,7 +154,7 @@ async def run_tool(
     except SearchError as error:
         return str(error)
     papers = [m for m in papers if (not after or m.published >= after)]
-    papers = [m for m in papers if (not before or m.published <= before)]
+    papers = [m for m in papers if m.published <= before]
     return describe(papers, found) or "No results."
 
 
@@ -168,6 +184,14 @@ def card(m: Metadata) -> PaperCard:
 
 def _date(value: str | None) -> date | None:
     return date.fromisoformat(value) if value else None
+
+
+def _newest(card: PaperCard) -> float:
+    return -date.fromisoformat(card.published).toordinal()
+
+
+def _closest(card: PaperCard) -> float:
+    return -card.similarity
 
 
 async def prerank(state: DiscoverState, runtime: Runtime[Context]) -> dict[str, object]:
@@ -229,9 +253,10 @@ def in_batch(judged: list[Judgement], batch: list[PaperCard]) -> list[Judgement]
 
 
 def rank(state: DiscoverState) -> dict[str, object]:
-    """Keep papers judged relevant (≥ 2) that break no stated constraint; order by relevance, then
-    similarity. A violation counts only if it quotes one of the request's constraints (compared as
-    understand compares quotes: whitespace and case folded)."""
+    """Keep papers judged relevant (≥ 2) that break no stated constraint; order by relevance, then,
+    within a relevance grade, newest first when the request prefers recent work and by similarity
+    otherwise (D24). A violation counts only if it quotes one of the request's constraints
+    (compared as understand compares quotes: whitespace and case folded)."""
     judged = {j.id: j for j in state.get("judged", [])}
     request = state["request"]
     quotes = {plain(c.quote): c.quote for c in request.constraints}
@@ -247,7 +272,8 @@ def rank(state: DiscoverState) -> dict[str, object]:
         if (j := judged.get(p.arxiv_id)) is not None
     ]
     kept = [c for c in cards if (c.relevance or 0) >= 2 and not c.violated]
-    kept.sort(key=lambda c: (-(c.relevance or 0), -c.similarity))
+    within = _newest if request.prefer_recent else _closest
+    kept.sort(key=lambda c: (-(c.relevance or 0), within(c)))
     return {
         "papers": kept[: min(request.count or MAX_LISTED, MAX_LISTED)],
         "unjudged": [p.arxiv_id for p in state["shortlist"] if p.arxiv_id not in judged],

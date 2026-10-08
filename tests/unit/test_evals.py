@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any
 
 import pytest
@@ -10,6 +11,8 @@ from evals.qasper import questions, select
 from evals.report import _detection
 from evals.stats import mean_ci, paired
 from evals.suites import s3, s4, s5
+
+CJK = re.compile("[\u4e00-\u9fff]")  # project data is English (D24)
 
 
 def test_retrieval_metrics() -> None:
@@ -163,7 +166,7 @@ def test_the_s3_manifest_commits_query_ids_only() -> None:
     assert [e["split"] for e in manifest["items"]].count("test") == 15
 
 
-def test_s4_scores_clarification_then_intent_and_fields() -> None:
+def test_s4_grades_every_field_so_an_added_value_is_an_error() -> None:
     [item] = [i for i in s4.load(reviewed=False) if i.id == "ref-first-third"]
     base: dict[str, Any] = {
         "intent": "read",
@@ -174,26 +177,34 @@ def test_s4_scores_clarification_then_intent_and_fields() -> None:
         "listed": [3, 1],
         "count": None,
         "constraints": [],
+        "priorities": [],
+        "titles": [],
+        "prefer_recent": False,
         "published_after": None,
         "published_before": None,
     }
     good = s4.score(ResearchRequest(**base), item)
     assert good["clarify_correct"] == good["intent_correct"] == good["fields_correct"] == 1.0
+    dated = s4.score(ResearchRequest(**{**base, "published_after": "2024-01-01"}), item)
+    assert dated["field_published_after"] == dated["fields_correct"] == 0.0
+    assert dated["field_listed"] == 1.0
     asked = s4.score(ResearchRequest(**{**base, "clarification": "Which?"}), item)
     assert asked["clarify_correct"] == 0.0 and asked["clarified"] == 1.0
 
 
-def test_s4_data_has_fifty_items_with_context_where_they_refer_back() -> None:
-    items = s4.load(reviewed=False)
-    assert len(items) == 50 and len({i.id for i in items}) == 50
+def test_s4_data_is_english_fully_labelled_and_refers_back_only_to_shown_papers() -> None:
+    items = s4.load(reviewed=False)  # also checks that every proceeding item labels every field
+    assert len({i.id for i in items}) == len(items)
     for item in items:
+        assert not any(CJK.search(m.text) for m in item.messages), item.id
         if item.expected.get("listed"):
             assert max(item.expected["listed"]) <= len(item.shown)
 
 
-def test_s4_grades_constraints_by_their_quotes() -> None:
-    labelled = ["只用现成模型 API", "不训练"]
-    assert s4._same_constraints(["不训练", "只用现成模型  api"], labelled)
-    assert s4._same_constraints(["我只用现成模型 API", "不训练"], labelled)
-    assert not s4._same_constraints(["只用现成模型 API 不训练"], labelled)
-    assert not s4._same_constraints(["主要是等待时间", "不训练"], labelled)
+def test_s4_grades_quotes_by_the_words_they_cover() -> None:
+    labelled = ["API cost", "waiting time"]
+    assert s4._covers(["I care about both API cost and waiting time"], labelled)
+    assert s4._covers(["api  cost", "waiting time"], labelled)
+    assert not s4._covers(["API cost"], labelled), "a missing phrase fails"
+    assert not s4._covers(["API cost", "waiting time", "open source"], labelled)
+    assert s4._covers([], []) and not s4._covers(["no fine-tuning"], [])

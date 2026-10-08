@@ -515,7 +515,8 @@ async def run_s3(*, limit: int | None, execute: bool, max_usd: Decimal) -> str |
         try:
             for _, query in items:
                 scope = Scope(run_id=run_id, turn_id=query.id, run_cap_usd=max_usd)
-                context = Context(pool, gateway, scope, fetch, arxiv)
+                # the query was asked on its cutoff date: that is "today" for the agent (D24)
+                context = Context(pool, gateway, scope, fetch, arxiv, today=query.cutoff)
                 async with pool.connection() as conn:
                     try:
                         found = await discover.ainvoke(
@@ -603,7 +604,11 @@ async def _understand_items(
 
         examples = [
             {
-                "inputs": {"item_id": i.id, "messages": [m.text for m in i.messages]},
+                "inputs": {
+                    "item_id": i.id,
+                    "asked_at": i.asked_at.isoformat(),
+                    "messages": [m.text for m in i.messages],
+                },
                 "outputs": {"expected": i.expected},
                 "metadata": {"split": i.split},
             }

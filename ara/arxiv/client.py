@@ -73,14 +73,20 @@ class ArxivClient:
         *,
         after: date | None = None,
         before: date | None = None,
+        newest_first: bool = False,
         max_results: int = 20,
     ) -> list[Metadata]:
-        """Papers matching an arXiv query ("ti:..", "abs:..", AND / OR), by relevance. The date
-        window is added here, so a model-written query cannot widen it."""
+        """Papers matching an arXiv query ("ti:..", "abs:..", AND / OR), by relevance or newest
+        first. The date window is added here, so a model-written query cannot widen it."""
         if after or before:
             start, end = after or FIRST_DAY, before or date.today()
             query = f"({query}) AND submittedDate:[{start:%Y%m%d}0000 TO {end:%Y%m%d}2359]"
-        params = {"search_query": query, "max_results": str(max_results), "sortBy": "relevance"}
+        params = {
+            "search_query": query,
+            "max_results": str(max_results),
+            "sortBy": "submittedDate" if newest_first else "relevance",
+            "sortOrder": "descending",
+        }
         return await self._feed(params)
 
     async def lookup(self, arxiv_ids: list[str]) -> list[Metadata]:

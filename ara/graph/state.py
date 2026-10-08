@@ -2,7 +2,8 @@
 dependencies (LangGraph `context_schema`: no globals)."""
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -25,8 +26,18 @@ def plain(text: str) -> str:
 
 
 class Constraint(BaseModel):
+    """A hard requirement on papers: screening drops a paper that breaks it."""
+
     quote: str = Field(description="The user's own words stating the constraint, copied exactly.")
     meaning: str = Field(description="What a paper must or must not be, to satisfy it.")
+
+
+class Priority(BaseModel):
+    """What the user cares about (a cost, a goal): it steers relevance and the answer's focus, and
+    never removes a paper (D24)."""
+
+    quote: str = Field(description="The user's own words stating what matters, copied exactly.")
+    meaning: str = Field(description="What the papers and the answer should address because of it.")
 
 
 class ResearchRequest(BaseModel):
@@ -44,6 +55,9 @@ class ResearchRequest(BaseModel):
     listed: list[int] = Field(description="1-based positions in the papers shown last turn.")
     count: int | None = Field(description="How many papers the user asks for, if stated.")
     constraints: list[Constraint] = Field(description="Hard constraints the user states.")
+    priorities: list[Priority] = Field(description="What the user cares about, not a filter.")
+    titles: list[str] = Field(description="Titles or names of papers the user names, not ids.")
+    prefer_recent: bool = Field(description="Newer papers first among equally relevant ones.")
     published_after: str | None = Field(description="YYYY-MM-DD, only if the user limits dates.")
     published_before: str | None = Field(description="YYYY-MM-DD, only if the user limits dates.")
 
@@ -122,3 +136,4 @@ class Context:
     scope: Scope
     fetch: Callable[[str], Awaitable[ParsedPaper]]  # paper reference → parsed full text
     arxiv: ArxivClient
+    today: date = field(default_factory=date.today)  # when the user asks; evals pin it (D24)

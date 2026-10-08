@@ -2,6 +2,7 @@
 choice, rendering, and interrupts with resume on a real Postgres checkpointer. Nodes that call
 models are exercised by the live check (DESIGN §12: no fake LLMs)."""
 
+from datetime import date
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -12,7 +13,7 @@ from pydantic import SecretStr
 from ara.arxiv.client import ArxivClient
 from ara.db.pool import Pool
 from ara.graph import app
-from ara.graph.state import Constraint, Context, PaperCard, ResearchRequest
+from ara.graph.state import Constraint, Context, PaperCard, Priority, ResearchRequest
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
 from ara.settings import Settings
@@ -30,6 +31,9 @@ def request(**fields: Any) -> ResearchRequest:
         "listed": [],
         "count": None,
         "constraints": [],
+        "priorities": [],
+        "titles": [],
+        "prefer_recent": False,
         "published_after": None,
         "published_before": None,
     }
@@ -49,12 +53,19 @@ def card(n: int, relevance: int = 3) -> PaperCard:
 
 
 def test_understand_keeps_only_literal_constraints_and_valid_references() -> None:
-    messages: Any = [HumanMessage("Read 2305.18323v1, 只用现成模型 API, before 2024")]
+    messages: Any = [
+        HumanMessage("Read 2305.18323v1, hosted APIs only, latency matters, before 2024")
+    ]
     raw = request(
         constraints=[
-            Constraint(quote="只用现成模型  API", meaning="hosted models only"),
+            Constraint(quote="Hosted  APIs only", meaning="hosted models only"),
             Constraint(quote="no training at all", meaning="invented by the model"),
         ],
+        priorities=[
+            Priority(quote="latency matters", meaning="low latency"),
+            Priority(quote="cheap to run", meaning="invented by the model"),
+        ],
+        titles=[" ReWOO ", "ReWOO", ""],
         paper_ids=["2305.18323v1", "ReWOO"],
         listed=[1, 4],
         count=0,
@@ -62,6 +73,8 @@ def test_understand_keeps_only_literal_constraints_and_valid_references() -> Non
     )
     checked = app.checked(raw, messages, [card(1)])
     assert [c.meaning for c in checked.constraints] == ["hosted models only"]
+    assert [p.meaning for p in checked.priorities] == ["low latency"]
+    assert checked.titles == ["ReWOO"]
     assert checked.paper_ids == ["2305.18323v1"]
     assert checked.listed == [1]
     assert (checked.count, checked.published_before) == (None, None)
@@ -131,15 +144,20 @@ def test_the_reply_lists_papers_and_remembers_them_for_the_next_turn() -> None:
     assert result["shown"] == [card(1)]
     kept: Any = app.respond(base_state(request(intent="other"), shown=[card(9)]))
     assert kept["shown"] == [card(9)] and kept["messages"][0].text == app.OTHER
+    read: Any = app.respond(base_state(request(intent="read"), read=[card(2)], shown=[card(9)]))
+    assert read["shown"] == [card(2)], "a follow-up points at the papers just read"
 
 
 def test_the_understand_prompt_extends_the_previous_turn() -> None:
     first: Any = [HumanMessage("Find ReWOO")]
     second: Any = [*first, AIMessage("1. ReWOO"), HumanMessage("read the first one")]
-    a, b = app.understand_prompt(first, []), app.understand_prompt(second, [card(1)])
-    assert b.shared[: len(a.shared) + len(a.item)] == a.shared + a.item
+    today = date(2026, 10, 8)
+    a = app.understand_prompt(first, [], today)
+    b = app.understand_prompt(second, [card(1)], today)
+    assert b.shared[: len(a.shared)] == a.shared and b.shared[len(a.shared)] == a.item[-1]
     assert [x.role for x in b.shared] == ["user", "assistant"]
-    papers, latest = b.item
+    when, papers, latest = b.item
+    assert when.text == "Today: 2026-10-08"
     assert papers.text.startswith("Papers shown last:") and '"id": "2401.00001v1"' in papers.text
     assert latest.text == "read the first one"
 

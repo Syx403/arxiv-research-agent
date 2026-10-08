@@ -121,6 +121,7 @@ async def test_one_repair_rewrites_the_rejected_line(gateway: Gateway) -> None:
         "question": QUESTION,
         "evidence": evidence,
         "missing": [],
+        "priorities": [],
         "draft": text,
         "claims": claims,
         "uncited": uncited,
