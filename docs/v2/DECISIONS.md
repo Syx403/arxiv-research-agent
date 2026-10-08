@@ -467,3 +467,19 @@ decision gets a new entry that names the one it replaces.
 - Claude's change, reported: S3's dry-run unit cost went from US$0.008 to US$0.005 per query (the
   calibration measured at most US$0.0031), because the old estimate (US$0.24) exceeded the approved
   US$0.20 cap and the runner refused; the cap itself was not changed.
+
+## D26 — E-round backlog from the M3 analysis (2026-10-08, Ewan)
+- Context: after the first S3/S4 rounds Ewan asked whether the low scores come from the data or the
+  architecture. Analysis (no billable calls; local data, LangSmith traces, free arXiv metadata):
+  - S3 dev is held down by data and metric: 10 of 15 AutoScholarQuery queries have one gold paper,
+    so precision@5 cannot exceed 0.20; of the 4 queries with no gold in the pool, one gold paper was
+    published after its query's date (unreachable under the date limit; 1 of 193 gold papers in the
+    round) and three have a single citation-derived gold among many fitting papers.
+  - S3 held-out recall is an architecture limit: at most 8 searches × 20 results (7-123 distinct
+    candidates per query) against gold sets of up to 44 papers, narrow quoted AND queries on arXiv's
+    lexical search (21 of 237 returned nothing), no citation expansion, and prerank's cut to 24.
+  - S4's 0.69 is the strict all-fields score (fields 0.81-1.00); two or three held-out items are
+    our specification or labels, the rest are the model, mostly the new `priorities` field. Most
+    errors barely affect the user; the severe one is ids taken as `discover_read`.
+- Decision (Ewan): DESIGN §14.1 lists nine changes for the E rounds, each tuned on dev and reported
+  on held-out against the M3 baseline. M4 starts now.

@@ -590,6 +590,24 @@ testing starts only after the architecture review.
 | E1–E6 | judge calibration, then baseline, comparison, iteration and final rounds (≤ $1 each) | results reported with CIs |
 | Interview | facts / stories / Q&A in the interview hub | — |
 
+### 14.1 E-round backlog (D23, D25, D26)
+
+Changes found by the M3 rounds. Each is tuned on dev items and reported on held-out items, as a
+paired arm against the M3 baseline (`s3-20261008T103432`, `s4-20261008T085452`), within the
+per-round cap; nothing here is tuned on the M3 held-out results.
+
+| # | Area | Change | Measured by |
+|---|---|---|---|
+| 1 | S3 metrics | report gold precision@5 also divided by its reachable maximum, min(5, gold size); leave out gold published after the query's date (1 of 193 in the M3 round); the judge adjudicates non-gold papers (§11.3) | S3 report |
+| 2 | understand | state that date limits include their day; tighten `priorities` with counter-examples (the topic, the question itself, background are not priorities) | S4 fields |
+| 3 | understand | code rule: a request with arXiv ids and no named titles is `read` | S4 intent; the two-turn read → follow-up live check (≈ 25 requests, ≈ US$0.01) |
+| 4 | discovery | 50 results per search instead of 20 (free on arXiv; costs researcher tokens and abstract embeddings) | S3 pool recall, $/query |
+| 5 | discovery | researcher prompt: broader queries (OR of synonyms, fewer quoted AND chains; 21 of 237 searches returned nothing) | S3 pool recall |
+| 6 | discovery | larger prerank shortlist than 24 (it lost 0.08 of held-out recall) | S3 shortlist recall, screen cost |
+| 7 | discovery | citation expansion from the reference lists of the best candidates' arXiv HTML (arXiv only, no new provider); design and cost estimate first | S3 pool recall |
+| 8 | discovery | researcher effort high as a paired arm (D23) | S3, latency, $ |
+| 9 | discovery | keep a paper the user named even when screening finds it off-topic (D23 item 11) | S4/S3 items with named papers |
+
 ---
 
 ## 15. Budget plan (US$10 total)
