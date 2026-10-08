@@ -23,6 +23,7 @@ from ara.rag.retrieve import Passage, retrieve
 
 MAX_REQUERIES = 3  # missing aspects searched again, per document (D21)
 LABEL = re.compile(r"S\d+")
+BARE_ARXIV = re.compile(r"^arxiv:(\d{4}\.\d{4,5})$")
 SELECT = Instructions.load("select_evidence")
 
 
@@ -68,12 +69,16 @@ class ReadState(ReadInput, ReadOutput):
 
 
 async def ingest_paper(state: IngestTask, runtime: Runtime[Context]) -> dict[str, list[int]]:
-    """A reference that is a stored paper id ("qasper:…", "arxiv:…v3") is not fetched again."""
+    """A reference that is a stored paper id ("qasper:…", "arxiv:…v3") is not fetched again. A bare
+    "arxiv:2210.03629" means the latest version, which one metadata request names."""
     ctx = runtime.context
+    reference = state["reference"]
+    if (bare := BARE_ARXIV.match(reference)) is not None:
+        reference = f"{reference}v{(await ctx.arxiv.metadata(bare[1])).version}"
     async with ctx.pool.connection() as conn:
-        document = await document_id(conn, state["reference"])
+        document = await document_id(conn, reference)
     if document is None:
-        paper = await ctx.fetch(state["reference"])
+        paper = await ctx.fetch(reference)
         document = await ingest(paper, pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope)
     return {"documents": [document]}
 

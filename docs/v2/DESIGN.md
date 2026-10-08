@@ -142,6 +142,10 @@ when the user gave a count or one to three papers are direct matches (screen rel
 otherwise asks (resume value: positions). Until M4 the library route and `remember` are absent: a
 library question gets a notice, and `respond` → END. The checkpointer is `AsyncPostgresSaver` on
 the app database.
+After the M3 review (D23): `understand` receives the numbered papers shown last as a data block
+before the latest message; an arXiv id survives only if the conversation wrote it (§13, v1 rule);
+`resolve` passes stored paper ids (`arxiv:<id>v<n>`), one per paper, and a bare id is pinned to its
+latest version from arXiv metadata before the stored-document check.
 
 ### 4.2 Subgraphs
 
@@ -150,7 +154,8 @@ abstracts to the need; deterministic) → `prewarm` → `screen` × batches of 8
 The researcher has two tools, `search_arxiv(query)` (arXiv query syntax, ≤ 20 results) and
 `lookup(arxiv_ids)`; the request's date window is added by code and results outside it are
 dropped. Prerank keeps 24 (three batches); rank keeps relevance ≥ 2 with no violated constraint
-quote, ordered by relevance then similarity, ≤ 5 (D22).
+quote, ordered by relevance then similarity, ≤ 5 (D22). Quotes are compared whitespace- and
+case-folded, screen ids by bare arXiv id, and shortlisted papers left unjudged are reported (D23).
 
 read — `ingest` × paper (`Send`; idempotent, cached by paper version + pipeline version) →
 `gather` × (paper, question) (`Send`: hybrid search → rerank → `select_evidence`) → `collect`
@@ -288,7 +293,8 @@ Principles
 | judge: paper relevance (selected by Luna) | deepseek-flash, off-peak | thinking, high | `json_object` + Pydantic validation | offline |
 
 - DeepSeek accepts only low / high / max (medium maps to high). The researcher uses low because each
-  of its up to 8 steps thinks before acting; high would lengthen every turn (to be measured in M3).
+  of its up to 8 steps thinks before acting; high would lengthen every turn. Not measured in M3
+  (D23): proposed as a paired S3 arm in the E rounds.
 - The paper-relevance judge has no schema enforcement on DeepSeek. Its output is validated with
   Pydantic; a parse failure is recorded as `judge_error` and counted in the report, never repaired.
   Strict tool calls (beta) remain the fallback if the error rate is material (decided in M3).
@@ -354,6 +360,8 @@ Measured in M2 (D21): for one paper the verify prompt is usually far below the 1
 (about 410 tokens per call in the first live check), so prewarm and verify cache hits appear only
 with longer packs (several papers, or a long requery); the M2 review check showed both working on
 a 2,234-token pack.
+Measured in M3 (D23): the screen prefix (instructions + request + schema) is a few hundred tokens,
+so screening is never prewarmed and never hits; the six live screen calls read 0 cached tokens.
 
 The gateway records `usage.input_tokens_details.cached_tokens` / `cache_write_tokens` (OpenAI)
 and `usage.prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` (DeepSeek). The UI and the eval
@@ -492,7 +500,7 @@ pre-ingested papers so a live demo turn stays short.
 | S1 retrieval | QASPER validation, dataset full text | 10 papers × 3 questions | evidence recall@k, MRR, nDCG@10 for BM25 / dense / RRF / RRF+rerank / native FTS | code | ≈ $0 (≈ 30 rerank calls) |
 | S2 reading QA | the 30 S1 questions + 5 unanswerable ones drawn (seed 20261008) from other validation papers, since the S1 papers have none (D19) | 30, plus 5 × 3 trials (45 runs) | answer F1 (extractive, yes/no), judged equivalence to gold (free-form), abstention P/R, citation precision vs gold evidence, lines verified and rejected (both drafts), latency, $ | code + Luna judge | ≈ $0.14 for the runs, re-measured (D21); judge from E1 |
 | S2-baselines | same items | 30 each | closed-book, whole paper in context, naive RAG | same | ≈ $0.05 |
-| S3 discovery | PaSa: AutoScholarQuery (dev 15), RealScholarQuery (test 15), seed 20261009; manifest holds ids only, no LangSmith dataset (D22) | 30 | candidate-pool and shortlist recall, gold precision@5 (lower bound), hit@5; adjudication and constraint violations with the judge in E1 | code (M3); + DeepSeek judge + Ewan from E1 | ≈ $0.24 estimated (D22) |
+| S3 discovery | PaSa: AutoScholarQuery (dev 15), RealScholarQuery (test 15), seed 20261009; manifest holds ids only, no LangSmith dataset (D22); 30 per round, confirmed by Ewan (D23) | 30 | candidate-pool and shortlist recall, gold precision@5 (lower bound), hit@5; adjudication and constraint violations with the judge in E1 | code (M3); + DeepSeek judge + Ewan from E1 | ≈ $0.24 estimated (D22) |
 | S4 understand/clarify | v1's 18 distinct questions + 32 drafted edge cases, labels proposed by Claude and reviewed by Ewan (D22) | 50 | intent accuracy, false-clarify, missed-clarify, fields (ids, positions, count, dates, constraints) | code | ≈ $0.025 |
 | S5 verifier | QASPER evidence (one sentence per S1 item); 30 DeepSeek paraphrases, 30 perturbed: number 8 and negation 7 by code, entity 8 and over-generalisation 7 by DeepSeek; reviewed by Ewan; 58 after review (D19, D20) | 58 | P/R/F1 on "unsupported", recall per kind; Luna vs DeepSeek | code | $0.0093 measured (D20) |
 | S6 multi-turn + memory | scripted scenarios | 6 × ~3 turns | assertion pass rate (reference resolution, constraint retention, update, forget, abstain) | code | ≈ $0.13 |

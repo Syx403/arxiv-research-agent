@@ -313,7 +313,7 @@ decision gets a new entry that names the one it replaces.
   case folded), ids must match the arXiv pattern, positions must point at a shown paper, dates
   must parse, a count must be positive. The conversation is the shared prompt part and the
   latest message the item, so each turn extends the previous turn's cached prefix (measured:
-  the resumed understand call read 1,124 of 1,134 input tokens from the cache).
+  the resumed understand call read 1,124 of 1,192 input tokens from the cache; corrected in D23).
 - Fixed on the way: cached embeddings came back as pgvector `Vector` objects, not numpy arrays
   (latent since M1, where cached vectors only went back into SQL); `embed` now converts them.
 - Live check (`tests/live/test_turns.py`, approved ≈ 40 requests, ≤ US$0.05): 49 requests, of
@@ -328,3 +328,49 @@ decision gets a new entry that names the one it replaces.
 - Alternatives: the researcher on Luna (cheaper tool calls, but D10 puts open-ended loops on
   DeepSeek); no prerank (screen the whole pool: up to ≈ 100 abstracts, about 4× the screening
   cost).
+
+## D23 — M3 review fixes (2026-10-08, Ewan approved fixes 1–10; S3 at 30 queries; item 11 to E1)
+- Context: the M3 strict review found that understand's prompt promised the papers shown last but
+  the code never sent them; that ids were checked by pattern only, so an id the model recalled
+  (not one the user wrote) would skip discovery (DESIGN §13 keeps v1's "ids come from the
+  conversation"); that S4 graded constraints by count only; that DESIGN's S3 size moved from "15 per
+  round" to 30 without a record; that the screen cache claim in §6.3 does not hold; a wrong number
+  in D22; that D10's "efforts re-measured in M3" was neither done nor deferred; that violation
+  quotes were compared exactly; that screen judgements with an unexpected id silently dropped a
+  paper; and that read-by-id references never matched stored papers.
+- Decisions:
+  - `understand` gets the shown papers as a data block (n, id with version, title, date) placed
+    in the item part before the latest message, only when there are any. Cost: after a turn that
+    showed papers, the next turn's cache hit ends before the previous latest message (one message,
+    tens of tokens), because the block is not repeated. Alternative: put the block in the shared
+    part (it would break the prefix every time the list changes). The prompt file is unchanged.
+  - An id survives `checked` only if its bare form appears in the conversation text (user or
+    assistant messages, so an id listed by ARA earlier counts). A read request whose ids all fail
+    becomes find-then-read, as before.
+  - S4 labels constraints as quotes; a prediction passes with the same number of constraints, each
+    containing or contained in its own labelled quote (whitespace and case folded). v1-c03x now
+    carries the 不优化模型权重 constraint, as v1-c03 does. Labels still await Ewan's review.
+  - S3 stays at 30 queries per round (15 dev + 15 held-out), Ewan's choice; part of the cost rise
+    from DESIGN's US$0.10 to ≈ US$0.24 is this doubling, not only screening (D22 attributed it to
+    screening alone).
+  - Recorded, not changed: screening never caches (its shared prefix is a few hundred tokens, below
+    the 1,024 minimum); the M3 live screen calls read 0 cached tokens.
+  - D22 corrected: the resumed understand call read 1,124 of 1,192 input tokens (1,134 was another
+    run's call).
+  - Researcher effort: not measured in M3. Claude's proposal, pending Ewan: a paired S3 arm with
+    researcher effort high on the 15 dev queries in the E rounds (≈ US$0.12 or more, needs approval).
+    Until then the product keeps low (D10).
+  - `rank` compares violation quotes folded (`state.plain`, shared with understand's check);
+    `screen` keeps judgements by bare arXiv id ("2401.00001v2", "arXiv:2401.00001" match); the
+    subgraph reports `unjudged` shortlisted papers and S3 records their count per query.
+  - `resolve` turns named ids and shown positions into stored ids (`arxiv:<id>[v<n>]`), one per
+    paper, a versioned one winning over a bare one; `ingest_paper` pins a bare id to its latest
+    version (one arXiv metadata request) before checking for a stored document, so a stored paper
+    is not fetched again (D21) on this path either.
+- Moved to E1 (Ewan): a paper the user names in a find-then-read request can be filtered out by
+  screening when it is off-topic for the need (v1-c03 names GQA among tool-scheduling papers).
+- Live check (2 Luna requests, `m3-review-20261008T051722`, US$0.00034): with the block,
+  "最后一篇用了哪些数据集？" resolved to `listed: [3]`. On ref-mixed ("Compare the first one with
+  2305.18323") the model returned `discover_read` with both references filled; code does not
+  override it, so S4 will count it as an intent error. Not changed: it is the kind of model
+  behaviour S4 measures, and with item 11 it belongs to E1.

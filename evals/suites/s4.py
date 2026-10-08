@@ -12,7 +12,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 
 from ara.graph import app
-from ara.graph.state import PaperCard, ResearchRequest
+from ara.graph.state import PaperCard, ResearchRequest, plain
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Scope
 from ara.llm.stages import STAGES
@@ -69,7 +69,7 @@ def _message(m: dict[str, str]) -> AnyMessage:
 
 async def understand(gateway: Gateway, item: Item, scope: Scope) -> ResearchRequest:
     """Exactly what the graph's understand node does: one Luna call, then the code checks."""
-    prompt = app.understand_prompt(item.messages)
+    prompt = app.understand_prompt(item.messages, item.shown)
     raw = await gateway.structured(STAGES["understand"], prompt, ResearchRequest, scope=scope)
     return app.checked(raw, item.messages, item.shown)
 
@@ -98,8 +98,23 @@ def score(request: ResearchRequest, item: Item) -> dict[str, float]:
 def _matches(request: ResearchRequest, item: Item, field: str) -> bool:
     expected = item.expected[field]
     if field == "constraints":
-        return bool(len(request.constraints) == expected)
+        return _same_constraints([c.quote for c in request.constraints], expected)
     value = getattr(request, field)
     if field in ("paper_ids", "listed"):
         return sorted(value) == sorted(expected)
     return bool(value == expected)
+
+
+def _same_constraints(quotes: list[str], expected: list[str]) -> bool:
+    """As many constraints as labelled, each quote containing or contained in its own labelled
+    quote, so quoting a little more or less of the user's sentence still counts; merging two
+    labelled constraints into one quote does not."""
+    left = [plain(q) for q in quotes]
+    if len(left) != len(expected):
+        return False
+    for e in map(plain, expected):
+        match = next((q for q in left if e in q or q in e), None)
+        if match is None:
+            return False
+        left.remove(match)
+    return True

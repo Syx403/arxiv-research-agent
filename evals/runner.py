@@ -531,7 +531,13 @@ async def run_s3(*, limit: int | None, execute: bool, max_usd: Decimal) -> str |
                     metrics = discovery.score(
                         found["candidates"], found["shortlisted"], listed, query.gold
                     )
-                    output = {"listed": listed, "candidates": len(found["candidates"])}
+                    # papers the screen silently skipped would otherwise look like rejections
+                    metrics["unjudged"] = float(len(found["unjudged"]))
+                    output = {
+                        "listed": listed,
+                        "candidates": len(found["candidates"]),
+                        "unjudged": found["unjudged"],
+                    }
                     await _store(conn, run_id, query.id, "product", metrics, output)
             status = "partial" if failed else "complete"
         finally:

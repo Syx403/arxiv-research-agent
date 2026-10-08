@@ -189,3 +189,11 @@ def test_s4_data_has_fifty_items_with_context_where_they_refer_back() -> None:
     for item in items:
         if item.expected.get("listed"):
             assert max(item.expected["listed"]) <= len(item.shown)
+
+
+def test_s4_grades_constraints_by_their_quotes() -> None:
+    labelled = ["只用现成模型 API", "不训练"]
+    assert s4._same_constraints(["不训练", "只用现成模型  api"], labelled)
+    assert s4._same_constraints(["我只用现成模型 API", "不训练"], labelled)
+    assert not s4._same_constraints(["只用现成模型 API 不训练"], labelled)
+    assert not s4._same_constraints(["主要是等待时间", "不训练"], labelled)

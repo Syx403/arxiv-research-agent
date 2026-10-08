@@ -49,7 +49,7 @@ def card(n: int, relevance: int = 3) -> PaperCard:
 
 
 def test_understand_keeps_only_literal_constraints_and_valid_references() -> None:
-    messages: Any = [HumanMessage("Find papers, 只用现成模型 API, before 2024")]
+    messages: Any = [HumanMessage("Read 2305.18323v1, 只用现成模型 API, before 2024")]
     raw = request(
         constraints=[
             Constraint(quote="只用现成模型  API", meaning="hosted models only"),
@@ -65,6 +65,19 @@ def test_understand_keeps_only_literal_constraints_and_valid_references() -> Non
     assert checked.paper_ids == ["2305.18323v1"]
     assert checked.listed == [1]
     assert (checked.count, checked.published_before) == (None, None)
+
+
+def test_an_id_the_conversation_never_wrote_is_dropped() -> None:
+    messages: Any = [
+        HumanMessage("Find the ReWOO paper"),
+        AIMessage("1. ReWOO (arXiv 2305.18323v1, 2023-05-23)"),
+        HumanMessage("Now read 2312.04511 and that one"),
+    ]
+    raw = request(intent="read", paper_ids=["2312.04511", "2305.18323", "2210.03629", "2312.0451"])
+    assert app.checked(raw, messages, []).paper_ids == ["2312.04511", "2305.18323"]
+    recalled = request(intent="read", paper_ids=["2305.18323"])
+    alone: Any = [HumanMessage("Read the ReWOO paper")]
+    assert app.checked(recalled, alone, []).intent == "discover_read"
 
 
 def test_a_read_request_without_a_paper_becomes_find_then_read() -> None:
@@ -98,11 +111,17 @@ def test_paper_choice_is_deterministic_when_the_count_or_direct_matches_decide()
     assert app.choose_papers(direct)["selected"] == ["arxiv:2401.00001v1", "arxiv:2401.00002v1"]
 
 
-def test_a_read_resolves_named_ids_and_shown_positions() -> None:
+def test_a_read_resolves_named_ids_and_shown_positions_to_stored_ids() -> None:
     state = base_state(
         request(intent="read", paper_ids=["2305.18323v1"], listed=[2]), shown=[card(1), card(2)]
     )
-    assert app.resolve(state)["selected"] == ["2305.18323v1", "arxiv:2401.00002v1"]
+    assert app.resolve(state)["selected"] == ["arxiv:2305.18323v1", "arxiv:2401.00002v1"]
+
+
+def test_a_paper_named_and_pointed_at_is_read_once() -> None:
+    named = request(intent="read", paper_ids=["2401.00002", "2210.03629"], listed=[2])
+    state = base_state(named, shown=[card(1), card(2)])
+    assert app.resolve(state)["selected"] == ["arxiv:2401.00002v1", "arxiv:2210.03629"]
 
 
 def test_the_reply_lists_papers_and_remembers_them_for_the_next_turn() -> None:
@@ -117,9 +136,12 @@ def test_the_reply_lists_papers_and_remembers_them_for_the_next_turn() -> None:
 def test_the_understand_prompt_extends_the_previous_turn() -> None:
     first: Any = [HumanMessage("Find ReWOO")]
     second: Any = [*first, AIMessage("1. ReWOO"), HumanMessage("read the first one")]
-    a, b = app.understand_prompt(first), app.understand_prompt(second)
+    a, b = app.understand_prompt(first, []), app.understand_prompt(second, [card(1)])
     assert b.shared[: len(a.shared) + len(a.item)] == a.shared + a.item
     assert [x.role for x in b.shared] == ["user", "assistant"]
+    papers, latest = b.item
+    assert papers.text.startswith("Papers shown last:") and '"id": "2401.00001v1"' in papers.text
+    assert latest.text == "read the first one"
 
 
 def test_resume_positions_accept_a_list_or_text() -> None:

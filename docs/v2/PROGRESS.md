@@ -11,7 +11,7 @@ Update this file at the end of every working session: what was done, what was sp
 | M0 Foundation | done (2026-10-07), reviewed | §16 verified; §6.2–6.3 confirmed (D10, D11); 29 unit tests on real Postgres; live checks passed (cache hits on both providers; a rejected request is released) |
 | M1 RAG + S1 | done (2026-10-08) | sources (arXiv HTML/PDF, QASPER), chunking, cached embeddings, ingestion, BM25 ×2 / FTS / dense / RRF / rerank, eval runner + S1; S1 live on 2 papers (6 items) |
 | M2 Read + answer | done (2026-10-08), reviewed | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20); review fixes and a live check of requery, prewarm and repair (D21) |
-| M3 Understand + discover | built (2026-10-08); S3/S4 rounds pending | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); S4 labels await Ewan's review |
+| M3 Understand + discover | built (2026-10-08), reviewed; S3/S4 rounds pending | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); S4 labels await Ewan's review |
 | M4 Memory | not started | |
 | M5 Reliability + UI | not started | |
 | Architecture review (Ewan) | — | gate before any large-scale LLM testing |
@@ -33,7 +33,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-08 | S5 round | 58 claims × Luna / DeepSeek (`s5-20261007T174137`) | 116 | 0.0093 | Ewan (116 requests, cap US$0.10) |
 | 2026-10-08 | M2 review check | requery, prewarm + cached verify, off-question verify, repair (`m2-review-20261007T180521`, `…180557` a mistaken rerun, `…180728`) | 23 | 0.0025 | Ewan (≈ 10 requests, < US$0.005; exceeded in count by the rerun) |
 | 2026-10-08 | M3 live check | clarify turn; discover → read turn, a crashed first run (embedding bug) and its rerun (`m3-live-20261007T183501`, `…183610`, `…183711`) | 49 | 0.0171 | Ewan (≈ 40 requests, ≤ US$0.05; count exceeded by the rerun, 5 of 49 are free reranks) |
-| | | **Total so far** | 265 | **0.0446** | |
+| 2026-10-08 | M3 review check | understand with the shown-papers block on two S4 items (`m3-review-20261008T051722`) | 2 | 0.0003 | rule-1 threshold, reported |
+| | | **Total so far** | 267 | **0.0449** | |
 
 ## Session log
 
@@ -154,3 +155,16 @@ Update this file at the end of every working session: what was done, what was sp
   the clarify turn and the discover → read turn passed (49 requests, US$0.0171; over the
   approved count because of the crashed run). 93 unit tests. Next: Ewan reviews the S4 labels;
   then the S3 (≈ US$0.24) and S4 (≈ US$0.025) rounds, which need approval.
+- 2026-10-08 — M3 strict review (严格审核), then fixes approved by Ewan (D23). Found and fixed:
+  understand's prompt promised the shown papers but never received them (now a data block before
+  the latest message); ids were checked by pattern only (now they must appear in the conversation);
+  S4 graded constraints by count (now by quote; v1-c03x label added); violation quotes compared
+  exactly (now folded); screen judgements with an unexpected id dropped papers silently (now matched
+  by bare id, unjudged papers counted in S3); read-by-id references never matched stored papers and
+  a paper named and pointed at was read twice (now stored ids, one per paper, bare ids pinned to the
+  latest version). Recorded: S3 stays at 30 queries per round (Ewan), screening never caches, D22's
+  1,124 / 1,192 tokens, researcher effort not measured in M3 (proposal: an S3 arm in the E rounds).
+  Item 11 (a named off-topic paper screened out) moved to E1. Live check: 2 requests, US$0.00034;
+  ref-mixed showed the model choosing `discover_read` with both references filled (left for S4).
+  97 unit tests. Next: Ewan reviews the S4 labels; S3 (suggested: `--limit 2` first to calibrate the
+  unit cost) and S4 rounds need approval.

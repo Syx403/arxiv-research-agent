@@ -60,16 +60,28 @@ def test_rank_keeps_relevant_papers_that_break_no_quoted_constraint() -> None:
     judged = [
         discover.Judgement(id="2401.00001", relevance=2, reason="", violated=[]),
         discover.Judgement(id="2401.00002", relevance=3, reason="", violated=[]),
-        discover.Judgement(id="2401.00003", relevance=3, reason="", violated=["no fine-tuning"]),
+        discover.Judgement(id="2401.00003", relevance=3, reason="", violated=["No  Fine-tuning"]),
         discover.Judgement(id="2401.00004", relevance=1, reason="", violated=["made up"]),
     ]
     state: Any = {
         "request": request(constraints=[constraint], count=5),
-        "shortlist": shortlist,
+        "shortlist": [*shortlist, card(5, 0.99)],
         "judged": judged,
     }
-    papers = discover.rank(state)["papers"]
-    assert [p.arxiv_id for p in papers] == ["2401.00002", "2401.00001"]
+    ranked: Any = discover.rank(state)
+    assert [p.arxiv_id for p in ranked["papers"]] == ["2401.00002", "2401.00001"]
+    assert ranked["unjudged"] == ["2401.00005"]
+
+
+def test_screen_judgements_are_matched_by_bare_id_within_the_batch() -> None:
+    def judgement(paper_id: str) -> discover.Judgement:
+        return discover.Judgement(id=paper_id, relevance=3, reason="", violated=[])
+
+    batch = [card(1, 0.0), card(2, 0.0)]
+    kept = discover.in_batch(
+        [judgement("2401.00001v2"), judgement("arXiv:2401.00002"), judgement("2401.00009")], batch
+    )
+    assert [j.id for j in kept] == ["2401.00001", "2401.00002"]
 
 
 def test_screening_batches_share_the_request_prefix() -> None:

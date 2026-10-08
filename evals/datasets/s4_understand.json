@@ -40,7 +40,9 @@
       "expected": {
         "clarify": false,
         "intent": "discover_read",
-        "constraints": 1
+        "constraints": [
+          "不优化模型权重"
+        ]
       },
       "note": "v1 route read; no ids, so v2 finds then reads. Constraint: 不优化模型权重",
       "reviewed": false,
@@ -59,9 +61,12 @@
           "2312.04511v3",
           "2305.18323v1",
           "2305.13245v3"
+        ],
+        "constraints": [
+          "不优化模型权重"
         ]
       },
-      "note": "",
+      "note": "Constraint: 不优化模型权重 (as v1-c03)",
       "reviewed": false,
       "split": "test"
     },
@@ -109,7 +114,10 @@
       "expected": {
         "clarify": false,
         "intent": "discover",
-        "constraints": 2
+        "constraints": [
+          "只用现成模型 API",
+          "不训练"
+        ]
       },
       "note": "constraints: 只用现成模型 API, 不训练",
       "reviewed": false,
@@ -419,7 +427,10 @@
       "expected": {
         "clarify": false,
         "intent": "discover",
-        "constraints": 2
+        "constraints": [
+          "I only use hosted APIs",
+          "no fine-tuning"
+        ]
       },
       "note": "",
       "reviewed": false,

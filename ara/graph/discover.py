@@ -7,6 +7,7 @@ orders what survived.
 """
 
 import operator
+import re
 from datetime import date
 from typing import Annotated, Literal, TypedDict
 
@@ -17,7 +18,7 @@ from langgraph.types import Send
 from pydantic import BaseModel, Field, ValidationError
 
 from ara.arxiv.client import ArxivClient, Metadata, SearchError
-from ara.graph.state import MAX_LISTED, Context, PaperCard, ResearchRequest
+from ara.graph.state import MAX_LISTED, Context, PaperCard, ResearchRequest, plain
 from ara.llm.gateway import Tool, worth_prewarming
 from ara.llm.prompt import Block, Instructions, Prompt, ToolCall, data
 from ara.llm.stages import STAGES
@@ -29,6 +30,7 @@ SNIPPET = 300  # abstract characters shown to the researcher for a new paper
 SHORTLIST, BATCH = 24, 8  # prerank keeps three screening batches
 RESEARCHER = Instructions.load("researcher")
 SCREEN = Instructions.load("screen")
+PAPER_ID = re.compile(r"\d{4}\.\d{4,5}")  # inside "2401.00001v2" or "arXiv:2401.00001"
 
 
 class SearchArgs(BaseModel):
@@ -64,6 +66,7 @@ class DiscoverOutput(TypedDict):
     papers: list[PaperCard]  # ranked, at most MAX_LISTED
     candidates: list[str]  # the pool the researcher found, by arXiv id (S3: search recall)
     shortlisted: list[str]  # what prerank sent to screening
+    unjudged: list[str]  # shortlisted papers the screen returned no judgement for
 
 
 class ScreenTask(TypedDict):
@@ -214,22 +217,30 @@ async def screen(state: ScreenTask, runtime: Runtime[Context]) -> dict[str, list
     ctx = runtime.context
     prompt = screen_prompt(state["request"], state["batch"])
     result = await ctx.gateway.structured(STAGES["screen"], prompt, Screening, scope=ctx.scope)
-    ids = {p.arxiv_id for p in state["batch"]}
-    return {"judged": [j for j in result.papers if j.id in ids]}
+    return {"judged": in_batch(result.papers, state["batch"])}
 
 
-def rank(state: DiscoverState) -> dict[str, list[PaperCard]]:
+def in_batch(judged: list[Judgement], batch: list[PaperCard]) -> list[Judgement]:
+    """Judgements of this batch's papers, by bare arXiv id: the model may write "2401.00001v2" or
+    "arXiv:2401.00001" for "2401.00001"; any other id is dropped."""
+    ids = {p.arxiv_id for p in batch}
+    bare = [j.model_copy(update={"id": m[0]}) for j in judged if (m := PAPER_ID.search(j.id))]
+    return [j for j in bare if j.id in ids]
+
+
+def rank(state: DiscoverState) -> dict[str, object]:
     """Keep papers judged relevant (≥ 2) that break no stated constraint; order by relevance, then
-    similarity. A violation counts only if it quotes one of the request's constraints."""
+    similarity. A violation counts only if it quotes one of the request's constraints (compared as
+    understand compares quotes: whitespace and case folded)."""
     judged = {j.id: j for j in state.get("judged", [])}
     request = state["request"]
-    quotes = {c.quote for c in request.constraints}
+    quotes = {plain(c.quote): c.quote for c in request.constraints}
     cards = [
         p.model_copy(
             update={
                 "relevance": j.relevance,
                 "reason": j.reason,
-                "violated": [q for q in j.violated if q in quotes],
+                "violated": [quotes[plain(q)] for q in j.violated if plain(q) in quotes],
             }
         )
         for p in state["shortlist"]
@@ -237,7 +248,10 @@ def rank(state: DiscoverState) -> dict[str, list[PaperCard]]:
     ]
     kept = [c for c in cards if (c.relevance or 0) >= 2 and not c.violated]
     kept.sort(key=lambda c: (-(c.relevance or 0), -c.similarity))
-    return {"papers": kept[: min(request.count or MAX_LISTED, MAX_LISTED)]}
+    return {
+        "papers": kept[: min(request.count or MAX_LISTED, MAX_LISTED)],
+        "unjudged": [p.arxiv_id for p in state["shortlist"] if p.arxiv_id not in judged],
+    }
 
 
 def after_researcher(state: DiscoverState) -> str:

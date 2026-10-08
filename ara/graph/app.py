@@ -35,8 +35,9 @@ from ara.graph.state import (
     Evidence,
     PaperCard,
     ResearchRequest,
+    plain,
 )
-from ara.llm.prompt import Block, Instructions, Prompt
+from ara.llm.prompt import Block, Instructions, Prompt, data
 from ara.llm.stages import STAGES
 
 UNDERSTAND = Instructions.load("understand")
@@ -81,11 +82,18 @@ def load_context(state: ConversationState) -> dict[str, object]:
     }
 
 
-def understand_prompt(messages: list[AnyMessage]) -> Prompt:
-    """The conversation so far is the shared part and the latest message the item, so each turn
-    extends the previous turn's cached prefix (DESIGN §6.3: understand caches all three parts)."""
+def understand_prompt(messages: list[AnyMessage], shown: list[PaperCard]) -> Prompt:
+    """The conversation so far is the shared part; the numbered papers shown last (when there are
+    any) and the latest message are the item. Each turn extends the previous turn's cached prefix
+    (DESIGN §6.3: understand caches all three parts); after a turn that had papers to show, the
+    hit ends before the previous latest message, because the papers block is not repeated."""
     blocks = tuple(_block(m) for m in messages)
-    return Prompt(UNDERSTAND, shared=blocks[:-1], item=blocks[-1:])
+    listing = [
+        {"n": n, "id": f"{p.arxiv_id}v{p.version}", "title": p.title, "published": p.published}
+        for n, p in enumerate(shown, 1)
+    ]
+    papers = (data("Papers shown last", listing),) if listing else ()
+    return Prompt(UNDERSTAND, shared=blocks[:-1], item=(*papers, *blocks[-1:]))
 
 
 def _block(message: AnyMessage) -> Block:
@@ -94,21 +102,26 @@ def _block(message: AnyMessage) -> Block:
 
 async def understand(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
     ctx = runtime.context
-    prompt = understand_prompt(state["messages"])
+    shown = state.get("shown", [])
+    prompt = understand_prompt(state["messages"], shown)
     request = await ctx.gateway.structured(
         STAGES["understand"], prompt, ResearchRequest, scope=ctx.scope
     )
-    return {"request": checked(request, state["messages"], state.get("shown", []))}
+    return {"request": checked(request, state["messages"], shown)}
 
 
 def checked(
     request: ResearchRequest, messages: list[AnyMessage], shown: list[PaperCard]
 ) -> ResearchRequest:
     """The trust boundary for understand: a constraint must quote the user literally (v1 rule);
-    ids must be arXiv ids; positions must point at a paper shown; dates must parse. A read
-    request that names no paper becomes find-then-read."""
-    said = _plain(" ".join(m.text for m in messages if isinstance(m, HumanMessage)))
-    paper_ids = [i for i in request.paper_ids if ARXIV_ID.match(i)]
+    ids must be arXiv ids written in the conversation, not recalled by the model (v1 rule, DESIGN
+    §13); positions must point at a paper shown; dates must parse. A read request that names no
+    paper becomes find-then-read."""
+    said = plain(" ".join(m.text for m in messages if isinstance(m, HumanMessage)))
+    written = " ".join(m.text for m in messages)
+    paper_ids = [
+        i for i in request.paper_ids if (m := ARXIV_ID.match(i)) and _written(m[1], written)
+    ]
     listed = [n for n in request.listed if 1 <= n <= len(shown)]
     intent = request.intent
     if intent == "read" and not (paper_ids or listed):
@@ -118,7 +131,7 @@ def checked(
             "intent": intent,
             "paper_ids": paper_ids,
             "listed": listed,
-            "constraints": [c for c in request.constraints if _plain(c.quote) in said],
+            "constraints": [c for c in request.constraints if plain(c.quote) in said],
             "count": request.count if request.count and request.count > 0 else None,
             "published_after": _iso(request.published_after),
             "published_before": _iso(request.published_before),
@@ -126,8 +139,9 @@ def checked(
     )
 
 
-def _plain(text: str) -> str:
-    return " ".join(text.split()).casefold()
+def _written(arxiv_id: str, text: str) -> bool:
+    """The id appears whole: "2305.1832" is not written by "2305.18323"."""
+    return re.search(rf"(?<![\d.]){re.escape(arxiv_id)}(?!\d)", text) is not None
 
 
 def _iso(value: str | None) -> str | None:
@@ -182,10 +196,20 @@ def _positions(value: Any) -> list[int]:
 
 
 def resolve(state: ConversationState) -> dict[str, object]:
-    """For a read request: the named ids, then the shown papers it points at."""
+    """For a read request: the named ids, then the shown papers it points at, one per paper and as
+    stored paper ids ("arxiv:2305.18323v1"); a versioned id wins over a bare one, which gets its
+    latest version when the read graph ingests it."""
     request, shown = _request(state), state.get("shown", [])
-    references = [*request.paper_ids, *(shown[n - 1].reference for n in request.listed)]
-    return {"selected": list(dict.fromkeys(references))[:MAX_READ]}
+    ids = [
+        *request.paper_ids,
+        *(f"{shown[n - 1].arxiv_id}v{shown[n - 1].version}" for n in request.listed),
+    ]
+    by_paper: dict[str, str] = {}
+    for arxiv_id in ids:  # checked ids: "2305.18323" or "2305.18323v1"
+        paper = arxiv_id.split("v")[0]
+        if paper not in by_paper or ("v" in arxiv_id and "v" not in by_paper[paper]):
+            by_paper[paper] = arxiv_id
+    return {"selected": [f"arxiv:{i}" for i in by_paper.values()][:MAX_READ]}
 
 
 async def run_read(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:

@@ -19,6 +19,11 @@ MAX_LISTED, MAX_READ = 5, 3  # papers per turn (DESIGN §2)
 type Intent = Literal["discover", "discover_read", "read", "library", "other"]
 
 
+def plain(text: str) -> str:
+    """Whitespace and case folded: how a quote the model copied is compared with its source."""
+    return " ".join(text.split()).casefold()
+
+
 class Constraint(BaseModel):
     quote: str = Field(description="The user's own words stating the constraint, copied exactly.")
     meaning: str = Field(description="What a paper must or must not be, to satisfy it.")
