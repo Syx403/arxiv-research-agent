@@ -18,12 +18,13 @@ from langsmith.run_trees import RunTree
 from langsmith.schemas import ExtractedUsageMetadata
 from openai import APIStatusError, AsyncOpenAI, omit
 from openai.types import CompletionUsage
+from openai.types.chat import ChatCompletionMessage, ChatCompletionToolParam
 from openai.types.responses import ParsedResponse, ResponseUsage
 from pydantic import BaseModel, ValidationError
 
 from ara.llm.ledger import Ledger, Scope
 from ara.llm.pricing import Rates, Usage, rates, upper_bound
-from ara.llm.prompt import Prompt, deepseek_messages, openai_input
+from ara.llm.prompt import Block, Prompt, ToolCall, deepseek_messages, openai_input
 from ara.llm.stages import EMBEDDING_MODEL, PROVIDERS, RERANK_MODEL, Stage
 from ara.settings import Settings
 from ara.tokens import count_tokens
@@ -138,9 +139,38 @@ class Gateway:
         """A DeepSeek stage in thinking mode (Chat Completions); returns the final answer."""
         return await self._chat(stage, prompt, scope)
 
+    async def tool_step(
+        self, stage: Stage, prompt: Prompt, tools: Sequence["Tool"], *, scope: Scope
+    ) -> Block:
+        """One step of a DeepSeek tool loop (the researcher): the assistant turn, with its
+        reasoning and tool calls, ready to append to the transcript. The graph runs the tools and
+        decides when the loop stops (DESIGN §4.2)."""
+        message = await self._complete(stage, prompt, scope, tools=tools)
+        calls = tuple(
+            ToolCall(c.id, c.function.name, c.function.arguments)
+            for c in message.tool_calls or ()
+            if c.type == "function"
+        )
+        reasoning = (message.model_extra or {}).get("reasoning_content") or ""
+        return Block("assistant", message.content or "", reasoning=reasoning, calls=calls)
+
     async def _chat(
         self, stage: Stage, prompt: Prompt, scope: Scope, *, schema: type[BaseModel] | None = None
     ) -> str:
+        message = await self._complete(stage, prompt, scope, schema=schema)
+        if not message.content:
+            raise InvalidOutput(f"{stage.name}: empty answer")
+        return message.content
+
+    async def _complete(
+        self,
+        stage: Stage,
+        prompt: Prompt,
+        scope: Scope,
+        *,
+        schema: type[BaseModel] | None = None,
+        tools: Sequence["Tool"] = (),
+    ) -> ChatCompletionMessage:
         """DeepSeek Chat Completions in thinking mode. With a schema, JSON mode is on and the schema
         follows the static instructions, so every call of the stage shares the same prefix."""
         messages = deepseek_messages(prompt)
@@ -149,13 +179,14 @@ class Gateway:
                 f"Reply with one JSON object that matches this JSON Schema:\n{_schema(schema)}"
             )
             messages.insert(1, {"role": "system", "content": contract})
+        specs = [tool.spec() for tool in tools]
         async with self._metered(
             stage.name,
             stage.model,
             prompt.version,
             scope,
             inputs={"messages": messages},
-            input_tokens=_estimate(prompt, schema),
+            input_tokens=_estimate(prompt, schema) + count_tokens(json.dumps(specs)),
             output_tokens=stage.max_output_tokens,
             metadata={"effort": stage.effort},
         ) as call:
@@ -166,14 +197,11 @@ class Gateway:
                 max_tokens=stage.max_output_tokens,
                 extra_body={"thinking": {"type": "enabled"}},
                 response_format={"type": "json_object"} if schema else omit,
+                tools=specs or omit,
             )
-            choice = response.choices[0]
-            await call.settle(deepseek_usage(response.usage), response.id, choice.message.content)
-        if not choice.message.content:
-            raise InvalidOutput(
-                f"{stage.name}: empty answer (finish_reason {choice.finish_reason})"
-            )
-        return choice.message.content
+            message = response.choices[0].message
+            await call.settle(deepseek_usage(response.usage), response.id, message.content)
+        return message
 
     async def embed(self, texts: Sequence[str], *, scope: Scope) -> list[list[float]]:
         """One embeddings request; callers batch and cache (ara.rag.embed)."""
@@ -276,6 +304,25 @@ def _rejected(error: Exception) -> bool:
     if isinstance(error, httpx.HTTPStatusError):
         return error.response.status_code < 500
     return False
+
+
+@dataclass(frozen=True)
+class Tool:
+    """A function the model may call; `args` validates what it passes (a trust boundary)."""
+
+    name: str
+    description: str
+    args: type[BaseModel]
+
+    def spec(self) -> ChatCompletionToolParam:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.args.model_json_schema(),
+            },
+        }
 
 
 @dataclass(frozen=True)

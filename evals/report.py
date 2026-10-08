@@ -11,7 +11,7 @@ from psycopg.rows import DictRow
 
 from ara.db.pool import Pool
 from evals.stats import mean_ci, paired
-from evals.suites import s1, s2, s5
+from evals.suites import s1, s2, s3, s4, s5
 
 EFFICIENCY = """
 SELECT stage, model, count(*) AS requests, sum(input_tokens) AS input_tokens,
@@ -22,7 +22,7 @@ SELECT stage, model, count(*) AS requests, sum(input_tokens) AS input_tokens,
 FROM llm_calls WHERE run_id = %s GROUP BY stage, model ORDER BY stage
 """
 SPLITS = (("test", "Held-out (test): reported numbers"), ("dev", "Dev: used for choices"))
-SUITES = {"s1": s1, "s2": s2, "s5": s5}
+SUITES = {"s1": s1, "s2": s2, "s3": s3, "s4": s4, "s5": s5}
 
 type Scores = dict[str, dict[str, float]]  # item → metric → value, for one arm
 
@@ -69,6 +69,8 @@ async def report(pool: Pool, run_id: str) -> tuple[str, str]:
             for arm, scores in by_arm.items()
         }
         lines += ["", f"## {heading}", "", *_arms(scoped), *_abstention(scoped)]
+        if suite is s4:
+            lines += _clarification(scoped)
         if suite is s5:
             lines += _detection(scoped, s5.kinds())
         if suite.PAIRS:
@@ -121,6 +123,20 @@ def _abstention(by_arm: Mapping[str, Scores]) -> list[str]:
         lines.append(
             f"{arm} abstention: precision {precision} ({int(hits)}/{int(predicted)} abstentions"
             f" correct), recall {recall} ({int(hits)}/{int(actual)} unanswerable caught)"
+        )
+    return ["", *lines] if lines else []
+
+
+def _clarification(by_arm: Mapping[str, Scores]) -> list[str]:
+    """S4: how often understand asked when it should not have, and failed to ask when it should."""
+    lines = []
+    for arm, scores in by_arm.items():
+        proceed = [m for m in scores.values() if not m["clarify_expected"]]
+        ask = [m for m in scores.values() if m["clarify_expected"]]
+        false = sum(m["clarified"] for m in proceed)
+        missed = sum(not m["clarified"] for m in ask)
+        lines.append(
+            f"{arm}: false clarify {int(false)}/{len(proceed)}, missed clarify {missed}/{len(ask)}"
         )
     return ["", *lines] if lines else []
 

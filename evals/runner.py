@@ -12,10 +12,12 @@ from langsmith import Client
 from langsmith.evaluation import aevaluate
 from langsmith.schemas import Example
 
+from ara.arxiv.client import ArxivClient
 from ara.db.migrate import migrate
 from ara.db.pool import Connection, Pool, make_pool
+from ara.graph.discover import build as build_discover
 from ara.graph.qa import answer_question
-from ara.graph.state import Context, Verdict
+from ara.graph.state import Context, ResearchRequest, Verdict
 from ara.llm.gateway import Gateway, InvalidOutput
 from ara.llm.ledger import Ledger, Scope
 from ara.llm.pricing import EMBEDDING, MILLION
@@ -25,8 +27,9 @@ from ara.rag.ingest import PIPELINE_VERSION
 from ara.rag.sources import ParsedPaper
 from ara.settings import Settings, configure_tracing, get_settings
 from ara.tokens import count_tokens
+from evals.graders import discovery
 from evals.graders.retrieval import score
-from evals.suites import s1, s2, s5, s5_data
+from evals.suites import s1, s2, s3, s4, s5, s5_data
 from evals.suites.s1 import S1, Item
 
 
@@ -284,7 +287,8 @@ async def _answer_items(
     async def fetch(reference: str) -> ParsedPaper:
         return papers[reference]
 
-    context = Context(pool, gateway, Scope(run_id=run_id, run_cap_usd=max_usd), fetch)
+    arxiv = ArxivClient()  # QASPER papers come from the dataset: it sends nothing
+    context = Context(pool, gateway, Scope(run_id=run_id, run_cap_usd=max_usd), fetch, arxiv)
     try:
         client = Client()
         by_id = {item.id: item for item in items}
@@ -332,6 +336,7 @@ async def _answer_items(
         return "partial" if failed else "complete"
     finally:
         await gateway.aclose()
+        await arxiv.aclose()
 
 
 async def perturb_s5(*, execute: bool, max_usd: Decimal) -> None:
@@ -470,6 +475,154 @@ async def _verify_items(
                     failed += 1
                     for arm in s5.ARMS:
                         await _store(conn, run_id, _item(row["example"]), arm, {}, {}, error)
+        return "partial" if failed else "complete"
+    finally:
+        await gateway.aclose()
+
+
+async def run_s3(*, limit: int | None, execute: bool, max_usd: Decimal) -> str | None:
+    """Print the plan; with `execute`, run discovery on the first `limit` queries of each split.
+    PaSa is gated: no LangSmith dataset or experiment is made (D22), the results stay in Postgres
+    and the report names queries by id only. Traces of the calls still reach the private project."""
+    items = s3.load(limit)
+    usd = Decimal(str(s3.UNIT_COST_USD)) * len(items)
+    print(
+        f"S3 plan: {len(items)} queries; each ≤ 8 researcher steps, 1 embedding request, ≤ 3"
+        f" screen batches, ≤ 8 arXiv searches; estimated ${usd:.4f}"
+    )
+    if not execute:
+        print("Dry run: nothing was sent. Add --execute to run.")
+        return None
+    if usd > max_usd:
+        raise SystemExit(f"estimated ${usd:.4f} exceeds --max-usd {max_usd}")
+    settings = get_settings()
+    configure_tracing(settings)
+    migrate(settings.database_url)
+    discover = build_discover()
+    async with make_pool(settings.database_url) as pool, ArxivClient() as arxiv:
+        run_id = f"s3-{datetime.now(UTC):%Y%m%dT%H%M%S}"
+        config = {"suite": "s3", "manifest": s3.manifest_hash(), "items": len(items)}
+        await _start(pool, run_id, {**config, "max_usd": str(max_usd)})
+        ledger = Ledger(
+            pool, global_cap_usd=settings.global_cap_usd, turn_cap_usd=settings.turn_cap_usd
+        )
+        gateway = Gateway(settings, ledger)
+
+        async def fetch(reference: str) -> ParsedPaper:
+            raise RuntimeError(f"discovery does not read papers: {reference}")
+
+        failed, status = 0, "failed"
+        try:
+            for _, query in items:
+                scope = Scope(run_id=run_id, turn_id=query.id, run_cap_usd=max_usd)
+                context = Context(pool, gateway, scope, fetch, arxiv)
+                async with pool.connection() as conn:
+                    try:
+                        found = await discover.ainvoke(
+                            {"request": s3.request(query)},
+                            {"recursion_limit": 60, "metadata": {"run_id": run_id}},
+                            context=context,
+                        )
+                    except Exception as error:  # one failed query must not end the round
+                        failed += 1
+                        await _store(conn, run_id, query.id, "product", {}, {}, repr(error))
+                        continue
+                    listed = [p.arxiv_id for p in found["papers"]]
+                    metrics = discovery.score(
+                        found["candidates"], found["shortlisted"], listed, query.gold
+                    )
+                    output = {"listed": listed, "candidates": len(found["candidates"])}
+                    await _store(conn, run_id, query.id, "product", metrics, output)
+            status = "partial" if failed else "complete"
+        finally:
+            await gateway.aclose()
+            await _finish(pool, run_id, status)
+        return run_id
+
+
+async def run_s4(*, limit: int | None, execute: bool, max_usd: Decimal) -> str | None:
+    """Print the plan; with `execute`, run understand on the first `limit` reviewed items."""
+    items = s4.load(limit, reviewed=execute)
+    usd = Decimal(str(s4.UNIT_COST_USD)) * len(items)
+    print(f"S4 plan: {len(items)} understand requests; estimated ${usd:.4f}")
+    if not execute:
+        print("Dry run: nothing was sent. Add --execute to run.")
+        return None
+    if usd > max_usd:
+        raise SystemExit(f"estimated ${usd:.4f} exceeds --max-usd {max_usd}")
+    settings = get_settings()
+    configure_tracing(settings)
+    migrate(settings.database_url)
+    async with make_pool(settings.database_url) as pool:
+        run_id = f"s4-{datetime.now(UTC):%Y%m%dT%H%M%S}"
+        config = {"suite": "s4", "data": s4.data_hash(), "items": len(items)}
+        await _start(pool, run_id, {**config, "max_usd": str(max_usd)})
+        status = "failed"
+        try:
+            status = await _understand_items(pool, settings, run_id, config, items, max_usd)
+        finally:
+            await _finish(pool, run_id, status)
+        return run_id
+
+
+async def _understand_items(
+    pool: Pool,
+    settings: Settings,
+    run_id: str,
+    config: dict[str, Any],
+    items: list[s4.Item],
+    max_usd: Decimal,
+) -> str:
+    ledger = Ledger(
+        pool, global_cap_usd=settings.global_cap_usd, turn_cap_usd=settings.turn_cap_usd
+    )
+    gateway = Gateway(settings, ledger)
+    scope = Scope(run_id=run_id, run_cap_usd=max_usd)
+    try:
+        client = Client()
+        by_id = {item.id: item for item in items}
+
+        async def target(inputs: dict[str, Any]) -> dict[str, Any]:
+            item = by_id[inputs["item_id"]]
+            request = await s4.understand(gateway, item, scope)
+            output = request.model_dump()
+            async with pool.connection() as conn:
+                await _store(conn, run_id, item.id, "product", s4.score(request, item), output)
+            return output
+
+        def grade(outputs: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+            item = by_id[inputs["item_id"]]
+            metrics = s4.score(ResearchRequest(**outputs), item)
+            return {"results": [{"key": k, "score": v} for k, v in metrics.items()]}
+
+        examples = [
+            {
+                "inputs": {"item_id": i.id, "messages": [m.text for m in i.messages]},
+                "outputs": {"expected": i.expected},
+                "metadata": {"split": i.split},
+            }
+            for i in s4.load()
+        ]
+        dataset = _dataset(client, "s4", examples)
+        results = await aevaluate(
+            target,
+            data=[e for e in client.list_examples(dataset_name=dataset) if _item(e) in by_id],
+            evaluators=[grade],
+            experiment_prefix=run_id,
+            metadata={**config, "dataset": dataset},
+            max_concurrency=4,
+            client=client,
+        )
+        failed = 0
+        async with pool.connection() as conn:
+            await conn.execute(
+                "UPDATE eval_runs SET langsmith_experiment = %s WHERE id = %s",
+                (results.experiment_name, run_id),
+            )
+            async for row in results:
+                if (error := row["run"].error) is not None:
+                    failed += 1
+                    await _store(conn, run_id, _item(row["example"]), "product", {}, {}, error)
         return "partial" if failed else "complete"
     finally:
         await gateway.aclose()

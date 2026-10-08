@@ -288,3 +288,43 @@ decision gets a new entry that names the one it replaces.
   module (a command meant only to show the failures) doubled it: 23 requests (5 of them free
   reranks), US$0.0025 in all. The run cap was raised from US$0.005 to US$0.01 for the last two
   requests, because one repair call reserves about US$0.0052 before it settles (it cost US$0.0006).
+
+## D22 — M3 choices and implementation (2026-10-08, Ewan chose the evaluation options)
+- Ewan's choices: S3 is graded by code in M3 (pool recall, shortlist recall, gold precision@5 as a
+  lower bound, hit@5); the DeepSeek relevance judge, its calibration on Ewan's 30 labels, the
+  adjudication of non-gold papers and constraint violations move to E1. S4 = v1's 18 distinct
+  questions plus 32 drafted edge cases, labels proposed by Claude and reviewed by Ewan before a
+  round (`reviewed` per item; `run s4 --execute` refuses unreviewed data). PaSa (CC BY-NC-SA,
+  gated): traces may reach the private LangSmith project, but S3 creates no LangSmith dataset or
+  experiment; results stay in Postgres, the committed manifest and reports name queries by id.
+- `gateway.tool_step` replaces the planned `gateway.tool_loop` (DESIGN §6.4): one DeepSeek step
+  returning the assistant turn (content, reasoning, tool calls); the loop is the graph's
+  `researcher ⇄ arxiv_tools`, which owns the budget (8 tool calls; calls past it get a "not run"
+  tool message, and the loop goes to prerank without asking the researcher again). `Block` gained
+  `reasoning`, `calls`, `call_id` and the role `tool`; OpenAI rendering refuses tool turns.
+- The arXiv client gained `search` (arXiv query syntax; the request's date window is appended by
+  code, from 1991-01-01 because arXiv rejects earlier starts) and `lookup` (many ids in one
+  request); a rejected query raises `SearchError`, which the tool node returns to the model.
+- Top-level graph additions not drawn in DESIGN §4.1: `resolve` (read by reference), `shown`
+  kept across turns, at most 2 clarifications per turn, a read request without a resolvable paper
+  becomes find-then-read, and the deterministic `choose_papers` rule (count, else 1-3 direct
+  matches, else ask). No memory until M4: library questions get a notice; no `remember` node.
+- Understand's trust boundary in code: constraints must quote a human message (whitespace and
+  case folded), ids must match the arXiv pattern, positions must point at a shown paper, dates
+  must parse, a count must be positive. The conversation is the shared prompt part and the
+  latest message the item, so each turn extends the previous turn's cached prefix (measured:
+  the resumed understand call read 1,124 of 1,134 input tokens from the cache).
+- Fixed on the way: cached embeddings came back as pgvector `Vector` objects, not numpy arrays
+  (latent since M1, where cached vectors only went back into SQL); `embed` now converts them.
+- Live check (`tests/live/test_turns.py`, approved ≈ 40 requests, ≤ US$0.05): 49 requests, of
+  which 5 free reranks; US$0.0171. The count exceeded the estimate because the first discover →
+  read run crashed on the embedding bug after 4 calls and was rerun. Clarify turn: a question,
+  then on resume discovery with both constraints kept verbatim (8 requests, US$0.0058). Discover →
+  read: "find 2 papers on scheduling LLM tool calls in parallel and compare" found LLMCompiler
+  (2312.04511) and LLM-Tool Compiler (2405.17438), read both and answered with every line
+  verified (verify read 21,744 of 24,907 input tokens from the prewarmed cache).
+- Costs re-estimated: S3 ≈ US$0.008 per query (≈ US$0.24 a round, DESIGN had US$0.10; screening
+  on Luna medium is the largest part, ≈ US$0.001 per batch); S4 ≈ US$0.025 a round.
+- Alternatives: the researcher on Luna (cheaper tool calls, but D10 puts open-ended loops on
+  DeepSeek); no prerank (screen the whole pool: up to ≈ 100 abstracts, about 4× the screening
+  cost).

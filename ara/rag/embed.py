@@ -53,7 +53,11 @@ async def _cached(pool: Pool, keys: set[bytes]) -> dict[bytes, Vector]:
             "SELECT key, embedding FROM embedding_cache WHERE key = ANY(%(keys)s)",
             {"keys": list(keys)},
         )
-        return {bytes(row["key"]): row["embedding"] for row in await cursor.fetchall()}
+        # pgvector decodes the column to its own Vector type; callers compute with numpy.
+        return {
+            bytes(row["key"]): row["embedding"].to_numpy().astype(np.float32)
+            for row in await cursor.fetchall()
+        }
 
 
 def _batches(items: list[tuple[bytes, str]]) -> list[list[tuple[bytes, str]]]:

@@ -5,6 +5,7 @@ import numpy as np
 from langgraph.runtime import Runtime
 from pydantic import SecretStr
 
+from ara.arxiv.client import ArxivClient
 from ara.db.pool import Pool
 from ara.graph.read import ingest_paper
 from ara.graph.state import Context
@@ -12,7 +13,7 @@ from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
 from ara.rag import search
 from ara.rag.chunking import chunk
-from ara.rag.embed import cache_key
+from ara.rag.embed import cache_key, embed
 from ara.rag.ingest import ingest
 from ara.rag.sources import Paragraph, ParsedPaper
 from ara.settings import Settings
@@ -78,8 +79,9 @@ async def test_the_read_graph_does_not_fetch_a_stored_paper_again(pool: Pool) ->
     async def fetch(reference: str) -> ParsedPaper:
         raise AssertionError(f"fetched {reference}")
 
-    runtime = Runtime(context=Context(pool, gateway, Scope(), fetch))
-    stored = await ingest_paper({"reference": "arxiv:2401.00001v1"}, runtime)
+    async with ArxivClient() as arxiv:  # sends nothing
+        runtime = Runtime(context=Context(pool, gateway, Scope(), fetch, arxiv))
+        stored = await ingest_paper({"reference": "arxiv:2401.00001v1"}, runtime)
     assert stored == {"documents": [first]}
     await gateway.aclose()
 
@@ -100,3 +102,12 @@ async def test_stemming_widens_bm25_and_search_stays_in_scope(pool: Pool) -> Non
 
 def test_rrf_rewards_items_ranked_high_in_several_lists() -> None:
     assert search.rrf([[1, 2, 3], [3, 1, 4]]) == [1, 3, 2, 4]
+
+
+async def test_cached_embeddings_come_back_as_numpy_vectors(pool: Pool) -> None:
+    gateway, _, _ = await setup(pool)
+    [vector] = await embed(
+        [chunk(PARAGRAPHS)[1].search_text], pool=pool, gateway=gateway, scope=Scope()
+    )
+    assert isinstance(vector, np.ndarray) and vector.shape == (1536,) and vector @ unit(1) == 1.0
+    await gateway.aclose()

@@ -10,7 +10,7 @@ from ara.db.pool import make_pool
 from ara.settings import ROOT, get_settings
 from evals import runner
 from evals.report import report
-from evals.suites import s1, s2
+from evals.suites import s1, s2, s3
 
 REPORTS = ROOT / "data/eval_reports"
 
@@ -24,9 +24,13 @@ def main() -> None:
     evals.add_parser("prepare", help="download QASPER and draw any missing S1/S2 manifest")
     for name in ("plan", "run"):
         sub = evals.add_parser(name)
-        sub.add_argument("suite", choices=["s1", "s2", "s5"])
+        sub.add_argument("suite", choices=["s1", "s2", "s3", "s4", "s5"])
         sub.add_argument("--papers", type=int, help="S1: only the first N papers of the manifest")
-        sub.add_argument("--limit", type=int, help="S2: first N items; S5: first N claim pairs")
+        sub.add_argument(
+            "--limit",
+            type=int,
+            help="S2/S4: first N items; S3: first N per split; S5: first N claim pairs",
+        )
         if name == "run":
             sub.add_argument("--execute", action="store_true", help="send billable requests")
             sub.add_argument("--max-usd", type=Decimal, default=Decimal("1.0"))
@@ -38,7 +42,7 @@ def main() -> None:
 
     match args.command:
         case "prepare":
-            for suite in (s1, s2):  # S2 extends S1's items, so S1 comes first
+            for suite in (s1, s2, s3):  # S2 extends S1's items, so S1 comes first
                 if suite.MANIFEST.exists():
                     print(f"{suite.MANIFEST} exists; delete it to redraw")
                 else:
@@ -49,10 +53,14 @@ def main() -> None:
             max_usd = getattr(args, "max_usd", Decimal("1.0"))
             if args.suite == "s1":
                 run = runner.run_s1(papers=args.papers, execute=execute, max_usd=max_usd)
-            elif args.suite == "s2":
-                run = runner.run_s2(limit=args.limit, execute=execute, max_usd=max_usd)
             else:
-                run = runner.run_s5(limit=args.limit, execute=execute, max_usd=max_usd)
+                suite_run = {
+                    "s2": runner.run_s2,
+                    "s3": runner.run_s3,
+                    "s4": runner.run_s4,
+                    "s5": runner.run_s5,
+                }[args.suite]
+                run = suite_run(limit=args.limit, execute=execute, max_usd=max_usd)
             run_id = asyncio.run(run)
             if run_id:
                 print(asyncio.run(_report(run_id)))

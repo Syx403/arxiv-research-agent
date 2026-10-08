@@ -1,0 +1,160 @@
+{
+  "suite": "s3",
+  "dataset": {
+    "AutoScholarQuery": "7d8c7f59b289a54912c38cf204d16dbfec14ca35de850b9978b4051ad43a8b36",
+    "RealScholarQuery": "b3b570411ce2399ce4ea145ba9b2d3d0048b248030edeeb44ba95a7e9dc575c2"
+  },
+  "seed": 20261009,
+  "items": [
+    {
+      "id": "AutoScholarQuery_test_713",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_957",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_819",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_282",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_870",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_523",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_226",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_406",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_175",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_276",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_710",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_697",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_592",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_859",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "AutoScholarQuery_test_895",
+      "set": "AutoScholarQuery",
+      "split": "dev"
+    },
+    {
+      "id": "RealScholarQuery_21",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_14",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_35",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_48",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_47",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_23",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_49",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_28",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_26",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_4",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_30",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_44",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_36",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_10",
+      "set": "RealScholarQuery",
+      "split": "test"
+    },
+    {
+      "id": "RealScholarQuery_39",
+      "set": "RealScholarQuery",
+      "split": "test"
+    }
+  ]
+}

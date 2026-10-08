@@ -8,6 +8,7 @@ dependencies = [
   "beautifulsoup4>=4.13",
   "httpx>=0.28",
   "langgraph>=1.2.14,<2",
+  "langgraph-checkpoint-postgres>=3,<4",
   "langsmith>=0.14.4,<1",
   "lxml>=6",
   "numpy>=2.3",

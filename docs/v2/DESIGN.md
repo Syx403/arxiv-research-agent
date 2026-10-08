@@ -77,7 +77,8 @@ Package layout. A module is created in the milestone that first needs it (M0: `s
 ara/
   settings.py   keys from .env, database URL, budget caps, tracing
   tokens.py     cl100k token counting (chunk sizes, cost estimates)
-  graph/        app.py (top-level graph), discover.py, read.py, answer.py, routing.py, state.py
+  graph/        app.py (top-level graph, routing, checkpointer), discover.py, read.py, answer.py,
+                qa.py (read → answer for evals), state.py
   rag/          sources.py (arxiv html/pdf, qasper), chunking.py, embed.py, ingest.py, search.py,
                 retrieve.py (stemmed BM25 + dense → RRF → rerank top 30 → top 8 passages)
   llm/          gateway.py, prompt.py, prompts/ (text files), stages.py, pricing.py, ledger.py
@@ -134,10 +135,22 @@ respond → remember → END
   user asked to read but the choice is ambiguous.
 - `respond`: renders the final message; `remember` writes memory (§7).
 
+As built in M3 (D22): a `resolve` node sits before `read` on the read-by-reference path (named ids,
+then the numbered papers shown last); state keeps `shown`, the papers listed last, across turns so
+"the second one" resolves; `clarify` asks at most twice per turn; `choose_papers` is deterministic
+when the user gave a count or one to three papers are direct matches (screen relevance 3), and
+otherwise asks (resume value: positions). Until M4 the library route and `remember` are absent: a
+library question gets a notice, and `respond` → END. The checkpointer is `AsyncPostgresSaver` on
+the app database.
+
 ### 4.2 Subgraphs
 
 discover — `researcher ⇄ arxiv_tools` (tool loop, ≤ 8 calls) → `prerank` (embedding similarity of
 abstracts to the need; deterministic) → `prewarm` → `screen` × batches of 8 (`Send`) → `rank`.
+The researcher has two tools, `search_arxiv(query)` (arXiv query syntax, ≤ 20 results) and
+`lookup(arxiv_ids)`; the request's date window is added by code and results outside it are
+dropped. Prerank keeps 24 (three batches); rank keeps relevance ≥ 2 with no violated constraint
+quote, ordered by relevance then similarity, ≤ 5 (D22).
 
 read — `ingest` × paper (`Send`; idempotent, cached by paper version + pipeline version) →
 `gather` × (paper, question) (`Send`: hybrid search → rerank → `select_evidence`) → `collect`
@@ -354,7 +367,9 @@ are not padded.
   output cap and cache breakpoints; each call site always passes the same schema (prewarm needs it
   because `text.format` is part of the cached prefix); `scope` names the evaluation run and the
   turn whose budget caps apply. `worth_prewarming(prompt, Schema, calls)` applies the §6.3 rule.
-  `gateway.tool_loop(...)` serves the researcher (added in M3). `gateway.embed(texts)` and
+  `gateway.tool_step(stage, prompt, tools, scope=...)` serves the researcher (M3, D22): one DeepSeek
+  step that returns the assistant turn with its reasoning and tool calls; the loop itself is the
+  graph's `researcher ⇄ arxiv_tools`. `gateway.embed(texts)` and
   `gateway.rerank(query, documents, top_n)` (Cohere v2 REST, calls spaced 6 s for the trial's
   10 per minute) go through the same metering, so embeddings and reranks are in the ledger too.
 - Luna: Responses API with strict `json_schema` from the Pydantic model.
@@ -477,8 +492,8 @@ pre-ingested papers so a live demo turn stays short.
 | S1 retrieval | QASPER validation, dataset full text | 10 papers × 3 questions | evidence recall@k, MRR, nDCG@10 for BM25 / dense / RRF / RRF+rerank / native FTS | code | ≈ $0 (≈ 30 rerank calls) |
 | S2 reading QA | the 30 S1 questions + 5 unanswerable ones drawn (seed 20261008) from other validation papers, since the S1 papers have none (D19) | 30, plus 5 × 3 trials (45 runs) | answer F1 (extractive, yes/no), judged equivalence to gold (free-form), abstention P/R, citation precision vs gold evidence, lines verified and rejected (both drafts), latency, $ | code + Luna judge | ≈ $0.14 for the runs, re-measured (D21); judge from E1 |
 | S2-baselines | same items | 30 each | closed-book, whole paper in context, naive RAG | same | ≈ $0.05 |
-| S3 discovery | PaSa: AutoScholarQuery (dev 15), RealScholarQuery (test 15) | 15 per round | candidate-pool recall, precision@5 (gold lower bound + adjudicated), hit@5, constraint violations | code + DeepSeek judge + Ewan | ≈ $0.10 |
-| S4 understand/clarify | v1 UI questions + edge cases, labeled by Ewan | 50 | intent accuracy, false-clarify, missed-clarify | code | ≈ $0.02 |
+| S3 discovery | PaSa: AutoScholarQuery (dev 15), RealScholarQuery (test 15), seed 20261009; manifest holds ids only, no LangSmith dataset (D22) | 30 | candidate-pool and shortlist recall, gold precision@5 (lower bound), hit@5; adjudication and constraint violations with the judge in E1 | code (M3); + DeepSeek judge + Ewan from E1 | ≈ $0.24 estimated (D22) |
+| S4 understand/clarify | v1's 18 distinct questions + 32 drafted edge cases, labels proposed by Claude and reviewed by Ewan (D22) | 50 | intent accuracy, false-clarify, missed-clarify, fields (ids, positions, count, dates, constraints) | code | ≈ $0.025 |
 | S5 verifier | QASPER evidence (one sentence per S1 item); 30 DeepSeek paraphrases, 30 perturbed: number 8 and negation 7 by code, entity 8 and over-generalisation 7 by DeepSeek; reviewed by Ewan; 58 after review (D19, D20) | 58 | P/R/F1 on "unsupported", recall per kind; Luna vs DeepSeek | code | $0.0093 measured (D20) |
 | S6 multi-turn + memory | scripted scenarios | 6 × ~3 turns | assertion pass rate (reference resolution, constraint retention, update, forget, abstain) | code | ≈ $0.13 |
 | S7 robustness | fault hooks + one prompt-injection document | 6 + 3 turns | graceful-degradation rate, injection success (must be 0) | code | ≈ $0.02 |

@@ -1,17 +1,64 @@
-"""Domain objects shared by the read and answer subgraphs (DESIGN §4.3), and the run context that
-carries their dependencies (LangGraph `context_schema`: no globals)."""
+"""Domain objects shared by the graphs (DESIGN §4.3), and the run context that carries their
+dependencies (LangGraph `context_schema`: no globals)."""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from ara.arxiv.client import ArxivClient
 from ara.db.pool import Pool
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Scope
 from ara.rag.sources import ParsedPaper
 
 ABSTAIN = "Not stated in the provided papers."
+MAX_LISTED, MAX_READ = 5, 3  # papers per turn (DESIGN §2)
+
+type Intent = Literal["discover", "discover_read", "read", "library", "other"]
+
+
+class Constraint(BaseModel):
+    quote: str = Field(description="The user's own words stating the constraint, copied exactly.")
+    meaning: str = Field(description="What a paper must or must not be, to satisfy it.")
+
+
+class ResearchRequest(BaseModel):
+    """What understand makes of the latest message. Code checks it before use (trust boundary)."""
+
+    intent: Intent
+    clarification: str | None = Field(
+        description="One question to ask first, when the request cannot be acted on as it stands."
+    )
+    need: str = Field(description="The research need as one self-contained English sentence.")
+    question: str | None = Field(
+        description="What to answer from the papers' full text (read intents), in English."
+    )
+    paper_ids: list[str] = Field(description='arXiv ids the user names, e.g. "2305.18323v1".')
+    listed: list[int] = Field(description="1-based positions in the papers shown last turn.")
+    count: int | None = Field(description="How many papers the user asks for, if stated.")
+    constraints: list[Constraint] = Field(description="Hard constraints the user states.")
+    published_after: str | None = Field(description="YYYY-MM-DD, only if the user limits dates.")
+    published_before: str | None = Field(description="YYYY-MM-DD, only if the user limits dates.")
+
+
+class PaperCard(BaseModel):
+    """A candidate paper: arXiv metadata, then what discovery learned about it."""
+
+    arxiv_id: str
+    version: int
+    title: str
+    abstract: str
+    published: str  # YYYY-MM-DD, first version
+    similarity: float = 0.0  # prerank: embedding similarity of the abstract to the need
+    relevance: int | None = None  # screen: 0-3
+    reason: str = ""
+    violated: list[str] = []  # quotes of the constraints the paper breaks
+
+    @property
+    def reference(self) -> str:
+        return f"arxiv:{self.arxiv_id}v{self.version}"
 
 
 class Evidence(BaseModel):
@@ -69,3 +116,4 @@ class Context:
     gateway: Gateway
     scope: Scope
     fetch: Callable[[str], Awaitable[ParsedPaper]]  # paper reference → parsed full text
+    arxiv: ArxivClient

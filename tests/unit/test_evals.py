@@ -1,13 +1,15 @@
+import json
 from typing import Any
 
 import pytest
 
-from ara.graph.state import Verdict
+from ara.graph.state import ResearchRequest, Verdict
+from evals.graders.discovery import score as discovery_score
 from evals.graders.retrieval import ndcg_at, recall_at, reciprocal_rank, score
 from evals.qasper import questions, select
 from evals.report import _detection
 from evals.stats import mean_ci, paired
-from evals.suites import s5
+from evals.suites import s3, s4, s5
 
 
 def test_retrieval_metrics() -> None:
@@ -140,3 +142,50 @@ def test_s2_repeats_each_unanswerable_item() -> None:
     assert len(items) == 30 + 5 * s2.TRIALS and len(set(ids)) == len(ids)
     assert len(unanswerable) == 5 * s2.TRIALS
     assert set(s2.splits()) == set(ids)
+
+
+def test_discovery_metrics_grade_the_pool_and_the_list() -> None:
+    gold = frozenset({"a", "b", "c", "d"})
+    metrics = discovery_score(["a", "b", "x"], ["a", "x"], ["x", "a"], gold)
+    assert metrics == {
+        "pool_recall": 0.5,
+        "shortlist_recall": 0.25,
+        "hit_at_5": 1.0,
+        "listed": 2.0,
+        "gold_precision_at_5": 0.5,
+    }
+    assert "gold_precision_at_5" not in discovery_score([], [], [], gold)
+
+
+def test_the_s3_manifest_commits_query_ids_only() -> None:
+    manifest = json.loads(s3.MANIFEST.read_text())
+    assert {tuple(sorted(e)) for e in manifest["items"]} == {("id", "set", "split")}
+    assert [e["split"] for e in manifest["items"]].count("test") == 15
+
+
+def test_s4_scores_clarification_then_intent_and_fields() -> None:
+    [item] = [i for i in s4.load(reviewed=False) if i.id == "ref-first-third"]
+    base: dict[str, Any] = {
+        "intent": "read",
+        "clarification": None,
+        "need": "n",
+        "question": "q",
+        "paper_ids": [],
+        "listed": [3, 1],
+        "count": None,
+        "constraints": [],
+        "published_after": None,
+        "published_before": None,
+    }
+    good = s4.score(ResearchRequest(**base), item)
+    assert good["clarify_correct"] == good["intent_correct"] == good["fields_correct"] == 1.0
+    asked = s4.score(ResearchRequest(**{**base, "clarification": "Which?"}), item)
+    assert asked["clarify_correct"] == 0.0 and asked["clarified"] == 1.0
+
+
+def test_s4_data_has_fifty_items_with_context_where_they_refer_back() -> None:
+    items = s4.load(reviewed=False)
+    assert len(items) == 50 and len({i.id for i in items}) == 50
+    for item in items:
+        if item.expected.get("listed"):
+            assert max(item.expected["listed"]) <= len(item.shown)

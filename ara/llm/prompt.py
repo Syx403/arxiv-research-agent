@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.responses import (
@@ -13,7 +13,7 @@ from openai.types.responses import (
     ResponseInputTextParam,
 )
 
-type Role = Literal["developer", "user", "assistant"]
+type Role = Literal["developer", "user", "assistant", "tool"]
 type Part = Literal["static", "shared", "item"]
 
 PROMPTS = Path(__file__).with_name("prompts")
@@ -36,11 +36,22 @@ class Instructions:
 
 
 @dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments: str  # JSON as the model wrote it; validated where the tool runs
+
+
+@dataclass(frozen=True)
 class Block:
-    """One message."""
+    """One message. An assistant turn of a tool loop also carries its reasoning and tool calls,
+    and a tool result names the call it answers (DeepSeek needs both sent back)."""
 
     role: Role
     text: str
+    reasoning: str = ""
+    calls: tuple[ToolCall, ...] = ()
+    call_id: str = ""
 
 
 def data(label: str, value: Any) -> Block:
@@ -84,12 +95,16 @@ def openai_input(prompt: Prompt, breakpoints: frozenset[Part]) -> list[ResponseI
 
 
 def _openai_message(block: Block, *, mark: bool) -> EasyInputMessageParam:
-    if block.role == "assistant":
-        return {"role": "assistant", "content": block.text}
-    text: ResponseInputTextParam = {"type": "input_text", "text": block.text}
-    if mark:
-        text["prompt_cache_breakpoint"] = {"mode": "explicit"}
-    return {"role": block.role, "content": [text]}
+    match block.role:
+        case "assistant":
+            return {"role": "assistant", "content": block.text}
+        case "tool":
+            raise ValueError("tool loops run on DeepSeek only (DESIGN §6.2)")
+        case role:
+            text: ResponseInputTextParam = {"type": "input_text", "text": block.text}
+            if mark:
+                text["prompt_cache_breakpoint"] = {"mode": "explicit"}
+            return {"role": role, "content": [text]}
 
 
 def deepseek_messages(prompt: Prompt) -> list[ChatCompletionMessageParam]:
@@ -103,5 +118,22 @@ def _deepseek_message(block: Block) -> ChatCompletionMessageParam:
             return {"role": "system", "content": block.text}
         case "user":
             return {"role": "user", "content": block.text}
+        case "assistant" if block.calls:
+            message: dict[str, Any] = {
+                "role": "assistant",
+                "content": block.text,
+                "reasoning_content": block.reasoning,
+                "tool_calls": [
+                    {
+                        "id": c.id,
+                        "type": "function",
+                        "function": {"name": c.name, "arguments": c.arguments},
+                    }
+                    for c in block.calls
+                ],
+            }
+            return cast(ChatCompletionMessageParam, message)
         case "assistant":
             return {"role": "assistant", "content": block.text}
+        case "tool":
+            return {"role": "tool", "tool_call_id": block.call_id, "content": block.text}

@@ -1,5 +1,5 @@
-"""Read then answer: one question over given papers. The top-level graph (M3) puts the same two
-subgraphs behind understand and discover; until then this is the entry for evals and checks."""
+"""Read then answer: one question over given papers, without the conversation graph. S2 and the
+live checks use it; the top-level graph (app.py) runs the same two subgraphs behind understand."""
 
 from ara.graph import answer, read
 from ara.graph.state import Answer, Context

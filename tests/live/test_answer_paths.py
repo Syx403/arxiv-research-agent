@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 from langgraph.runtime import Runtime
 
+from ara.arxiv.client import ArxivClient
 from ara.graph import answer
 from ara.graph.qa import READ
 from ara.graph.state import Claim, Context, Evidence, Verdict
@@ -78,7 +79,7 @@ def context(gateway: Gateway) -> Context:
     async def fetch(reference: str) -> ParsedPaper:
         return paper()
 
-    return Context(gateway.ledger.pool, gateway, SCOPE, fetch)
+    return Context(gateway.ledger.pool, gateway, SCOPE, fetch, ArxivClient())  # sends nothing
 
 
 async def test_a_true_phrase_that_does_not_answer_the_question_is_rejected(

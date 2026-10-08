@@ -11,7 +11,7 @@ Update this file at the end of every working session: what was done, what was sp
 | M0 Foundation | done (2026-10-07), reviewed | §16 verified; §6.2–6.3 confirmed (D10, D11); 29 unit tests on real Postgres; live checks passed (cache hits on both providers; a rejected request is released) |
 | M1 RAG + S1 | done (2026-10-08) | sources (arXiv HTML/PDF, QASPER), chunking, cached embeddings, ingestion, BM25 ×2 / FTS / dense / RRF / rerank, eval runner + S1; S1 live on 2 papers (6 items) |
 | M2 Read + answer | done (2026-10-08), reviewed | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20); review fixes and a live check of requery, prewarm and repair (D21) |
-| M3 Understand + discover | not started | |
+| M3 Understand + discover | built (2026-10-08); S3/S4 rounds pending | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); S4 labels await Ewan's review |
 | M4 Memory | not started | |
 | M5 Reliability + UI | not started | |
 | Architecture review (Ewan) | — | gate before any large-scale LLM testing |
@@ -32,7 +32,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-08 | S5 smoke | one claim, both verifier arms (`s5-smoke-20261007T173949`) | 2 | 0.0002 | rule-1 threshold, reported |
 | 2026-10-08 | S5 round | 58 claims × Luna / DeepSeek (`s5-20261007T174137`) | 116 | 0.0093 | Ewan (116 requests, cap US$0.10) |
 | 2026-10-08 | M2 review check | requery, prewarm + cached verify, off-question verify, repair (`m2-review-20261007T180521`, `…180557` a mistaken rerun, `…180728`) | 23 | 0.0025 | Ewan (≈ 10 requests, < US$0.005; exceeded in count by the rerun) |
-| | | **Total so far** | 216 | **0.0274** | |
+| 2026-10-08 | M3 live check | clarify turn; discover → read turn, a crashed first run (embedding bug) and its rerun (`m3-live-20261007T183501`, `…183610`, `…183711`) | 49 | 0.0171 | Ewan (≈ 40 requests, ≤ US$0.05; count exceeded by the rerun, 5 of 49 are free reranks) |
+| | | **Total so far** | 265 | **0.0446** | |
 
 ## Session log
 
@@ -141,3 +142,15 @@ Update this file at the end of every working session: what was done, what was sp
   implies but does not state it (E1 measures this). Spend: 23 requests, US$0.0025; a mistaken
   rerun of the live module took it past the approved ≈ 10 requests (still under US$0.005).
   73 unit tests. Next: M3 (understand + discover).
+- 2026-10-08 — M3. Ewan chose code-only S3 grading until E1, S4 from v1's 18 questions plus 32
+  drafted items with his review, PaSa traces without a LangSmith dataset, and the live-check
+  budget (D22). Built `ara/graph/app.py` (load_context → understand → clarify ⏸ / discover /
+  resolve → read → answer → respond; `AsyncPostgresSaver`; `send` for a turn or a resume),
+  `ara/graph/discover.py` (researcher ⇄ arxiv_tools on DeepSeek, prerank by embeddings, Luna
+  screening in batches of 8, rank), `gateway.tool_step`, tool turns in `Block`, arXiv `search` and
+  `lookup`, prompts `understand`, `researcher`, `screen`; `evals/pasa.py`, S3 (manifest of ids,
+  seed 20261009), S4 (50 items, labels proposed, `reviewed: false`), `graders/discovery.py`,
+  `ara eval run s3|s4`. Fixed a latent M1 bug: cached embeddings were not numpy arrays. Live:
+  the clarify turn and the discover → read turn passed (49 requests, US$0.0171; over the
+  approved count because of the crashed run). 93 unit tests. Next: Ewan reviews the S4 labels;
+  then the S3 (≈ US$0.24) and S4 (≈ US$0.025) rounds, which need approval.

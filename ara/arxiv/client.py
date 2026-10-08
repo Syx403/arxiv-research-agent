@@ -1,4 +1,4 @@
-"""arXiv client: paper metadata from the export API, full text as HTML with PDF as fallback.
+"""arXiv client: search and metadata from the export API, full text as HTML with PDF as fallback.
 Every request, to any arXiv host, waits its turn: one connection, one request per three seconds."""
 
 import asyncio
@@ -6,6 +6,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from datetime import date
 from types import TracebackType
 
 import httpx
@@ -17,6 +18,7 @@ INTERVAL_S = 3.0
 ATOM = {"atom": "http://www.w3.org/2005/Atom"}
 USER_AGENT = "ara-v2/0.1 (+https://github.com/Syx403/arxiv-research-agent)"
 ARXIV_ID = re.compile(r"^(\d{4}\.\d{4,5})(?:v(\d+))?$")
+FIRST_DAY = date(1991, 1, 1)  # arXiv rejects a submittedDate range that starts earlier
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,11 @@ class Metadata:
     version: int  # the latest version
     title: str
     abstract: str
+    published: date  # first version
+
+
+class SearchError(Exception):
+    """arXiv answered a search with an error entry (usually a malformed query)."""
 
 
 class ArxivClient:
@@ -47,6 +54,9 @@ class ArxivClient:
         error: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
         await self.http.aclose()
 
     async def get(self, url: str, params: dict[str, str] | None = None) -> httpx.Response:
@@ -57,20 +67,43 @@ class ArxivClient:
             finally:
                 self._last = time.monotonic()
 
-    async def metadata(self, arxiv_id: str) -> Metadata:
-        response = await self.get(API_URL, {"id_list": arxiv_id})
-        response.raise_for_status()
-        entry = ET.fromstring(response.content).find("atom:entry", ATOM)
-        abs_url = entry.findtext("atom:id", "", ATOM) if entry is not None else ""
-        found = ARXIV_ID.match(abs_url.rsplit("/", 1)[-1])
-        if entry is None or found is None or found[2] is None:
-            raise LookupError(f"arXiv has no paper {arxiv_id}")
-        return Metadata(
-            arxiv_id=found[1],
-            version=int(found[2]),
-            title=" ".join(entry.findtext("atom:title", "", ATOM).split()),
-            abstract=" ".join(entry.findtext("atom:summary", "", ATOM).split()),
+    async def search(
+        self,
+        query: str,
+        *,
+        after: date | None = None,
+        before: date | None = None,
+        max_results: int = 20,
+    ) -> list[Metadata]:
+        """Papers matching an arXiv query ("ti:..", "abs:..", AND / OR), by relevance. The date
+        window is added here, so a model-written query cannot widen it."""
+        if after or before:
+            start, end = after or FIRST_DAY, before or date.today()
+            query = f"({query}) AND submittedDate:[{start:%Y%m%d}0000 TO {end:%Y%m%d}2359]"
+        params = {"search_query": query, "max_results": str(max_results), "sortBy": "relevance"}
+        return await self._feed(params)
+
+    async def lookup(self, arxiv_ids: list[str]) -> list[Metadata]:
+        """Metadata for several ids in one request; unknown ids are left out."""
+        return await self._feed(
+            {"id_list": ",".join(arxiv_ids), "max_results": str(len(arxiv_ids))}
         )
+
+    async def metadata(self, arxiv_id: str) -> Metadata:
+        found = await self.lookup([arxiv_id])
+        if not found:
+            raise LookupError(f"arXiv has no paper {arxiv_id}")
+        return found[0]
+
+    async def _feed(self, params: dict[str, str]) -> list[Metadata]:
+        response = await self.get(API_URL, params)
+        if response.status_code == 400:
+            raise SearchError(f"arXiv rejected the query: {params.get('search_query', '')}")
+        response.raise_for_status()
+        entries = ET.fromstring(response.content).findall("atom:entry", ATOM)
+        if any(e.findtext("atom:id", "", ATOM).endswith("/api/errors") for e in entries):
+            raise SearchError(entries[0].findtext("atom:summary", "", ATOM).strip())
+        return [m for e in entries if (m := _metadata(e)) is not None]
 
     async def paper(self, reference: str) -> ParsedPaper:
         """Full text of "2210.03629" (latest version) or "2210.03629v2": HTML when arXiv has it,
@@ -90,3 +123,16 @@ class ArxivClient:
         return arxiv_pdf_paper(
             pdf.content, arxiv_id, version, title=meta.title, abstract=meta.abstract
         )
+
+
+def _metadata(entry: ET.Element) -> Metadata | None:
+    found = ARXIV_ID.match(entry.findtext("atom:id", "", ATOM).rsplit("/", 1)[-1])
+    if found is None or found[2] is None:
+        return None
+    return Metadata(
+        arxiv_id=found[1],
+        version=int(found[2]),
+        title=" ".join(entry.findtext("atom:title", "", ATOM).split()),
+        abstract=" ".join(entry.findtext("atom:summary", "", ATOM).split()),
+        published=date.fromisoformat(entry.findtext("atom:published", "", ATOM)[:10]),
+    )
