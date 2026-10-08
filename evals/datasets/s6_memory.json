@@ -1,6 +1,6 @@
 {
   "suite": "s6",
-  "labels": "drafted by Claude, reviewed by Ewan on 2026-10-09 (D27)",
+  "labels": "drafted by Claude, reviewed by Ewan on 2026-10-09 (D27); s6-episode moved to dev and five scenarios added for Ewan's review (D29)",
   "checks": {
     "intent": "the request's intent",
     "constraint": "a constraint quote covers this phrase",
@@ -10,7 +10,8 @@
     "selected": "these bare arXiv ids are among the papers read",
     "selected_positions": "the papers read are these positions of the list shown before the turn",
     "answered": "true: a verified answer was delivered; false: the reply abstains or finds nothing",
-    "reply_has": "the reply contains this text"
+    "reply_has": "the reply contains this text",
+    "cited": "the delivered answer cites these bare arXiv ids"
   },
   "scenarios": [
     {
@@ -160,8 +161,8 @@
     },
     {
       "id": "s6-episode",
-      "split": "test",
-      "note": "earlier research lets a new session name a paper read before without its id",
+      "split": "dev",
+      "note": "earlier research lets a new session name a paper read before without its id; dev since D29, because it was fixed and rerun after its held-out failure (D27, D28)",
       "sessions": [
         [
           {
@@ -181,6 +182,130 @@
             "expect": {
               "selected": [
                 "2305.18323"
+              ],
+              "answered": true
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-mismatch",
+      "split": "test",
+      "note": "D29: a named paper that does not discuss the question is reported with its abstract's opening",
+      "sessions": [
+        [
+          {
+            "message": "Read 2210.03629 and explain how its diffusion sampler generates images.",
+            "expect": {
+              "intent": "read",
+              "selected": [
+                "2210.03629"
+              ],
+              "answered": false,
+              "reply_has": "does not seem to discuss this"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-premise",
+      "split": "test",
+      "note": "D29: a false assumption (ReWOO's Solver calls no tools) is corrected with a verified, cited direct answer",
+      "sessions": [
+        [
+          {
+            "message": "Read 2305.18323 and explain why its Solver calls the tools again after the Workers have run.",
+            "expect": {
+              "intent": "read",
+              "selected": [
+                "2305.18323"
+              ],
+              "answered": true
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-conflict",
+      "split": "test",
+      "note": "D29: a paper named by title is found by an arXiv title search and read; its conflict with a remembered constraint is reported",
+      "sessions": [
+        [
+          {
+            "message": "I never fine-tune models.",
+            "expect": {
+              "intent": "memory",
+              "profile_has": "never fine-tune"
+            }
+          }
+        ],
+        [
+          {
+            "message": "Read the Toolformer paper and explain how it decides when to call an API.",
+            "expect": {
+              "intent": "read",
+              "selected": [
+                "2302.04761"
+              ],
+              "answered": true,
+              "constraint": "never fine-tune",
+              "reply_has": "I read it because you named it"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-library-many",
+      "split": "test",
+      "note": "D29: a library question over several papers is searched once; the reply lists only the papers its answer cites",
+      "sessions": [
+        [
+          {
+            "message": "Read 2210.03629 and explain how it interleaves reasoning and actions.",
+            "expect": {
+              "intent": "read",
+              "answered": true
+            }
+          },
+          {
+            "message": "Read 2305.18323 and explain how its planner works.",
+            "expect": {
+              "intent": "read",
+              "answered": true
+            }
+          }
+        ],
+        [
+          {
+            "message": "Which papers have we read about planning all tool calls before any observation, and what did they find?",
+            "expect": {
+              "intent": "library",
+              "answered": true,
+              "cited": [
+                "2305.18323"
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-compare-ids",
+      "split": "dev",
+      "note": "D29: ids in the message are read directly (DESIGN §14.1 item 3); the D25 live failure",
+      "sessions": [
+        [
+          {
+            "message": "Compare 2305.18323 and 2312.04511: how does each avoid calling the LLM after every tool call?",
+            "expect": {
+              "intent": "read",
+              "selected": [
+                "2305.18323",
+                "2312.04511"
               ],
               "answered": true
             }

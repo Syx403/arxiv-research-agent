@@ -25,6 +25,12 @@ def plain(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
+def quoted(quote: str, source: str) -> bool:
+    """The quote is non-empty and appears in `source` (already folded with `plain`)."""
+    folded = plain(quote)
+    return bool(folded) and folded in source
+
+
 class Constraint(BaseModel):
     """A hard requirement on papers: screening drops a paper that breaks it."""
 

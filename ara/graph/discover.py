@@ -28,6 +28,7 @@ MAX_TOOL_CALLS = 8  # per turn (DESIGN §2)
 RESULTS = 20  # per search
 SNIPPET = 300  # abstract characters shown to the researcher for a new paper
 SHORTLIST, BATCH = 24, 8  # prerank keeps three screening batches
+TITLE_RESULTS = 10  # per title search when the user names a paper (D29)
 RESEARCHER = Instructions.load("researcher")
 SCREEN = Instructions.load("screen")
 PAPER_ID = re.compile(r"\d{4}\.\d{4,5}")  # inside "2401.00001v2" or "arXiv:2401.00001"
@@ -212,7 +213,9 @@ async def prerank(state: DiscoverState, runtime: Runtime[Context]) -> dict[str, 
     ]
     # papers the user named by title always reach screening, closest to the need or not (D28)
     titles = state["request"].titles
-    shortlist = sorted(scored, key=lambda p: (not _named(titles, p.title), -p.similarity))
+    shortlist = sorted(
+        scored, key=lambda p: (not any(titled(t, p.title) for t in titles), -p.similarity)
+    )
     shortlist = shortlist[:SHORTLIST]
     return {
         "shortlist": shortlist,
@@ -262,20 +265,11 @@ def rank(state: DiscoverState) -> dict[str, object]:
     """The papers the user named come first, one per title, whatever their relevance or
     constraints: the user asked for them (D28). Then papers judged relevant (≥ 2) that break no
     stated constraint, by relevance, then, within a grade, newest first when the request prefers
-    recent work and by similarity otherwise (D24). A violation counts only if it quotes one of the
-    request's constraints (compared as understand compares quotes: whitespace and case folded)."""
+    recent work and by similarity otherwise (D24); at most MAX_LISTED in all."""
     judged = {j.id: j for j in state.get("judged", [])}
     request = state["request"]
-    quotes = {plain(c.quote): c.quote for c in request.constraints}
     cards = [
-        p.model_copy(
-            update={
-                "relevance": j.relevance,
-                "reason": j.reason,
-                "violated": [quotes[plain(q)] for q in j.violated if plain(q) in quotes],
-                "named": name(request.titles, p.title, j.named),
-            }
-        )
+        judged_card(request, p, j)
         for p in state["shortlist"]
         if (j := judged.get(p.arxiv_id)) is not None
     ]
@@ -283,25 +277,61 @@ def rank(state: DiscoverState) -> dict[str, object]:
     others = [c for c in cards if c not in named and (c.relevance or 0) >= 2 and not c.violated]
     within = _newest if request.prefer_recent else _closest
     others.sort(key=lambda c: (-(c.relevance or 0), within(c)))
-    limit = max(min(request.count or MAX_LISTED, MAX_LISTED), len(named))
+    limit = min(max(request.count or MAX_LISTED, len(named)), MAX_LISTED)
     return {
         "papers": [*named, *others][:limit],
         "unjudged": [p.arxiv_id for p in state["shortlist"] if p.arxiv_id not in judged],
     }
 
 
+def judged_card(request: ResearchRequest, paper: PaperCard, judgement: Judgement) -> PaperCard:
+    """The screen's judgement on the card. A violation counts only if it quotes one of the
+    request's constraints, compared as understand compares quotes (whitespace and case folded)."""
+    quotes = {plain(c.quote): c.quote for c in request.constraints}
+    return paper.model_copy(
+        update={
+            "relevance": judgement.relevance,
+            "reason": judgement.reason,
+            "violated": [quotes[plain(q)] for q in judgement.violated if plain(q) in quotes],
+            "named": name(request.titles, paper.title, judgement.named),
+        }
+    )
+
+
 def name(titles: list[str], title: str, judged: str | None) -> str | None:
     """Which of the user's titles a paper is: by its own title first (code), else by the screen's
     judgement, which knows that "LLMCompiler" is "An LLM Compiler for Parallel Function Calling"."""
-    by_code = next((t for t in titles if _named([t], title)), None)
+    by_code = next((t for t in titles if titled(t, title)), None)
     by_model = next((t for t in titles if judged and plain(judged) == plain(t)), None)
     return by_code or by_model
 
 
-def _named(titles: list[str], title: str) -> bool:
-    """The title is one the user named: equal, or starting with it ("ReWOO: Decoupling ...")."""
-    full = plain(title)
-    return any(full == plain(t) or full.startswith(plain(t) + ":") for t in titles)
+def titled(name: str, title: str) -> bool:
+    """The paper's title is the one the user named: equal, or starting with it ("ReWOO: ...")."""
+    full, named = plain(title), plain(name)
+    return bool(named) and (full == named or full.startswith(named + ":"))
+
+
+async def find_title(name: str, ctx: Context) -> list[PaperCard]:
+    """arXiv papers whose title is `name` by `titled`, most relevant first, from one title search
+    (free; no model). A query arXiv rejects finds nothing."""
+    query = 'ti:"' + " ".join(name.replace('"', " ").split()) + '"'
+    try:
+        found = await ctx.arxiv.search(query, before=ctx.today, max_results=TITLE_RESULTS)
+    except SearchError:
+        return []
+    return [card(m) for m in found if titled(name, m.title)]
+
+
+async def check_constraints(
+    request: ResearchRequest, papers: list[PaperCard], ctx: Context
+) -> list[PaperCard]:
+    """The screen's judgement on papers that were not screened (the user named them, D29), so the
+    reply can warn when one breaks a constraint; one call for up to three papers."""
+    prompt = screen_prompt(request, papers)
+    result = await ctx.gateway.structured(STAGES["screen"], prompt, Screening, scope=ctx.scope)
+    judged = {j.id: j for j in in_batch(result.papers, papers)}
+    return [judged_card(request, p, j) if (j := judged.get(p.arxiv_id)) else p for p in papers]
 
 
 def after_researcher(state: DiscoverState) -> str:

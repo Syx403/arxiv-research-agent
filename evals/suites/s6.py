@@ -3,7 +3,7 @@ with the Postgres checkpointer and Store; each scenario has its own user, each s
 thread. Every turn's expectations are checked by code; a scenario passes when all of them hold."""
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -16,7 +16,7 @@ DATA = Path(__file__).parents[1] / "datasets" / "s6_memory.json"
 ARMS = ("product",)
 PAIRS: tuple[tuple[str, str], ...] = ()
 LABELS: tuple[str, ...] = ()
-UNIT_COST_USD = 0.008  # per scenario: up to two reads and a discovery, plus Luna memory calls
+UNIT_COST_USD = 0.008  # per scenario: up to three reads or a discovery, plus Luna memory calls
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,7 @@ def splits() -> dict[str, str]:
 
 
 def check(
-    expect: dict[str, Any], state: dict[str, Any], profile: list[Fact], shown: list[PaperCard]
+    expect: dict[str, Any], state: dict[str, Any], profile: Sequence[Fact], shown: list[PaperCard]
 ) -> list[str]:
     """The expectations a turn failed (none if it passed); `shown`: the list before the turn."""
     request, reply = state["request"], state["messages"][-1].text
@@ -49,6 +49,11 @@ def check(
     read = [r.removeprefix("arxiv:").split("v")[0] for r in state["selected"]]
     delivered = state["answer"]
     answered = delivered is not None and not delivered.abstained
+    cited = (
+        {e.paper_id.removeprefix("arxiv:").split("v")[0] for e in delivered.evidence}
+        if delivered
+        else set()
+    )
     tests: dict[str, Callable[[Any], bool]] = {
         "intent": lambda v: request.intent == v,
         "constraint": lambda v: any(plain(v) in q for q in quotes),
@@ -58,6 +63,7 @@ def check(
         "selected": lambda v: set(v) <= set(read),
         "selected_positions": lambda v: read == [shown[n - 1].arxiv_id for n in v],
         "answered": lambda v: answered == v,
+        "cited": lambda v: set(v) <= cited,
         "reply_has": lambda v: v in reply,
     }
     return [f"{name}={value!r}" for name, value in expect.items() if not tests[name](value)]

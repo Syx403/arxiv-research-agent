@@ -1,4 +1,4 @@
-"""`ara eval prepare|plan|run|report` (DESIGN §11.5); `run` is a dry run without --execute."""
+"""`ara eval prepare|plan|run|report|hnsw` (DESIGN §11.5); `run` is a dry run without --execute."""
 
 import argparse
 import asyncio
@@ -8,7 +8,7 @@ from decimal import Decimal
 from ara.db.migrate import migrate
 from ara.db.pool import make_pool
 from ara.settings import ROOT, get_settings
-from evals import runner
+from evals import hnsw, runner
 from evals.report import report
 from evals.suites import s1, s2, s3
 
@@ -39,6 +39,7 @@ def main() -> None:
     perturb.add_argument("--execute", action="store_true", help="send billable requests")
     perturb.add_argument("--max-usd", type=Decimal, default=Decimal("0.01"))
     evals.add_parser("report").add_argument("run_id")
+    evals.add_parser("hnsw", help="HNSW against the exact scan on cached S1 vectors (free)")
     args = parser.parse_args()
 
     match args.command:
@@ -73,6 +74,8 @@ def main() -> None:
             asyncio.run(runner.perturb_s5(execute=args.execute, max_usd=args.max_usd))
         case "report":
             print(asyncio.run(_report(args.run_id)))
+        case "hnsw":
+            print(json.dumps(asyncio.run(hnsw.measure()), indent=2))
 
 
 async def _report(run_id: str) -> str:

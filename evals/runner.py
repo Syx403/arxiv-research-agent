@@ -700,7 +700,8 @@ async def run_s6(
                     async with pool.connection() as conn:
                         await _store(conn, run_id, scenario.id, "product", {}, {}, repr(error))
                     continue
-                checks = sum(len(t["expect"]) for s in scenario.sessions for t in s)
+                # each turn also checks that it did not stop to wait for the user
+                checks = sum(len(t["expect"]) + 1 for s in scenario.sessions for t in s)
                 metrics = {
                     "passed": float(not failures),
                     "checks_passed": (checks - len(failures)) / checks,

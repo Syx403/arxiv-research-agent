@@ -4,18 +4,23 @@ Postgres, so a turn that stops for the user (clarify, paper choice) resumes wher
     START → load_context → understand ─┬─► clarify ⏸ → understand
                                        ├─► discover ⟦sub⟧ ─┬─► choose_papers ⏸? → read …
                                        │                   └─► respond
-                                       ├─► resolve → read ⟦sub⟧ → answer ⟦sub⟧ → respond
-                                       ├─► library → read ⟦sub⟧ → answer ⟦sub⟧ → respond
+                                       ├─► resolve ─┬─► read ⟦sub⟧ → conflicts → answer ⟦sub⟧ …
+                                       │            └─► discover (titles not found by title)
+                                       ├─► library → read …                 (answer → respond)
                                        ├─► remember → respond → END          (intent "memory")
                                        └─► respond
     respond → remember → END                                               (every other turn)
 
-choose_papers stops for the user only when the choice is ambiguous. Memory (D27): load_context
-reads the user's profile and the past research closest to the message from the Store; remember
-keeps what the user says about themselves and records the turn; reading adds to the library.
+choose_papers stops for the user only when the choice is ambiguous. Papers the user names (ids,
+numbers shown, titles) are the papers read, whatever else the request says (D28, D29): resolve
+finds them, conflicts tells the user when one breaks a constraint, and the reply says when one does
+not discuss the question. Memory (D27): load_context reads the user's profile and the past
+research closest to the message from the Store; remember keeps what the user says about
+themselves and records the turn; reading adds to the library.
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Annotated, Any, Literal, TypedDict
@@ -25,6 +30,7 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.config import get_config
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
@@ -43,17 +49,22 @@ from ara.graph.state import (
     PaperCard,
     ResearchRequest,
     plain,
+    quoted,
 )
 from ara.llm.prompt import Block, Instructions, Prompt, data
 from ara.llm.stages import STAGES
 from ara.memory import extract, library, store
 from ara.memory.extract import MemoryUpdate
-from ara.memory.store import Episode, Fact
+from ara.memory.store import Episode, Fact, Remembered
+from ara.rag.chunking import sentence_starts
 from ara.rag.embed import embed
+from ara.rag.search import rrf
 
 UNDERSTAND = Instructions.load("understand")
 MAX_CLARIFY = 2  # questions per turn; after that the turn proceeds with what it has
 RECURSION_LIMIT = 60  # steps per turn, subgraphs included (≤ 8 researcher rounds dominate)
+LIBRARY_RANKED = 10  # papers ranked by passage distance before fusion with research records
+OPENING = 300  # characters of an abstract quoted when a named paper does not fit the question
 READ, ANSWER, DISCOVER = read.build(), answer.build(), discover.build()
 OTHER = (
     "I find arXiv papers and answer questions from their full text. Ask me for papers on a topic,"
@@ -64,7 +75,8 @@ NOT_DISCUSSED = (
     " Would you like me to search arXiv for papers on it?"
 )
 RESEARCH = ("discover", "discover_read", "read", "library")
-# Our types kept in checkpoints; LangGraph will refuse to load types it was not told about.
+# Our types kept in checkpoints, subgraph states included: the serializer loads any other type as
+# a plain dict. A unit test walks every state schema to keep this list complete (D29).
 CHECKPOINTED = [
     ("ara.graph.state", name)
     for name in (
@@ -78,9 +90,14 @@ CHECKPOINTED = [
         "Verdict",
     )
 ] + [
+    ("ara.graph.discover", "Judgement"),
+    ("ara.graph.read", "Found"),
+    ("ara.llm.prompt", "Block"),
+    ("ara.llm.prompt", "ToolCall"),
+    ("ara.memory.extract", "MemoryUpdate"),
     ("ara.memory.store", "Episode"),
     ("ara.memory.store", "Fact"),
-    ("ara.memory.extract", "MemoryUpdate"),
+    ("ara.memory.store", "Remembered"),
 ]
 
 type Status = Literal["running", "needs_input", "complete", "partial", "failed"]
@@ -90,11 +107,13 @@ class ConversationState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     shown: list[PaperCard]  # the papers listed last, which "the second one" refers to
     turn_start: int  # index of this turn's first message; turn-scoped from here on
-    profile: list[Fact]  # what the user told us in any session
+    profile: list[Remembered]  # what the user told us in any session
     episodes: list[Episode]  # earlier research closest to the latest message
     memory: MemoryUpdate | None  # what remember changed this turn
     request: ResearchRequest | None
     clarifications: int
+    identified: list[str]  # titles resolve found (library or arXiv title search)
+    notes: list[str]  # what resolve learned that the reply must say
     papers: list[PaperCard]  # listed by discovery
     selected: list[str]  # paper references to read
     read: list[PaperCard]  # the papers read, in the order selected
@@ -114,6 +133,8 @@ def fresh_turn() -> dict[str, object]:
         "memory": None,
         "request": None,
         "clarifications": 0,
+        "identified": [],
+        "notes": [],
         "papers": [],
         "selected": [],
         "read": [],
@@ -143,8 +164,8 @@ def understand_prompt(
     messages: list[AnyMessage],
     shown: list[PaperCard],
     today: date,
-    profile: list[Fact] = [],  # noqa: B006 (never mutated)
-    episodes: list[Episode] = [],  # noqa: B006
+    profile: Sequence[Fact] = (),
+    episodes: Sequence[Episode] = (),
 ) -> Prompt:
     """The user's profile and the conversation so far are the shared part; today's date, earlier
     research related to the message, the numbered papers shown last and the latest message are
@@ -152,7 +173,8 @@ def understand_prompt(
     previous turn's item (DESIGN §6.3; the date is never placed before the item, D24); the
     profile changes rarely, and only then breaks the prefix (D27)."""
     blocks = tuple(_block(m) for m in messages)
-    known = (data("About the user", [f.model_dump(exclude={"key"}) for f in profile]),)
+    facts = [{"quote": f.quote, "statement": f.statement} for f in profile]
+    known = (data("About the user", facts),)
     listing = [
         {"n": n, "id": f"{p.arxiv_id}v{p.version}", "title": p.title, "published": p.published}
         for n, p in enumerate(shown, 1)
@@ -185,14 +207,15 @@ def checked(
     request: ResearchRequest,
     messages: list[AnyMessage],
     shown: list[PaperCard],
-    profile: list[Fact] = [],  # noqa: B006 (never mutated)
-    episodes: list[Episode] = [],  # noqa: B006
+    profile: Sequence[Fact] = (),
+    episodes: Sequence[Episode] = (),
 ) -> ResearchRequest:
-    """The trust boundary for understand: a constraint or a priority must quote the user literally,
-    in this conversation or in a remembered fact (v1 rule, D27); ids must be arXiv ids written in
-    the conversation or in the user's earlier research, not recalled by the model (v1 rule, DESIGN
-    §13); positions must point at a paper shown; dates must parse; titles are kept once each. A
-    read request that names no paper becomes find-then-read."""
+    """The trust boundary for understand: a constraint or a priority must quote the user literally
+    (a non-empty quote), in this conversation or in a remembered fact (v1 rule, D27); ids must be
+    arXiv ids written in the conversation or in the user's earlier research, not recalled by the
+    model (v1 rule, DESIGN §13); positions must point at a paper shown; dates must parse; titles
+    are kept once each. A request to read that names papers (ids, numbers shown or titles) reads
+    exactly those (D28, D29); one that names none becomes find-then-read."""
     human = [m.text for m in messages if isinstance(m, HumanMessage)]
     said = plain(" ".join([*human, *(f.quote for f in profile)]))
     written = " ".join([*(m.text for m in messages), *(e.text() for e in episodes)])
@@ -200,17 +223,20 @@ def checked(
         i for i in request.paper_ids if (m := ARXIV_ID.match(i)) and _written(m[1], written)
     ]
     listed = [n for n in request.listed if 1 <= n <= len(shown)]
-    intent = request.intent
-    if intent == "read" and not (paper_ids or listed):
+    titles = list(dict.fromkeys(t.strip() for t in request.titles if t.strip()))
+    named, intent = bool(paper_ids or listed or titles), request.intent
+    if intent == "read" and not named:
         intent = "discover_read"
+    elif intent == "discover_read" and named:
+        intent = "read"
     return request.model_copy(
         update={
             "intent": intent,
             "paper_ids": paper_ids,
             "listed": listed,
-            "constraints": [c for c in request.constraints if plain(c.quote) in said],
-            "priorities": [p for p in request.priorities if plain(p.quote) in said],
-            "titles": list(dict.fromkeys(t.strip() for t in request.titles if t.strip())),
+            "constraints": [c for c in request.constraints if quoted(c.quote, said)],
+            "priorities": [p for p in request.priorities if quoted(p.quote, said)],
+            "titles": titles,
             "count": request.count if request.count and request.count > 0 else None,
             "published_after": _iso(request.published_after),
             "published_before": _iso(request.published_before),
@@ -241,9 +267,17 @@ def clarify(state: ConversationState) -> dict[str, object]:
     }
 
 
+def names(request: ResearchRequest) -> bool:
+    """The user named the papers (ids, numbers shown, titles): those are the papers read (D29)."""
+    return bool(request.paper_ids or request.listed or request.titles)
+
+
 async def run_discover(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
+    """Search arXiv; after resolve, only for the titles it could not find by title."""
+    request = _request(state)
+    titles = [t for t in request.titles if t not in state["identified"]]
     found = await DISCOVER.ainvoke(
-        {"request": _request(state)},
+        {"request": request.model_copy(update={"titles": titles})},
         {"recursion_limit": RECURSION_LIMIT},
         context=runtime.context,
     )
@@ -251,14 +285,15 @@ async def run_discover(state: ConversationState, runtime: Runtime[Context]) -> d
 
 
 def choose_papers(state: ConversationState) -> dict[str, object]:
-    """The papers the user named, when they named any (D28); else deterministic when the user gave
-    a count or one to three papers are direct matches; otherwise the user picks (resume value:
-    1-based positions in the list)."""
-    papers, count = state["papers"], _request(state).count
-    direct = [p for p in papers if p.relevance == 3]
-    if _request(state).titles:
-        chosen = [p for p in papers if p.named][:MAX_READ]
-    elif count:
+    """The papers the user named, when they named any: those resolve found and those discovery
+    found by title (D28, D29). Otherwise deterministic when the user gave a count or one to three
+    papers are direct matches, else the user picks (resume value: 1-based positions)."""
+    papers, request = state["papers"], _request(state)
+    if names(request):
+        named = [*state["selected"], *(p.reference for p in papers if p.named)]
+        return {"selected": _distinct(named)[:MAX_READ]}
+    count, direct = request.count, [p for p in papers if p.relevance == 3]
+    if count:
         chosen = papers[: min(count, MAX_READ)]
     elif 1 <= len(direct) <= MAX_READ:
         chosen = direct
@@ -277,34 +312,97 @@ def _positions(value: Any) -> list[int]:
     return [int(n) for n in re.findall(r"\d+", str(value))]
 
 
-def resolve(state: ConversationState) -> dict[str, object]:
-    """For a read request: the named ids, then the shown papers it points at, one per paper and as
-    stored paper ids ("arxiv:2305.18323v1"); a versioned id wins over a bare one, which gets its
-    latest version when the read graph ingests it."""
-    request, shown = _request(state), state.get("shown", [])
+async def resolve(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
+    """The papers the user named, as stored paper ids ("arxiv:2305.18323v1"), whatever else the
+    request says (D28, D29): ids, then the shown papers it points at, then titles, matched by code
+    against the user's library first and an arXiv title search second (no model). Titles neither
+    finds are left to discovery. For a library question, a named paper the user has not read is
+    read from arXiv, and the reply says so."""
+    ctx, request, shown = runtime.context, _request(state), state.get("shown", [])
+    async with ctx.pool.connection() as conn:
+        owned = await library.papers(conn, ctx.user_id)
     ids = [
         *request.paper_ids,
         *(f"{shown[n - 1].arxiv_id}v{shown[n - 1].version}" for n in request.listed),
     ]
+    titled: dict[str, str] = {}  # bare id → title, for the notes
+    identified: list[str] = []
+    notes: list[str] = []
+    for name in request.titles:
+        found = [p for p in owned if discover.titled(name, p.title)]
+        found = found or await discover.find_title(name, ctx)
+        if not found:
+            continue
+        paper, identified = found[0], [*identified, name]
+        ids.append(f"{paper.arxiv_id}v{paper.version}")
+        titled[paper.arxiv_id] = paper.title
+        if len(found) > 1:
+            notes.append(
+                f'I took "{name}" to be "{paper.title}" (arXiv {paper.arxiv_id}v{paper.version});'
+                f" {len(found) - 1} other paper(s) have a title starting with it."
+            )
+    selected = _distinct([f"arxiv:{i}" for i in ids])
+    if len(selected) > MAX_READ:
+        notes.append(f"I read at most {MAX_READ} papers per turn: the first {MAX_READ} named.")
+    if request.intent == "library":
+        have = {p.arxiv_id for p in owned}
+        notes += [
+            f"We had not read {titled.get(b, f'arXiv {b}')} before; I read it from arXiv now."
+            for b in map(_bare, selected[:MAX_READ])
+            if b not in have
+        ]
+    return {"selected": selected[:MAX_READ], "identified": identified, "notes": notes}
+
+
+def _bare(reference: str) -> str:
+    """ "arxiv:2305.18323v1" or "2305.18323" → "2305.18323"."""
+    return reference.removeprefix("arxiv:").split("v")[0]
+
+
+def _distinct(references: list[str]) -> list[str]:
+    """One reference per paper, in order; a versioned one wins over a bare one, which gets its
+    latest version when the read graph ingests it."""
     by_paper: dict[str, str] = {}
-    for arxiv_id in ids:  # checked ids: "2305.18323" or "2305.18323v1"
-        paper = arxiv_id.split("v")[0]
-        if paper not in by_paper or ("v" in arxiv_id and "v" not in by_paper[paper]):
-            by_paper[paper] = arxiv_id
-    return {"selected": [f"arxiv:{i}" for i in by_paper.values()][:MAX_READ]}
+    for reference in references:
+        paper = _bare(reference)
+        if paper not in by_paper or (_version(reference) and not _version(by_paper[paper])):
+            by_paper[paper] = reference
+    return list(by_paper.values())
+
+
+def _version(reference: str) -> str:
+    return reference.removeprefix("arxiv:").removeprefix(_bare(reference))
 
 
 async def run_read(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
+    """Each paper is searched on its own, except for a library question that names none, whose
+    papers are searched together (D29). A card discovery screened keeps what the screen said."""
     ctx = runtime.context
+    question, papers = _question(state), state["selected"]
     found = await READ.ainvoke(
-        {"question": _question(state), "papers": state["selected"]}, context=ctx
+        {"question": question, "papers": papers, "merged": _by_meaning(state)}, context=ctx
     )
     async with ctx.pool.connection() as conn:
         cards = await read_cards(conn, found["documents"])
         await library.record_read(conn, ctx.user_id, found["documents"])
-    order = [r.removeprefix("arxiv:").split("v")[0] for r in state["selected"]]
+    screened = {p.arxiv_id: p for p in state["papers"]}
+    cards = [screened.get(c.arxiv_id, c) for c in cards]
+    order = [_bare(r) for r in papers]
     cards.sort(key=lambda c: order.index(c.arxiv_id) if c.arxiv_id in order else len(order))
     return {"evidence": found["evidence"], "missing": found["missing"], "read": cards}
+
+
+async def conflicts(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
+    """A paper the user named is read even when it breaks a stated constraint (D28); the screen
+    judges the named papers discovery did not screen, so the reply can say so (D29). No call
+    without constraints."""
+    request = _request(state)
+    unscreened = [c for c in state["read"] if c.relevance is None]
+    if not (request.constraints and names(request) and unscreened):
+        return {}
+    judged = await discover.check_constraints(request, unscreened, runtime.context)
+    by_id = {c.arxiv_id: c for c in judged}
+    return {"read": [by_id.get(c.arxiv_id, c) for c in state["read"]]}
 
 
 async def read_cards(conn: Connection, documents: list[int]) -> list[PaperCard]:
@@ -340,51 +438,76 @@ async def run_answer(state: ConversationState, runtime: Runtime[Context]) -> dic
 
 
 async def find_in_library(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
-    """A question about papers read before: the user's papers nearest the question (HNSW over the
-    library, D27) are read again, from the stored text, and answered with verified citations."""
+    """A question about papers read before that names none (D27, D29): the user's papers nearest
+    the question (HNSW over their passages) and the papers read in the research records closest to
+    it, fused by reciprocal rank; the top three are read again from the stored text, in one search,
+    and answered with verified citations."""
     ctx = runtime.context
     [vector] = await embed([_question(state)], pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope)
     async with ctx.pool.connection() as conn:
-        papers = await library.closest_papers(conn, ctx.user_id, vector, MAX_READ)
-    return {"selected": papers}
+        by_text = await library.closest_papers(conn, ctx.user_id, vector, LIBRARY_RANKED)
+        owned = {p.reference for p in await library.papers(conn, ctx.user_id)}
+    by_record = [f"arxiv:{i}" for e in state["episodes"] for i in e.read_ids()]
+    by_record = [r for r in dict.fromkeys(by_record) if r in owned]
+    return {"selected": rrf([by_text, by_record])[:MAX_READ]}
 
 
 async def remember(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
-    """Keep what the user said about themselves (one Luna call, only when the turn is about memory
-    or stated constraints or priorities), then record a research turn as an episode (by code)."""
+    """Keep what the user said about themselves, with its source turn (one Luna call, only when
+    the turn is about memory or the user stated constraints or priorities in it, not when they
+    came from the profile), then record a research turn as an episode (by code)."""
     ctx, memory = runtime.context, runtime.store
     if memory is None:
         return {}
     request = _request(state)
+    said = [m.text for m in state["messages"][state["turn_start"] :] if isinstance(m, HumanMessage)]
+    text = plain(" ".join(said))
+    quotes = [*(c.quote for c in request.constraints), *(p.quote for p in request.priorities)]
+    stated = any(quoted(q, text) for q in quotes)
     update = MemoryUpdate(facts=[], forget=[])
-    if request.intent == "memory" or request.constraints or request.priorities:
-        said = [
-            m.text for m in state["messages"][state["turn_start"] :] if isinstance(m, HumanMessage)
-        ]
+    if request.intent == "memory" or stated:
         update = await extract.propose(ctx.gateway, state["profile"], said, scope=ctx.scope)
+        source = {
+            "thread": get_config()["configurable"]["thread_id"],
+            "turn": state["turn_start"],
+            "day": ctx.today.isoformat(),
+        }
         for fact in update.facts:
-            await store.remember(memory, ctx.user_id, fact)
+            await store.remember(memory, ctx.user_id, Remembered(**fact.model_dump(), **source))
         for key in update.forget:
             await store.forget(memory, ctx.user_id, key)
-    found = request.intent != "library" or _answered(state)  # a miss links no paper to the topic
-    if request.intent in RESEARCH and found and (papers := state["read"] or state["papers"]):
-        await store.record(memory, ctx.user_id, uuid4().hex, episode(state, ctx.today, papers))
+    if request.intent in RESEARCH and (record := episode(state, ctx.today)) is not None:
+        await store.record(memory, ctx.user_id, uuid4().hex, record)
     return {"memory": update}
 
 
-def episode(state: ConversationState, today: date, papers: list[PaperCard]) -> Episode:
+def episode(state: ConversationState, today: date) -> Episode | None:
+    """The turn as research, or None when it links no paper to the need: a library question
+    keeps only the papers its answer cites, so a miss records nothing (D27, D29)."""
+    read = _cited(state) if _by_meaning(state) else state["read"]
+    seen = {p.arxiv_id for p in read}
+    listed = [p for p in state["papers"] if p.arxiv_id not in seen]
+    if not (read or listed):
+        return None
     delivered = state["answer"]
     return Episode(
         day=today.isoformat(),
         need=_request(state).need,
-        papers=[f"{p.arxiv_id}v{p.version} {p.title}" for p in papers],
+        read=[_entry(p) for p in read],
+        listed=[_entry(p) for p in listed],
         answer=delivered.short if delivered and not delivered.abstained else "",
     )
 
 
+def _entry(p: PaperCard) -> str:
+    return f"{p.arxiv_id}v{p.version} {p.title}"
+
+
 def respond(state: ConversationState) -> dict[str, object]:
-    """The papers a follow-up can point at: those a search listed, else those just read (D24)."""
-    shown = state["papers"] or state["read"] or state.get("shown", [])
+    """The papers a follow-up can point at: those the reply lists (a search's list, or the library
+    papers cited), else those just read (D24)."""
+    listed = _cited(state) if _by_meaning(state) else state["papers"] or state["read"]
+    shown = listed or state.get("shown", [])
     return {"messages": [AIMessage(reply(state))], "shown": shown, "status": "complete"}
 
 
@@ -394,15 +517,19 @@ def reply(state: ConversationState) -> str:
         return OTHER
     if request.intent == "memory":
         return memory_reply(state)
-    if request.intent == "library" and not _answered(state):
+    if _by_meaning(state) and not _answered(state):
         return NOT_DISCUSSED  # nothing read covers it: offer a search instead (D27, Ewan)
-    parts = []
-    if request.intent == "library":
+    parts = list(state["notes"])
+    if _by_meaning(state):
         parts.append(
-            "From your library:\n" + "\n".join(_title(n, p) for n, p in enumerate(state["read"], 1))
+            "From your library:\n" + "\n".join(_title(n, p) for n, p in enumerate(_cited(state), 1))
         )
-    found = {p.named for p in state["papers"]}
-    if missing := [t for t in request.titles if t not in found and request.intent != "read"]:
+    parts += [
+        _identity(p) for p in state["read"] if p.named and not discover.titled(p.named, p.title)
+    ]
+    parts += [_conflict(p) for p in state["read"] if p.violated]
+    found = {*state["identified"], *(p.named for p in state["papers"])}
+    if missing := [t for t in request.titles if t not in found]:
         parts.append(f"I could not find on arXiv: {'; '.join(missing)}.")
     if state["papers"]:
         parts.append("\n".join(_listing(n, p) for n, p in enumerate(state["papers"], 1)))
@@ -413,12 +540,53 @@ def reply(state: ConversationState) -> str:
         parts.append(delivered.render() + (f"\nSources: {', '.join(sources)}" if sources else ""))
     elif request.intent == "discover_read" and state["papers"] and not state["selected"]:
         parts.append("Nothing was chosen to read.")
+    if names(request):
+        selected = {e.paper_id for e in state["evidence"]}
+        parts += [_mismatch(p) for p in state["read"] if p.reference not in selected]
     return "\n\n".join(parts)
+
+
+def _identity(p: PaperCard) -> str:
+    """The screen, not the title, decided that this is the paper the user named (D28)."""
+    return f'I took "{p.named}" to be "{p.title}" (arXiv {p.arxiv_id}v{p.version}).'
+
+
+def _conflict(p: PaperCard) -> str:
+    quotes = ", ".join(f'"{q}"' for q in p.violated)
+    return (
+        f'Note: "{p.title}" may break what you asked for ({quotes}), judging from its abstract;'
+        " I read it because you named it."
+    )
+
+
+def _mismatch(p: PaperCard) -> str:
+    """A named paper with no sentence on the question: say so, with the paper's own opening
+    sentence from arXiv (stored text, not model text), so the user can see what it is about."""
+    starts = sentence_starts(p.abstract)
+    opening = p.abstract[: starts[1] if len(starts) > 1 else len(p.abstract)].strip()[:OPENING]
+    return (
+        f'"{p.title}" (arXiv {p.arxiv_id}v{p.version}) does not seem to discuss this: nothing in'
+        f' its full text was found for the question. Its abstract begins: "{opening}" Check the'
+        " title or id, or ask me to search arXiv for papers on it."
+    )
 
 
 def _answered(state: ConversationState) -> bool:
     delivered = state["answer"]
     return delivered is not None and not delivered.abstained
+
+
+def _by_meaning(state: ConversationState) -> bool:
+    """A library question that names no paper: the library search chose what to read."""
+    request = _request(state)
+    return request.intent == "library" and not names(request)
+
+
+def _cited(state: ConversationState) -> list[PaperCard]:
+    """The papers read that the delivered answer cites."""
+    delivered = state["answer"]
+    cited = {e.paper_id for e in delivered.evidence} if delivered else set()
+    return [p for p in state["read"] if p.reference in cited]
 
 
 def memory_reply(state: ConversationState) -> str:
@@ -459,10 +627,18 @@ def after_understand(state: ConversationState) -> str:
         "discover": "discover",
         "discover_read": "discover",
         "read": "resolve",
-        "library": "library",
+        "library": "resolve" if names(request) else "library",
         "memory": "remember",
         "other": "respond",
     }[request.intent]
+
+
+def after_resolve(state: ConversationState) -> str:
+    """Titles not found by title go to discovery, which may still find them (D28)."""
+    request = _request(state)
+    if any(t not in state["identified"] for t in request.titles):
+        return "discover"
+    return "read" if state["selected"] else "respond"
 
 
 def after_library(state: ConversationState) -> str:
@@ -479,8 +655,10 @@ def after_remember(state: ConversationState) -> str:
 
 
 def after_discover(state: ConversationState) -> str:
-    wants_reading = _request(state).intent == "discover_read"
-    return "choose_papers" if wants_reading and state["papers"] else "respond"
+    wants_reading = _request(state).intent != "discover"
+    return (
+        "choose_papers" if wants_reading and (state["papers"] or state["selected"]) else "respond"
+    )
 
 
 def after_choice(state: ConversationState) -> str:
@@ -499,6 +677,7 @@ def build(
     graph.add_node("choose_papers", choose_papers)
     graph.add_node("resolve", resolve)
     graph.add_node("read", run_read)
+    graph.add_node("conflicts", conflicts)
     graph.add_node("answer", run_answer)
     graph.add_node("library", find_in_library)
     graph.add_node("respond", respond)
@@ -513,8 +692,9 @@ def build(
     graph.add_edge("clarify", "understand")
     graph.add_conditional_edges("discover", after_discover, ["choose_papers", "respond"])
     graph.add_conditional_edges("choose_papers", after_choice, ["read", "respond"])
-    graph.add_edge("resolve", "read")
-    graph.add_edge("read", "answer")
+    graph.add_conditional_edges("resolve", after_resolve, ["discover", "read", "respond"])
+    graph.add_edge("read", "conflicts")
+    graph.add_edge("conflicts", "answer")
     graph.add_conditional_edges("library", after_library, ["read", "respond"])
     graph.add_edge("answer", "respond")
     graph.add_conditional_edges("respond", after_respond, ["remember", END])

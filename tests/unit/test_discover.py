@@ -4,10 +4,15 @@ tool turn is sent back to DeepSeek. The researcher and screen calls are checked 
 from datetime import date
 from typing import Any
 
-from ara.arxiv.client import Metadata
+from langgraph.runtime import Runtime
+
+from ara.arxiv.client import ArxivClient, Metadata
+from ara.db.pool import Pool
 from ara.graph import discover
-from ara.graph.state import Constraint, PaperCard, ResearchRequest
+from ara.graph.state import MAX_LISTED, Constraint, PaperCard, ResearchRequest
 from ara.llm.prompt import Block, Instructions, Prompt, ToolCall, deepseek_messages
+from tests.unit.test_app import context
+from tests.unit.test_memory import cache
 
 
 def meta(n: int, published: date = date(2024, 1, 1)) -> Metadata:
@@ -183,3 +188,29 @@ def test_a_title_names_a_paper_when_equal_or_its_prefix() -> None:
     assert discover.name(["Attention Is All You Need"], "Attention is all you need", None)
     assert discover.name(["ReWOO"], "Beyond ReWOO: planning", None) is None
     assert discover.name(["GQA"], "Grouped queries", "gqa") == "GQA"
+
+
+def test_named_papers_never_push_the_list_past_its_limit() -> None:
+    titles = [f"Paper {n}" for n in range(1, 8)]
+    shortlist = [card(n, 0.5).model_copy(update={"title": f"Paper {n}"}) for n in range(1, 8)]
+    judged = [judge(p.arxiv_id, 1) for p in shortlist]
+    state: Any = {"request": request(titles=titles), "shortlist": shortlist, "judged": judged}
+    ranked: Any = discover.rank(state)
+    assert len(ranked["papers"]) == MAX_LISTED
+    assert not discover.titled("", "Anything"), "an empty name names nothing"
+
+
+async def test_prerank_always_shortlists_a_paper_named_by_title(pool: Pool) -> None:
+    others = [
+        card(n, 0.0).model_copy(update={"title": f"T{n}", "abstract": "a"}) for n in range(1, 26)
+    ]
+    named = card(99, 0.0).model_copy(update={"title": "ReWOO: Decoupling", "abstract": "a"})
+    found = {c.arxiv_id: c for c in [*others, named]}
+    vectors = {"need": 1, **{f"T{n}. a": 1 for n in range(1, 26)}, "ReWOO: Decoupling. a": 2}
+    await cache(pool, vectors)
+    state: Any = {"request": request(need="need", titles=["ReWOO"]), "found": found}
+    async with ArxivClient() as arxiv:
+        ctx = context(pool, arxiv)
+        result: Any = await discover.prerank(state, Runtime(context=ctx))
+        await ctx.gateway.aclose()
+    assert result["shortlisted"][0] == named.arxiv_id and len(result["shortlisted"]) == 24

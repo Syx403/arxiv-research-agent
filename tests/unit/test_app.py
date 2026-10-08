@@ -2,21 +2,35 @@
 choice, rendering, and interrupts with resume on a real Postgres checkpointer. Nodes that call
 models are exercised by the live check (DESIGN §12: no fake LLMs)."""
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, TypeAliasType, get_args, get_type_hints, is_typeddict
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.runtime import Runtime
 from pydantic import SecretStr
 
 from ara.arxiv.client import ArxivClient
 from ara.db.pool import Pool
-from ara.graph import app
-from ara.graph.state import Constraint, Context, PaperCard, Priority, ResearchRequest
+from ara.graph import answer, app, discover, read
+from ara.graph.state import (
+    Answer,
+    Constraint,
+    Context,
+    Evidence,
+    PaperCard,
+    Priority,
+    ResearchRequest,
+)
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
+from ara.memory import library
+from ara.memory.store import Episode
 from ara.settings import Settings
+from tests.unit.test_search import setup
 
 
 def request(**fields: Any) -> ResearchRequest:
@@ -122,17 +136,29 @@ def test_paper_choice_is_deterministic_when_the_count_or_direct_matches_decide()
     assert app.choose_papers(direct)["selected"] == ["arxiv:2401.00001v1", "arxiv:2401.00002v1"]
 
 
-def test_a_read_resolves_named_ids_and_shown_positions_to_stored_ids() -> None:
+async def resolved(pool: Pool, state: Any) -> Any:
+    """resolve with the user "u"; a title in the user's library is matched without arXiv."""
+    async with ArxivClient() as arxiv:  # sends nothing on these paths
+        ctx = context(pool, arxiv)
+        runtime = Runtime(context=replace(ctx, user_id="u"))
+        result = await app.resolve(state, runtime)
+        await ctx.gateway.aclose()
+    return result
+
+
+async def test_a_read_resolves_named_ids_and_shown_positions_to_stored_ids(pool: Pool) -> None:
     state = base_state(
         request(intent="read", paper_ids=["2305.18323v1"], listed=[2]), shown=[card(1), card(2)]
     )
-    assert app.resolve(state)["selected"] == ["arxiv:2305.18323v1", "arxiv:2401.00002v1"]
+    found = await resolved(pool, state)
+    assert found["selected"] == ["arxiv:2305.18323v1", "arxiv:2401.00002v1"]
 
 
-def test_a_paper_named_and_pointed_at_is_read_once() -> None:
+async def test_a_paper_named_and_pointed_at_is_read_once(pool: Pool) -> None:
     named = request(intent="read", paper_ids=["2401.00002", "2210.03629"], listed=[2])
     state = base_state(named, shown=[card(1), card(2)])
-    assert app.resolve(state)["selected"] == ["arxiv:2401.00002v1", "arxiv:2210.03629"]
+    found = await resolved(pool, state)
+    assert found["selected"] == ["arxiv:2401.00002v1", "arxiv:2210.03629"]
 
 
 def test_the_reply_lists_papers_and_remembers_them_for_the_next_turn() -> None:
@@ -238,3 +264,135 @@ def test_named_papers_are_read_without_asking_and_a_missing_one_is_reported() ->
     )
     assert app.choose_papers(state)["selected"] == ["arxiv:2401.00001v1"]
     assert "I could not find on arXiv: LLMCompiler." in app.reply(state)
+
+
+def test_a_request_that_names_papers_reads_exactly_those() -> None:
+    messages: Any = [HumanMessage("Of ReWOO and LLMCompiler, which is more advanced? ''")]
+    titled = request(intent="discover_read", titles=["ReWOO", "LLMCompiler"])
+    assert app.checked(titled, messages, []).intent == "read"
+    blank = request(constraints=[Constraint(quote=" ", meaning="invented")])
+    assert app.checked(blank, messages, []).constraints == [], "an empty quote is no quote"
+    library = base_state(request(intent="library", titles=["ReWOO"]))
+    assert app.after_understand(library) == "resolve", "a named paper is read, not searched for"
+
+
+def test_titles_resolve_cannot_find_go_to_discovery_with_only_those() -> None:
+    both = request(intent="read", titles=["ReWOO", "LLMCompiler"])
+    assert app.after_resolve(base_state(both, identified=["ReWOO"])) == "discover"
+    done = base_state(both, identified=["ReWOO", "LLMCompiler"], selected=["arxiv:2305.18323v1"])
+    assert app.after_resolve(done) == "read"
+    found = base_state(both, selected=["arxiv:2305.18323v1"], papers=[])
+    assert app.after_discover(found) == "choose_papers", "what resolve found is still read"
+    named = card(2).model_copy(update={"named": "LLMCompiler"})
+    merged = base_state(both, selected=["arxiv:2401.00002v1"], papers=[named, card(3)])
+    assert app.choose_papers(merged)["selected"] == ["arxiv:2401.00002v1"]
+
+
+async def test_resolve_finds_titles_in_the_library_and_says_what_was_not_read(pool: Pool) -> None:
+    gateway, _, second = await setup(pool)  # two papers titled "Cache"; the user read the second
+    async with pool.connection() as conn:
+        await library.record_read(conn, "u", [second])
+    named = request(intent="library", titles=["cache"], paper_ids=["2305.18323"])
+    found = await resolved(pool, base_state(named))
+    assert found["selected"] == ["arxiv:2305.18323", "arxiv:2401.00002v1"]
+    assert found["identified"] == ["cache"]
+    assert found["notes"] == ["We had not read arXiv 2305.18323 before; I read it from arXiv now."]
+    many = request(intent="read", paper_ids=["2305.18323", "2312.04511", "2210.03629", "2401.1"])
+    messages: Any = [HumanMessage("2305.18323 2312.04511 2210.03629 2401.1")]
+    capped = await resolved(pool, base_state(many, messages=messages))
+    assert len(capped["selected"]) == 3 and capped["notes"][0].startswith("I read at most 3")
+    await gateway.aclose()
+
+
+def test_the_reply_says_when_a_named_paper_does_not_fit_or_breaks_a_constraint() -> None:
+    fits = card(1)
+    off = card(2).model_copy(update={"abstract": "We study cache eviction. It is fast."})
+    breaks = card(3).model_copy(update={"violated": ["never fine-tune"]})
+    by_screen = card(4).model_copy(update={"named": "LLMCompiler"})
+    evidence = [
+        Evidence(id="E1", paper_id=p.reference, chunk_id=1, paragraph=0, heading_path="", text="")
+        for p in (fits, breaks, by_screen)
+    ]
+    state = base_state(
+        request(intent="read", paper_ids=["2401.00001"]),
+        read=[fits, off, breaks, by_screen],
+        evidence=evidence,
+        notes=["I took a note."],
+    )
+    text = app.reply(state)
+    assert text.startswith("I took a note.")
+    assert '"Paper 2" (arXiv 2401.00002v1) does not seem to discuss this' in text
+    assert 'Its abstract begins: "We study cache eviction."' in text
+    assert 'Paper 1" (arXiv 2401.00001v1) does not' not in text
+    assert 'Note: "Paper 3" may break what you asked for ("never fine-tune")' in text
+    assert 'I took "LLMCompiler" to be "Paper 4"' in text
+
+
+def test_a_library_answer_lists_and_records_only_the_papers_it_cites() -> None:
+    cited = card(2)
+    answer = Answer(
+        question="q",
+        short="yes",
+        abstained=False,
+        sentences=[],
+        dropped=[],
+        checked=1,
+        rejected=[],
+        evidence=[
+            Evidence(
+                id="E1", paper_id=cited.reference, chunk_id=1, paragraph=0, heading_path="", text=""
+            )
+        ],
+    )
+    state = base_state(request(intent="library"), read=[card(1), cited, card(3)], answer=answer)
+    result: Any = app.respond(state)
+    assert "From your library:\n1. Paper 2 (arXiv 2401.00002v1)" in result["messages"][0].text
+    assert "Paper 1" not in result["messages"][0].text and result["shown"] == [cited]
+    record = app.episode(state, date(2026, 10, 9))
+    assert record is not None and record.read == ["2401.00002v1 Paper 2"] and record.listed == []
+    miss = base_state(request(intent="library"), read=[card(1)], answer=None)
+    assert app.episode(miss, date(2026, 10, 9)) is None, "a miss links no paper to the topic"
+    listing = base_state(request(), papers=[card(1)])
+    assert app.episode(listing, date(2026, 10, 9)) == Episode(
+        day="2026-10-09",
+        need="KV-cache eviction",
+        read=[],
+        listed=["2401.00001v1 Paper 1"],
+        answer="",
+    )
+
+
+def test_every_type_a_checkpoint_holds_is_registered() -> None:
+    """The serializer loads an unregistered type as a plain dict, so every class reachable from a
+    state schema or a Send payload must be in CHECKPOINTED (D29)."""
+    found: set[tuple[str, str]] = set()
+
+    def walk(tp: Any) -> None:
+        if isinstance(tp, TypeAliasType):
+            return walk(tp.__value__)
+        for arg in get_args(tp):
+            walk(arg)
+        if not isinstance(tp, type) or not tp.__module__.startswith("ara."):
+            return
+        if not is_typeddict(tp):
+            if (tp.__module__, tp.__name__) in found:
+                return
+            found.add((tp.__module__, tp.__name__))
+        for hint in get_type_hints(tp).values():
+            walk(hint)
+
+    for schema in (
+        app.ConversationState,
+        discover.DiscoverState,
+        discover.ScreenTask,
+        read.ReadState,
+        read.GatherTask,
+        read.IngestTask,
+        answer.AnswerState,
+        answer.VerifyTask,
+    ):
+        walk(schema)
+    assert found - set(app.CHECKPOINTED) == set()
+    serde = JsonPlusSerializer(allowed_msgpack_modules=app.CHECKPOINTED)
+    sample = read.Found(round=0, documents=[1], query="q", sentences=[], missing=[])
+    assert serde.loads_typed(serde.dumps_typed(sample)) == sample

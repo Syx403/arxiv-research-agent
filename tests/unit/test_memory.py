@@ -3,13 +3,16 @@ remember trust boundary, and the library search. Texts the Store embeds are put 
 cache first, so no request is sent (as in test_search)."""
 
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import date
 from typing import Any
 
 import pytest
 from langchain_core.messages import HumanMessage
+from langgraph.runtime import Runtime
 from pydantic import SecretStr
 
+from ara.arxiv.client import ArxivClient
 from ara.db.pool import Pool
 from ara.graph import app
 from ara.graph.state import Constraint
@@ -17,14 +20,18 @@ from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger
 from ara.memory import extract, library, store
 from ara.memory.extract import MemoryUpdate
-from ara.memory.store import Episode, Fact
+from ara.memory.store import Episode, Fact, Remembered
 from ara.rag.embed import cache_key
 from ara.settings import Settings
-from tests.unit.test_app import base_state, request
+from tests.unit.test_app import base_state, card, context, request
 from tests.unit.test_search import setup, unit
 
-KV = Episode(day="2026-10-01", need="KV-cache eviction", papers=["2306.14048v3 H2O"], answer="")
-MOE = Episode(day="2026-10-02", need="MoE routing", papers=["2401.04088v1 Mixtral"], answer="top-2")
+KV = Episode(
+    day="2026-10-01", need="KV-cache eviction", read=["2306.14048v3 H2O"], listed=[], answer=""
+)
+MOE = Episode(
+    day="2026-10-02", need="MoE routing", read=[], listed=["2401.04088v1 Mixtral"], answer="top-2"
+)
 
 
 async def cache(pool: Pool, vectors: dict[str, int]) -> None:
@@ -54,8 +61,9 @@ async def memory(pool: Pool) -> AsyncIterator[Any]:
     await gateway.aclose()
 
 
-def fact(key: str, quote: str) -> Fact:
-    return Fact(key=key, quote=quote, statement=f"The user said {quote}.")
+def fact(key: str, quote: str) -> Remembered:
+    said = Fact(key=key, quote=quote, statement=f"The user said {quote}.")
+    return Remembered(**said.model_dump(), thread="t", turn=0, day="2026-10-09")
 
 
 async def test_a_newer_fact_replaces_the_old_one_and_forget_deletes(memory: Any) -> None:
@@ -80,12 +88,16 @@ async def test_research_records_are_recalled_by_meaning(pool: Pool, memory: Any)
 
 def test_remember_keeps_only_quotes_from_this_turn_and_known_keys() -> None:
     update = MemoryUpdate(
-        facts=[fact("access", "Hosted  APIs only"), fact("goal", "I never said this")],
+        facts=[
+            fact("access", "Hosted  APIs only"),
+            fact("goal", "I never said this"),
+            fact("empty", "  "),
+        ],
         forget=["access", "unknown", "goal"],
     )
     profile = [fact("goal", "latency"), fact("access", "old")]
     kept = extract.checked(update, profile, ["I use hosted APIs only."])
-    assert [f.key for f in kept.facts] == ["access"]
+    assert [f.key for f in kept.facts] == ["access"], "an empty quote is no quote"
     assert kept.forget == ["goal"], "a key kept this turn is not also forgotten"
 
 
@@ -156,3 +168,47 @@ def test_a_library_question_nothing_read_covers_offers_a_search() -> None:
     nothing = base_state(request(intent="library"), selected=["arxiv:2210.03629v3"], answer=None)
     assert app.reply(nothing) == app.NOT_DISCUSSED
     assert "search arXiv" in app.NOT_DISCUSSED
+
+
+async def test_remember_calls_no_model_when_the_constraints_came_from_the_profile(
+    pool: Pool, memory: Any
+) -> None:
+    """The gateway has unused keys: a model call here would fail the test."""
+    await cache(pool, {"KV-cache eviction": 1})  # the record is indexed by its need
+    remembered = fact("training", "I never fine-tune models")
+    raw = request(constraints=[Constraint(quote="I never fine-tune models", meaning="no tuning")])
+    state = base_state(
+        raw,
+        messages=[HumanMessage("Find papers on tool latency")],
+        profile=[remembered],
+        papers=[card(1)],
+    )
+    async with ArxivClient() as arxiv:
+        ctx = replace(context(pool, arxiv), user_id="u")
+        result = await app.remember(state, Runtime(context=ctx, store=memory))
+        await ctx.gateway.aclose()
+    assert result == {"memory": MemoryUpdate(facts=[], forget=[])}
+    [record] = await memory.asearch(("users", "u", "episodes"))
+    assert record.value["listed"] == ["2401.00001v1 Paper 1"]
+
+
+async def test_a_library_question_fuses_passage_distance_with_research_records(
+    pool: Pool, memory: Any
+) -> None:
+    gateway, first, second = await setup(pool)  # identical papers: passages tie
+    await cache(pool, {"what about cache eviction?": 1})
+    async with pool.connection() as conn:
+        await library.record_read(conn, "u", [first, second])
+        assert [p.arxiv_id for p in await library.papers(conn, "u")] == ["2401.00001", "2401.00002"]
+    record = Episode(
+        day="d", need="n", read=["2401.00002v1 Cache", "2999.00001v1 X"], listed=[], answer=""
+    )
+    state = base_state(
+        request(intent="library", question="what about cache eviction?"), episodes=[record]
+    )
+    async with ArxivClient() as arxiv:
+        ctx = replace(context(pool, arxiv), user_id="u")
+        chosen = await app.find_in_library(state, Runtime(context=ctx))
+        await ctx.gateway.aclose()
+    assert chosen["selected"] == ["arxiv:2401.00002v1", "arxiv:2401.00001v1"], "the record decides"
+    await gateway.aclose()

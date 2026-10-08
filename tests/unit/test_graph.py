@@ -50,7 +50,7 @@ def test_only_the_direct_answer_is_verified_with_its_question() -> None:
 def found(round: int, document: int, query: str, n: list[int], missing: list[str]) -> Found:
     return Found(
         round=round,
-        document=document,
+        documents=[document],
         query=query,
         sentences=[evidence(i) for i in n],
         missing=missing,
@@ -66,11 +66,18 @@ def test_collect_numbers_sentences_and_requeries_each_document_for_its_own_gaps(
     after: Any = {**state, **collected}
     sends = read.after_collect(after)
     assert isinstance(sends, list)
-    assert [(s.arg["document"], s.arg["query"], s.arg["round"]) for s in sends] == [
-        (7, "dataset", 1),
-        (8, "dataset", 1),
-        (8, "metric", 1),
+    assert [(s.arg["documents"], s.arg["query"], s.arg["round"]) for s in sends] == [
+        ([7], "dataset", 1),
+        ([8], "dataset", 1),
+        ([8], "metric", 1),
     ]
+
+
+def test_each_paper_is_searched_alone_unless_a_library_question_merges_them() -> None:
+    state: Any = {"question": "q", "documents": [7, 8], "merged": False}
+    assert [s.arg["documents"] for s in read.to_gather(state)] == [[7], [8]]
+    merged: Any = {**state, "merged": True}
+    assert [s.arg["documents"] for s in read.to_gather(merged)] == [[7, 8]]
 
 
 def test_after_the_requery_only_aspects_no_search_covered_are_missing() -> None:

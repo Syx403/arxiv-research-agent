@@ -563,3 +563,77 @@ decision gets a new entry that names the one it replaces.
 - Rerun of s6-episode (approved; `s6-20261008T170341`, 21 requests, US$0.0026): passed. With the
   D27 prompt fix, understand took the paper's id from the research record (`2305.18323v1`) and read
   it directly; the named-title path is covered by unit tests, not by this run.
+
+## D29 — M4 review fixes; papers the user names are read directly and checked (2026-10-09, Ewan)
+- Context: the M4 strict review found that the checkpoint allowlist D27 added was incomplete
+  (`Found`, `Judgement`, `Block` and `ToolCall` are written to checkpoints by the subgraphs and came
+  back as plain dicts, even without strict mode, so a resumed or replayed subgraph would fail);
+  that the library route did not do what the M4 plan Ewan approved said ("find the relevant papers
+  from the research records and the library, then one merged search over them"): it chose papers by
+  passage distance alone and searched each paper on its own, a deviation D27 did not record; that a
+  library reply listed, and its research record linked, every paper re-read, cited or not; that an
+  empty quote passed both trust boundaries; that `remember` called Luna for constraints taken from
+  the profile (D27 says "stated"); that a library question naming a title said "I could not find on
+  arXiv"; that DESIGN §7's source turn of a fact was not kept; that S6's s6-episode had been fixed
+  and rerun on held-out; that M4 changed the understand and screen prompts and rank after the M3
+  baselines of DESIGN §14.1 were measured; and smaller gaps (tests, the HNSW figures could not be
+  reproduced, a list could exceed five papers, research records did not say which papers were read).
+- Decisions (Ewan: "按你的建议做", plus the rule below and warning on named-paper conflicts):
+  - Papers the user names are read directly, whatever else the request says. Code makes a request
+    that names papers (ids, numbers shown, titles) and asks to read `read` (a `discover_read` with
+    names becomes `read`; DESIGN §14.1 item 3 done now, extended to titles); a library question that
+    names papers reads those too. `resolve` turns ids and numbers into stored ids as before, and
+    titles by code: the user's library first, then one arXiv title search (`ti:"<name>"`, free),
+    matched as D28 matches (equal, or "name:" prefix); the first match by arXiv relevance is taken
+    and the reply says when others share the title. Titles neither finds go to discovery, where
+    D28's screen `named` may still find them ("LLMCompiler"). Ids and titles in one message are now
+    both read (before, the titles were dropped). Each named paper is searched on its own. Not done:
+    when the user names papers and also asks for others ("find two more like ReWOO"), only the
+    named ones are read (as in D28).
+  - Plausibility (Ewan): (a) synthesize may answer by correcting an assumption the evidence
+    contradicts ("Answer: No; the Solver only combines …"), and verify accepts a cited correction as
+    an answer (new prompt versions); (b) when a named paper yields no evidence sentence, the reply
+    says so per paper and quotes the opening sentence of its stored abstract (no model text), with
+    a hint to check the title or id; (c) when only the screen, not the title, identified a named
+    paper, the reply says which paper it took; (d) a library question naming a paper not in the
+    library reads it from arXiv and says it had not been read.
+  - Conflicts (Ewan: warn): a new `conflicts` node runs the screen prompt once on the named papers
+    discovery did not screen, when the request has constraints; a violated constraint is reported
+    ("may break what you asked for (…), judging from its abstract; I read it because you named
+    it"). The paper is still read (D28).
+  - Library questions that name no paper (as planned in M4): the user's papers ranked by passage
+    distance (HNSW, top 10) and the papers read in the three closest research records are fused by
+    reciprocal rank (k = 60, the RRF already used for search); the top three are searched together
+    in one scope (the read subgraph's `merged`), so one rerank and one evidence selection, plus at
+    most one requery of up to three aspects, instead of up to twelve reranks. The reply lists, and
+    the research record links, only the papers the delivered answer cites.
+  - Smaller fixes: quotes must be non-empty (`state.quoted`); `remember` calls Luna only when a
+    constraint or priority quote is in this turn's own messages; profile facts keep their source
+    (`Remembered`: thread, the turn's first message index, day; written by code); research records
+    list papers `read` and `listed` separately; the list never exceeds five papers; S6 counts each
+    turn's "did not wait" check in the denominator; `CHECKPOINTED` completed, with a unit test that
+    walks every state schema and Send payload.
+  - HNSW measured again with a committed script (`uv run ara eval hnsw`, free, read-only): 30 S1
+    questions, LIMIT 50 as the product query; whole corpus 879 chunks, and a probe library of 7
+    papers / 300 chunks (every second paper, rolled back). Forced HNSW (sequential scans and sorting
+    off) against the exact scan: top-10 overlap 1.00 and the same top three papers on every
+    question, in both settings; medians 3.7 against 4.3 ms (whole) and 1.8 against 1.8 ms (library),
+    Python round trip included; unforced, the planner picks the exact scan in both. D27's 0.977 and
+    1.0 / 2.65 ms came from an uncommitted probe on 686 chunks and are replaced by these figures.
+  - Evaluation data: S6's s6-episode moves to dev; five scenarios are drafted for Ewan's review
+    (s6-mismatch, s6-premise, s6-conflict, s6-library-many held-out; s6-compare-ids dev, the D25
+    live failure) and a `cited` check. Four S4 labels change from `discover_read` to `read`, as the
+    rule now requires (v1-c02, dr-flash held-out; v1-c03, dr-rewoo dev); for Ewan's review.
+  - Baselines: the M3 S3/S4 rounds no longer describe the product (M4 and D29 changed the
+    understand, screen, synthesize and verify prompts, rank and the intent rule). S4 and S3 are
+    re-measured on this code (approved: ≈ US$0.01 and ≈ US$0.09) and become the E-round baselines;
+    S2 rounds after D29 are not comparable with M2's smoke numbers, and S5 (D20) was measured with
+    the earlier verify prompt.
+- Recorded, not changed: after "forget" in the same conversation, the fact's words stay in the
+  history, and understand may still apply them; Store embeddings (recall, records) run without a
+  turn scope, so they are outside the per-turn cap and run reports (20 requests, US$0.000006 so far);
+  `remember` runs after the reply in the same graph run, so a failure there would lose the reply
+  (M5 error handlers).
+- Alternatives: keep D28's discovery path for titles (one researcher loop and screening per named
+  title, and the screen's relevance mixed with identity); check named papers' constraints without
+  the screen (a new prompt for the same judgement).

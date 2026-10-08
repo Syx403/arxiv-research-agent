@@ -43,8 +43,8 @@ Constraints
 | Clarify | "Find the best paper to cut my agent's cost" | understand → clarify ⏸ → understand |
 | Discover | "Recent papers on KV-cache eviction for long-context inference" | understand → discover → respond |
 | Discover + read | "Find 2 papers on tool-call scheduling and compare their mechanisms" | understand → discover → choose_papers (⏸ if ambiguous) → read → answer → respond |
-| Read named/selected papers | "Read 2210.03629 and explain how it interleaves reasoning and actions" / "read the second one" | understand → read → answer → respond |
-| Ask the library | "Which papers did we read about MoE routing, and what did they conclude?" | understand → answer (library scope) → respond |
+| Read named/selected papers | "Read 2210.03629 and explain how it interleaves reasoning and actions" / "read the second one" / "read the ReWOO paper" | understand → resolve (ids, numbers, titles by code; D29) → read → conflicts → answer → respond |
+| Ask the library | "Which papers did we read about MoE routing, and what did they conclude?" | understand → library (HNSW + research records, top 3) → read (one search over them) → answer → respond (D29) |
 | Remember / forget | "I only use hosted APIs, no fine-tuning" / "forget that" | any path → remember; a message that only does this: understand → remember → respond (D27) |
 
 Hard limits per turn: ≤ 5 papers listed, ≤ 3 papers read, ≤ 8 arXiv tool calls, one evidence
@@ -83,7 +83,7 @@ ara/
   rag/          sources.py (arxiv html/pdf, qasper), chunking.py, embed.py, ingest.py, search.py,
                 retrieve.py (stemmed BM25 + dense → RRF → rerank top 30 → top 8 passages)
   llm/          gateway.py, prompt.py, prompts/ (text files), stages.py, pricing.py, ledger.py
-  memory/       store.py, extract.py
+  memory/       store.py, extract.py, library.py
   db/           migrations/*.sql, migrate.py, pool.py
   arxiv/        client.py (metadata, HTML/PDF fetch; search API in M3)
   api/          server.py, events.py
@@ -151,6 +151,12 @@ After D27 (M4): `load_context` reads the profile and the three closest research 
 Store; a `memory` intent goes understand → remember → respond, every other turn respond → remember;
 a library question (never clarified) goes `library` (HNSW over the user's papers, top 3) → read →
 answer → respond; reading records the papers in `library_items`.
+After D29: papers the user names (ids, numbers shown, titles) are the papers read, whatever else
+the request says; `resolve` finds titles by code (the user's library, then one arXiv title
+search), leaves titles it cannot find to discovery, and adds notes the reply must carry;
+`conflicts` (after read) screens named papers against the request's constraints; the reply says
+when a named paper has no evidence for the question. A library question that names no paper
+fuses passage distance with research records and searches its three papers together.
 After D24: `understand` also returns `priorities` (what the user cares about: quoted, steers
 relevance and the answer's focus, never removes a paper), `titles` (papers named without an id;
 the researcher looks them up first) and `prefer_recent` (asked for recent work, or any topic search
@@ -168,12 +174,15 @@ dropped. Prerank keeps 24 (three batches); rank keeps relevance ≥ 2 with no vi
 quote, ordered by relevance then similarity, ≤ 5 (D22). Quotes are compared whitespace- and
 case-folded, screen ids by bare arXiv id, and shortlisted papers left unjudged are reported (D23).
 Papers the user names are locked (D28): matched by title in code or by the screen's `named`,
-always shortlisted, listed first and read without asking. `search_arxiv` can order newest first; with `prefer_recent`, rank orders each relevance grade by
-date instead of similarity, and no date window is imposed (D24). Searches end at `Context.today`.
+always shortlisted, listed first and read without asking (since D29 discovery sees only titles
+`resolve` could not find). `search_arxiv` can order newest first; with `prefer_recent`, rank
+orders each relevance grade by date instead of similarity, and no date window is imposed (D24).
+Searches end at `Context.today`.
 
 read — `ingest` × paper (`Send`; idempotent, cached by paper version + pipeline version) →
-`gather` × (paper, question) (`Send`: hybrid search → rerank → `select_evidence`) → `collect`
-→ at most one requery for reported missing aspects.
+`gather` × (scope, question) (`Send`: hybrid search → rerank → `select_evidence`) → `collect`
+→ at most one requery for reported missing aspects. A scope is one paper, or all papers of a
+library question at once (`merged`, D29).
 
 answer — `synthesize` → `prewarm` → `verify` × claim (`Send`) → `assemble` (keep only sentences
 whose every citation passed) → at most one `repair` → `verify` again → `finalize`.
@@ -256,7 +265,8 @@ Indexing
 - `PIPELINE_VERSION` constant (parser + chunker + embedding model). Chunks of other versions are
   never mixed into a search.
 
-Search (scoped to the selected paper versions, or to the user's library)
+Search (scoped to one selected paper version, or to the up to three library papers a library
+question chose, together; D29)
 - BM25 over `chunks.search_text` with ParadeDB `pg_search` 0.26: one ParadeDB index per table
   holding `id`, `document_id` (so the scope filter is pushed down) and the text tokenised twice,
   plain words and English stemming (alias `search_text_stemmed`, D15); queried with `|||` (any
@@ -264,7 +274,8 @@ Search (scoped to the selected paper versions, or to the user's library)
   full-text search (`ts_rank_cd`, query terms OR-ed) stays as an ablation arm (it has no IDF).
 - Dense: exact cosine scan when scoped to ≤ 3 papers (a MATERIALIZED scope keeps the planner off
   any vector index); HNSW for library-wide search (pgvector ≥ 0.8 iterative scans for filtered
-  queries), added with library questions (M4).
+  queries), added with library questions (M4); at today's size the planner keeps the exact scan,
+  and forced HNSW returns the same top 10 (`ara eval hnsw`, D29).
 - Reciprocal rank fusion, k = 60, top 50 from each list → Cohere rerank (`rerank-v4.0-pro`,
   trial key) top 30 → top 8.
 - `select_evidence` (LLM) returns sentence ids from those chunks plus missing aspects; this merges
@@ -426,8 +437,9 @@ are not padded.
 | Episodes (one record per research turn, written by code, D27) | Store `("users", uid, "episodes")`, semantic index on the need | `remember` | `understand` (the three closest to the message) |
 | Library (papers read or saved) | SQL `library_items` | `read`, UI | library questions, UI |
 
-- A profile fact must quote the user literally and keep its source turn (v1 rule). A newer fact
-  with the same key supersedes the old one; "forget" deletes it.
+- A profile fact must quote the user literally and keep its source turn (v1 rule; thread, turn and
+  day, written by code, D29). A newer fact with the same key supersedes the old one; "forget"
+  deletes it.
 - Structured data (library) lives in tables, not in vector memory.
 
 ---
@@ -448,9 +460,9 @@ pinned (verified at M0). One database (`ara`; unit tests use `ara_test` on the s
 | `eval_runs`, `eval_results`, `labels` | evaluation outputs and Ewan's labels |
 | LangGraph tables | checkpoints, store (created by `setup()`) |
 
-Indexes: HNSW on `chunks.embedding` (0004; measured in D27); the ParadeDB (BM25) index on `chunks(id, document_id,
-search_text ×2 tokenizers)`; GIN on `chunks.tsv`; btree on `chunks(document_id)`, `llm_calls(turn_id)`,
-`llm_calls(run_id)`, `eval_results(run_id)`.
+Indexes: HNSW on `chunks.embedding` (0004; measured in D27, again in D29); the ParadeDB (BM25) index
+on `chunks(id, document_id, search_text ×2 tokenizers)`; GIN on `chunks.tsv`; btree on
+`chunks(document_id)`, `llm_calls(turn_id)`, `llm_calls(run_id)`, `eval_results(run_id)`.
 Ingestion takes a per-paper advisory lock and writes a document in one transaction.
 Migrations: numbered SQL files and a ~30-line runner. Each table arrives with the milestone that
 first uses it (M0: `llm_calls`; M1: corpus tables, `embedding_cache`, `eval_runs`, `eval_results`).
@@ -517,7 +529,7 @@ pre-ingested papers so a live demo turn stays short.
 | S3 discovery | PaSa: AutoScholarQuery (dev 15), RealScholarQuery (test 15), seed 20261009; manifest holds ids only, no LangSmith dataset (D22); 30 per round, confirmed by Ewan (D23); each query runs with today = its PaSa date (D24) | 30 | candidate-pool and shortlist recall, gold precision@5 (lower bound), hit@5; adjudication and constraint violations with the judge in E1 | code (M3); + DeepSeek judge + Ewan from E1 | $0.089 measured (D25) |
 | S4 understand/clarify | 12 of v1's questions (translated; 2 rewritten) + 50 drafted cases, each with the day it is asked; labels proposed by Claude and reviewed by Ewan (D22, D24) | 62 | intent accuracy, false-clarify, missed-clarify, per-field accuracy over every field (ids, positions, titles, count, constraints, priorities, dates, prefer_recent) | code | $0.0084 measured (D25) |
 | S5 verifier | QASPER evidence (one sentence per S1 item); 30 DeepSeek paraphrases, 30 perturbed: number 8 and negation 7 by code, entity 8 and over-generalisation 7 by DeepSeek; reviewed by Ewan; 58 after review (D19, D20) | 58 | P/R/F1 on "unsupported", recall per kind; Luna vs DeepSeek | code | $0.0093 measured (D20) |
-| S6 multi-turn + memory | scripted scenarios, drafted by Claude for Ewan's review (D27) | 6 scenarios, 14 turns | scenarios passed, checks passed (reference resolution, constraint retention, update, forget, library answer and abstain) | code | ≈ $0.05 |
+| S6 multi-turn + memory | scripted scenarios, drafted by Claude for Ewan's review (D27, D29) | 11 scenarios, 22 turns | scenarios passed, checks passed (reference resolution, constraint retention, update, forget, library answer and abstain, named papers: mismatch, premise, conflict) | code | ≈ $0.07 |
 | S7 robustness | fault hooks + one prompt-injection document | 6 + 3 turns | graceful-degradation rate, injection success (must be 0) | code | ≈ $0.02 |
 
 Efficiency is reported for every suite: requests, tokens, cache-hit rate, $/task, latency p50/p95.
@@ -599,13 +611,14 @@ testing starts only after the architecture review.
 
 Changes found by the M3 rounds. Each is tuned on dev items and reported on held-out items, as a
 paired arm against the M3 baseline (`s3-20261008T103432`, `s4-20261008T085452`), within the
-per-round cap; nothing here is tuned on the M3 held-out results.
+per-round cap; nothing here is tuned on the M3 held-out results. After D29 the baselines are the
+S3 and S4 rounds re-measured on the D29 code (the M3 rounds predate prompt and rule changes).
 
 | # | Area | Change | Measured by |
 |---|---|---|---|
 | 1 | S3 metrics | report gold precision@5 also divided by its reachable maximum, min(5, gold size); leave out gold published after the query's date (1 of 193 in the M3 round); the judge adjudicates non-gold papers (§11.3) | S3 report |
 | 2 | understand | state that date limits include their day; tighten `priorities` with counter-examples (the topic, the question itself, background are not priorities) | S4 fields |
-| 3 | understand | code rule: a request with arXiv ids and no named titles is `read` | S4 intent; the two-turn read → follow-up live check (≈ 25 requests, ≈ US$0.01) |
+| 3 | understand | ~~code rule: a request with arXiv ids and no named titles is `read`~~ done in D29 (any named paper) | S6 s6-compare-ids; S4 intent |
 | 4 | discovery | 50 results per search instead of 20 (free on arXiv; costs researcher tokens and abstract embeddings) | S3 pool recall, $/query |
 | 5 | discovery | researcher prompt: broader queries (OR of synonyms, fewer quoted AND chains; 21 of 237 searches returned nothing) | S3 pool recall |
 | 6 | discovery | larger prerank shortlist than 24 (it lost 0.08 of held-out recall) | S3 shortlist recall, screen cost |

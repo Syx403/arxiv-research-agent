@@ -2,7 +2,7 @@
 first: BM25 (two tokenizers, D15), native full-text search, exact dense search, and reciprocal rank
 fusion. Composing them into the product pipeline happens in the read subgraph (M2)."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from typing import LiteralString
 
 from ara.db.pool import Connection
@@ -60,9 +60,9 @@ async def dense(
     return await _ids(conn, DENSE, {"vector": vector, "documents": list(documents), "limit": limit})
 
 
-def rrf(rankings: Sequence[Sequence[int]], k: int = RRF_K) -> list[int]:
+def rrf[T: Hashable](rankings: Sequence[Sequence[T]], k: int = RRF_K) -> list[T]:
     """Reciprocal rank fusion: score(d) = Σ 1 / (k + rank); ties keep first appearance."""
-    scores: dict[int, float] = {}
+    scores: dict[T, float] = {}
     for ranking in rankings:
         for rank, item in enumerate(ranking, start=1):
             scores[item] = scores.get(item, 0.0) + 1 / (k + rank)

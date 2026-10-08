@@ -244,6 +244,7 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
         "answer": None,
         "messages": [reply],
     }
+    assert s6.check({"cited": ["2401.00002"]}, state, [], shown) == ["cited=['2401.00002']"]
     profile = [Fact(key="k", quote="I never fine-tune models", statement="s")]
     passing = {
         "intent": "read",
@@ -264,4 +265,9 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
         "s6-forget",
         "s6-refer",
         "s6-episode",
+        "s6-mismatch",
+        "s6-premise",
+        "s6-conflict",
+        "s6-library-many",
+        "s6-compare-ids",
     ]

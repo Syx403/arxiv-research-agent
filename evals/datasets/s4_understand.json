@@ -38,7 +38,7 @@
       "message": "Of these three papers, ReWOO, An LLM Compiler for Parallel Function Calling and Agentless: Demystifying LLM-based Software Engineering Agents, whose technique is the most cutting-edge? Compare them and tell me.",
       "expected": {
         "clarify": false,
-        "intent": "discover_read",
+        "intent": "read",
         "paper_ids": [],
         "listed": [],
         "titles": [
@@ -53,7 +53,7 @@
         "published_before": null,
         "prefer_recent": false
       },
-      "note": "Rewritten (Ewan): v1 asked which was submitted in 2024, a question built from its answer. Judging the technique needs the full text.",
+      "note": "Rewritten (Ewan): v1 asked which was submitted in 2024, a question built from its answer. Judging the technique needs the full text; intent read since D29: papers the user names are read, so code makes a named request read",
       "reviewed": true
     },
     {
@@ -66,7 +66,7 @@
       "message": "Compare only the original papers of LLMCompiler, ReWOO and GQA, these three. I use off-the-shelf model APIs to run several external tools, and my main goal is to schedule them in parallel by their dependencies to cut waiting time. Rank the three by how directly they match this goal and briefly explain each one's mechanism; no optimising model weights.",
       "expected": {
         "clarify": false,
-        "intent": "discover_read",
+        "intent": "read",
         "paper_ids": [],
         "listed": [],
         "titles": [
@@ -87,7 +87,7 @@
         "published_before": null,
         "prefer_recent": false
       },
-      "note": "translated from Chinese (D24); no ids, so find then read",
+      "note": "translated from Chinese (D24); no ids, so find then read; intent read since D29: papers the user names are read, so code makes a named request read",
       "reviewed": true
     },
     {
@@ -695,7 +695,7 @@
       "message": "Read the ReWOO paper and explain how its planner avoids repeated observations",
       "expected": {
         "clarify": false,
-        "intent": "discover_read",
+        "intent": "read",
         "paper_ids": [],
         "listed": [],
         "titles": [
@@ -708,7 +708,7 @@
         "published_before": null,
         "prefer_recent": false
       },
-      "note": "a title, not an id: find first",
+      "note": "a title, not an id: find first; intent read since D29: papers the user names are read, so code makes a named request read",
       "reviewed": true
     },
     {
@@ -721,7 +721,7 @@
       "message": "How does FlashAttention's tiling reduce memory traffic? Read the original paper.",
       "expected": {
         "clarify": false,
-        "intent": "discover_read",
+        "intent": "read",
         "paper_ids": [],
         "listed": [],
         "titles": [
@@ -734,7 +734,7 @@
         "published_before": null,
         "prefer_recent": false
       },
-      "note": "",
+      "note": "intent read since D29: papers the user names are read, so code makes a named request read",
       "reviewed": true
     },
     {

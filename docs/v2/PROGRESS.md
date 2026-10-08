@@ -12,7 +12,7 @@ Update this file at the end of every working session: what was done, what was sp
 | M1 RAG + S1 | done (2026-10-08) | sources (arXiv HTML/PDF, QASPER), chunking, cached embeddings, ingestion, BM25 ×2 / FTS / dense / RRF / rerank, eval runner + S1; S1 live on 2 papers (6 items) |
 | M2 Read + answer | done (2026-10-08), reviewed | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20); review fixes and a live check of requery, prewarm and repair (D21) |
 | M3 Understand + discover | done (2026-10-08), reviewed; S3/S4 first rounds run (D25) | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); priorities, titles, recency, today, English S4 of 62 items (D24); S4 labels await Ewan's review |
-| M4 Memory | done (2026-10-09); S6 reviewed and run | profile + research records in the Store, library + HNSW, `memory` intent, library route; live: 2 S6 scenarios (D27) |
+| M4 Memory | done (2026-10-09); S6 reviewed and run; review fixes built (D29), awaiting the S6 round | profile + research records in the Store, library + HNSW, `memory` intent, library route; live: 2 S6 scenarios (D27); named papers read directly, merged library search (D29) |
 | M5 Reliability + UI | not started | |
 | Architecture review (Ewan) | — | gate before any large-scale LLM testing |
 | E1–E6 evaluation rounds | — | ≤ US$1 each |
@@ -208,3 +208,22 @@ Update this file at the end of every working session: what was done, what was sp
 - 2026-10-09 — D28: papers named by id or title are locked (code title match, else the screen's
   `named`; always shortlisted, listed first, read without asking; a name not found is reported).
   s6-episode rerun passed (understand used the research record's id). 113 unit tests. Next: M5.
+- 2026-10-09 — M4 strict review, then fixes approved by Ewan (D29). Review found: an incomplete
+  checkpoint allowlist (subgraph types loaded back as dicts), the library route not built as the
+  approved plan said (an unrecorded deviation), library replies and records listing uncited papers,
+  empty quotes passing both trust boundaries, `remember` calling Luna for profile constraints, a
+  false "could not find on arXiv" on library questions, no source turn on facts, S6 tuned on a
+  held-out scenario, and stale M3 baselines. Ewan added a rule: papers the user names (id or title)
+  are read directly, and the reply says when a question does not fit the paper or a named paper
+  breaks a constraint. Built: `resolve` finds titles by code (library, then an arXiv title search),
+  discovery only for titles it cannot find; `conflicts` node (screen prompt on unscreened named
+  papers); premise correction in the synthesize and verify prompts; per-paper "does not seem to
+  discuss this" notes quoting the stored abstract; library questions fuse HNSW with research
+  records and search their papers together; quotes non-empty; facts keep thread, turn and day;
+  records split read and listed; `ara eval hnsw` (free: top-10 overlap 1.00 on 879 chunks and on a
+  300-chunk library; the planner still picks the exact scan); S6 s6-episode to dev plus five draft
+  scenarios; four S4 labels `discover_read` → `read`. 124 unit tests. No billable calls (one unit
+  test reached OpenAI with a placeholder key before its embedding was cached: HTTP 401, nothing
+  billed). Next: Ewan reviews the S6 drafts and the S4 label changes; then the approved runs: S6
+  (≈ US$0.07, cap US$0.10), S4 re-baseline (≈ US$0.01, cap US$0.05), S3 re-baseline (≈ US$0.09,
+  cap US$0.20), off-peak.
