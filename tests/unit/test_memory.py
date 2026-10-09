@@ -229,3 +229,25 @@ async def test_library_candidates_fuse_passage_distance_with_research_records(
     assert [p.arxiv_id for p in found] == ["2401.00002", "2401.00001"], "the record decides the tie"
     assert owned == {"2401.00001", "2401.00002"}
     await gateway.aclose()
+
+
+def test_a_question_about_our_history_names_only_ids_the_user_wrote() -> None:
+    """D32: an id taken from a research record does not make a library question a named read;
+    the library search, which ranks that record's papers, decides."""
+    messages: Any = [HumanMessage("What did the papers we read about KV caches find?")]
+    raw = request(intent="library", paper_ids=["2306.14048v3"])
+    assert app.checked(raw, messages, [], [], [KV]).paper_ids == []
+    written: Any = [HumanMessage("What did 2306.14048 we read find?")]
+    assert app.checked(raw, written, [], [], [KV]).paper_ids == ["2306.14048v3"]
+
+
+async def test_a_shared_name_resolves_to_the_paper_closest_to_the_need(pool: Pool) -> None:
+    """D32: "Gorilla" names a consensus protocol and an API-calling LLM; the need decides."""
+    consensus = card(1).model_copy(update={"title": "Gorilla: consensus", "abstract": "a"})
+    apis = card(2).model_copy(update={"title": "Gorilla: APIs", "abstract": "a"})
+    await cache(pool, {"API hallucination": 1, "Gorilla: consensus. a": 2, "Gorilla: APIs. a": 1})
+    async with ArxivClient() as arxiv:
+        ctx = context(pool, arxiv)
+        ranked = await app.closest_to("API hallucination", [consensus, apis], ctx)
+        await ctx.gateway.aclose()
+    assert ranked == [apis, consensus]

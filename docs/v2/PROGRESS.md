@@ -260,3 +260,8 @@ Update this file at the end of every working session: what was done, what was sp
   which did not cover the number of tokens consumed by each task, so this evidence comes from a
   new arXiv search."), but its answer abstained: the question still asked what "the papers we
   read" said. Proposals await Ewan; nothing tuned on these held-out results.
+- 2026-10-09 — D32 fixes (Ewan approved a-d): library questions name papers only by ids the user
+  wrote; `need` states the topic, not our history; remembered facts apply to named reads; a shared
+  title ("Gorilla:") resolves to the paper closest to the need (found while drafting, before any
+  run). Four scenarios moved to dev; four held-out drafts await Ewan. 129 unit tests. No billable
+  calls. Next: Ewan reviews the drafts; S6 (dry run US$0.136, cap US$0.15) and S4 (≈ US$0.008).

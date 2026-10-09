@@ -1,6 +1,6 @@
 {
   "suite": "s6",
-  "labels": "drafted by Claude, reviewed by Ewan on 2026-10-09 (D27); s6-episode moved to dev and five scenarios added for Ewan's review (D29); s6-library-many changed and two scenarios added for Ewan's review (D30)",
+  "labels": "drafted by Claude, reviewed by Ewan on 2026-10-09 (D27); s6-episode moved to dev and five scenarios added for Ewan's review (D29); s6-library-many changed and two scenarios added for Ewan's review (D30); four scenarios moved to dev and four held-out ones drafted for Ewan's review (D32)",
   "checks": {
     "intent": "the request's intent",
     "constraint": "a constraint quote covers this phrase",
@@ -214,8 +214,8 @@
     },
     {
       "id": "s6-premise",
-      "split": "test",
-      "note": "D29: a false assumption (ReWOO's Solver calls no tools) is corrected with a verified, cited direct answer",
+      "split": "dev",
+      "note": "D29: a false assumption (ReWOO's Solver calls no tools) is corrected with a verified, cited direct answer; dev since D32: fixes were made after its held-out result",
       "sessions": [
         [
           {
@@ -233,8 +233,8 @@
     },
     {
       "id": "s6-conflict",
-      "split": "test",
-      "note": "D29: a paper named by title is found by an arXiv title search and read; its conflict with a remembered constraint is reported",
+      "split": "dev",
+      "note": "D29: a paper named by title is found by an arXiv title search and read; its conflict with a remembered constraint is reported; dev since D32: fixes were made after its held-out result",
       "sessions": [
         [
           {
@@ -263,8 +263,8 @@
     },
     {
       "id": "s6-library-many",
-      "split": "test",
-      "note": "D29/D30: a question about our history over several papers: every relevant paper is listed, each searched on its own",
+      "split": "dev",
+      "note": "D29/D30: a question about our history over several papers: every relevant paper is listed, each searched on its own; dev since D32: fixes were made after its held-out result",
       "sessions": [
         [
           {
@@ -322,8 +322,8 @@
     },
     {
       "id": "s6-library-fallback",
-      "split": "test",
-      "note": "D30: the papers we read are relevant but do not answer, so arXiv is searched once and the reply says so",
+      "split": "dev",
+      "note": "D30: the papers we read are relevant but do not answer, so arXiv is searched once and the reply says so; dev since D32: fixes were made after its held-out result",
       "sessions": [
         [
           {
@@ -358,6 +358,119 @@
               "intent": "discover_read",
               "read_at_most": 3,
               "answered": true
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-history-list",
+      "split": "test",
+      "note": "D32 held-out: a question about our history lists the relevant papers read and answers from them",
+      "sessions": [
+        [
+          {
+            "message": "Read 2312.04511 and explain how it schedules function calls.",
+            "expect": {
+              "intent": "read",
+              "answered": true
+            }
+          },
+          {
+            "message": "Read 2305.18323 and explain how its Worker gets evidence.",
+            "expect": {
+              "intent": "read",
+              "answered": true
+            }
+          }
+        ],
+        [
+          {
+            "message": "Which of the papers we read run tool calls in parallel, and how do they schedule them?",
+            "expect": {
+              "intent": "library",
+              "answered": true,
+              "listed": [
+                "2312.04511"
+              ],
+              "cited": [
+                "2312.04511"
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-history-fallback",
+      "split": "test",
+      "note": "D32 held-out: the papers we read are relevant but do not answer, so arXiv is searched once",
+      "sessions": [
+        [
+          {
+            "message": "Read 2312.04511 and explain how it schedules function calls.",
+            "expect": {
+              "intent": "read",
+              "answered": true
+            }
+          }
+        ],
+        [
+          {
+            "message": "What did the papers we read about parallel function calling say about handling tool calls that fail or time out?",
+            "expect": {
+              "intent": "library",
+              "searched_instead": true,
+              "reply_has": "2312.04511"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-premise-parallel",
+      "split": "test",
+      "note": "D32 held-out: a false assumption (LLMCompiler runs its calls in parallel) is corrected with a verified answer",
+      "sessions": [
+        [
+          {
+            "message": "Read 2312.04511 and explain why LLMCompiler runs every function call one after another to avoid race conditions.",
+            "expect": {
+              "intent": "read",
+              "selected": [
+                "2312.04511"
+              ],
+              "answered": true
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-conflict-train",
+      "split": "test",
+      "note": "D32 held-out: a paper named by title is read and its conflict with a remembered constraint is reported",
+      "sessions": [
+        [
+          {
+            "message": "I only use hosted model APIs and never train models myself.",
+            "expect": {
+              "intent": "memory",
+              "profile_has": "never train models"
+            }
+          }
+        ],
+        [
+          {
+            "message": "Read the Gorilla paper and explain how it reduces hallucinated API calls.",
+            "expect": {
+              "intent": "read",
+              "selected": [
+                "2305.15334"
+              ],
+              "answered": true,
+              "constraint": "never train models",
+              "reply_has": "I read it because you named it"
             }
           }
         ]

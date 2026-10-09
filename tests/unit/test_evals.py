@@ -279,4 +279,8 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
         "s6-compare-ids",
         "s6-library-fallback",
         "s6-no-ask",
+        "s6-history-list",
+        "s6-history-fallback",
+        "s6-premise-parallel",
+        "s6-conflict-train",
     ]

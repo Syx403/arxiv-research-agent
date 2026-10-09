@@ -29,7 +29,10 @@ Intent:
 
 Fields:
 - need: the research need as one self-contained sentence, with references resolved ("the second
-  one" becomes the paper's title). For discovery it should read as a search brief.
+  one" becomes the paper's title). For discovery it should read as a search brief. State the topic
+  itself, never our history: for "what did the papers we read say about X?" the need is about X
+  ("how many tokens ReAct-style agents consume per task"), since the answer may come from new
+  papers too.
 - question: for "read" and "discover_read", the question to answer from the papers; otherwise
   null.
 - paper_ids: arXiv ids written in the latest message, with the version if one is given; and, when
@@ -42,9 +45,9 @@ Fields:
 - count: how many papers the user asks for, only if stated ("two papers", "pick one").
 - constraints: hard requirements a paper must meet, stated by the user now, earlier in the
   conversation, or in what the user told us before (for example "no fine-tuning", "only hosted
-  APIs"); apply a remembered fact to every search it bears on. A paper that breaks one is
-  removed, so a wish, a preference or a goal is not a constraint, and a date limit goes in the
-  date fields, not here.
+  APIs"); apply a remembered fact to every request it bears on, reading named papers included. A
+  paper that breaks one is removed, so a wish, a preference or a goal is not a constraint, and a
+  date limit goes in the date fields, not here.
 - priorities: what the user cares about or wants optimised (now, earlier, or remembered), which
   should steer the choice of papers and the focus of the answer without removing any paper (for
   example "latency matters most", "I care about API cost", "ideally with released code"). The

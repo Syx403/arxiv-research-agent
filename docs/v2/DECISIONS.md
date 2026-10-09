@@ -726,3 +726,30 @@ decision gets a new entry that names the one it replaces.
   is still verified.
 - Replaces: D30's code-assembled opening (kept as the fallback text and as the facts given to the
   model).
+
+## D32 — Fixes from the D30 S6 round; four scenarios to dev, four new held-out (2026-10-09, Ewan)
+- Context: S6 on the D30/D31 code (`s6-20261009T044915`) failed s6-library-many, s6-premise and
+  s6-conflict, and s6-library-fallback passed with an abstaining answer (PROGRESS has the causes).
+- Decisions (Ewan: fix a-d as proposed; the scenarios that informed the fixes become dev, and new
+  held-out ones are written):
+  - (a) A library question names a paper only by an id the user wrote in the conversation; ids
+    from research records no longer pass `checked` for it (they still do for other intents). The
+    library search ranks those records' papers anyway, so nothing is lost, and the reply lists the
+    relevant papers.
+  - (b) understand's `need` states the topic, never our history ("what did the papers we read say
+    about X?" → a need about X), so a fallback arXiv search answers and verifies a question its new
+    papers can answer.
+  - (c) understand applies a remembered fact to every request it bears on, named reads included
+    (it said "every search"), so a named paper is checked against remembered constraints.
+  - (d) s6-premise's abstention instead of a premise correction is recorded, not tuned; the E rounds
+    look at it on dev.
+  - Found while drafting the new held-out scenarios (before any run) and fixed: two arXiv papers
+    have titles starting "Gorilla:" (a consensus protocol, ranked first by arXiv, and the API-calling
+    LLM), so D29's "first match by arXiv relevance" would read the wrong paper. Several matches are
+    now ordered by embedding similarity of title and abstract to the need, as prerank scores
+    candidates (one embedding request); the reply still says others share the name.
+  - S6: s6-library-many, s6-premise, s6-conflict and s6-library-fallback move to dev; held-out
+    drafts for Ewan's review: s6-history-list, s6-history-fallback, s6-premise-parallel,
+    s6-conflict-train (17 scenarios, 33 turns).
+- Consequence: the understand prompt changed again, so S4 is re-measured (≈ US$0.008) and replaces
+  `s4-20261009T040617` as the baseline; S3 is not affected (it builds requests without understand).

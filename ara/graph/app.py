@@ -227,13 +227,17 @@ def checked(
 ) -> ResearchRequest:
     """The trust boundary for understand: a constraint or a priority must quote the user literally
     (a non-empty quote), in this conversation or in a remembered fact (v1 rule, D27); ids must be
-    arXiv ids written in the conversation or in the user's earlier research, not recalled by the
-    model (v1 rule, DESIGN §13); positions must point at a paper shown; dates must parse; titles
-    are kept once each. A request to read that names papers (ids, numbers shown or titles) reads
-    exactly those (D28, D29); one that names none becomes find-then-read."""
+    arXiv ids written in the conversation or in the user's earlier research (for a library
+    question, the conversation only: D32), not recalled by the model (v1 rule, DESIGN §13);
+    positions must point at a paper shown; dates must parse; titles are kept once each. A request
+    to read that names papers (ids, numbers shown or titles) reads exactly those (D28, D29); one
+    that names none becomes find-then-read."""
     human = [m.text for m in messages if isinstance(m, HumanMessage)]
     said = plain(" ".join([*human, *(f.quote for f in profile)]))
-    written = " ".join([*(m.text for m in messages), *(e.text() for e in episodes)])
+    said_here = " ".join(m.text for m in messages)
+    # a question about our history names a paper only by an id the user wrote; ids from research
+    # records are left to the library search, which ranks those papers anyway (D32)
+    written = " ".join([said_here, *(e.text() for e in episodes if request.intent != "library")])
     paper_ids = [
         i for i in request.paper_ids if (m := ARXIV_ID.match(i)) and _written(m[1], written)
     ]
@@ -377,6 +381,8 @@ async def resolve(state: ConversationState, runtime: Runtime[Context]) -> dict[s
         found = found or await discover.find_title(name, ctx)
         if not found:
             continue
+        if len(found) > 1:  # several papers share the name: the one closest to the need (D32)
+            found = await closest_to(request.need, found, ctx)
         paper, identified = found[0], [*identified, name]
         ids.append(f"{paper.arxiv_id}v{paper.version}")
         titled[paper.arxiv_id] = paper.title
@@ -396,6 +402,15 @@ async def resolve(state: ConversationState, runtime: Runtime[Context]) -> dict[s
             if b not in have
         ]
     return {"selected": selected[:MAX_READ], "identified": identified, "notes": notes}
+
+
+async def closest_to(need: str, papers: list[PaperCard], ctx: Context) -> list[PaperCard]:
+    """The papers ordered by embedding similarity of title and abstract to the need (as prerank
+    scores candidates; cached embeddings, unit vectors, so the dot product is the cosine)."""
+    texts = [need, *(f"{p.title}. {p.abstract}" for p in papers)]
+    target, *vectors = await embed(texts, pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope)
+    scores = [float(v @ target) for v in vectors]
+    return [p for _, p in sorted(zip(scores, papers, strict=True), key=lambda x: -x[0])]
 
 
 def _bare(reference: str) -> str:
