@@ -508,8 +508,12 @@ def relevant_first(judged: list[PaperCard]) -> list[PaperCard]:
 
 
 def search_instead(state: ConversationState) -> dict[str, object]:
-    """The library papers read did not answer: search arXiv for the same question, once (D30)."""
+    """The papers read for a question about our history did not answer: search arXiv for the same
+    question, once (D30), as a topic search: papers named by id or title (also an id taken from a
+    research record) were the ones just read, so the names are dropped."""
+    request = _request(state)
     return {
+        "request": request.model_copy(update={"paper_ids": [], "listed": [], "titles": []}),
         "earlier": state["read"],
         "gaps": state["missing"],
         "papers": [],
@@ -752,8 +756,10 @@ def after_choice(state: ConversationState) -> str:
 
 
 def after_answer(state: ConversationState) -> str:
-    """A library question whose papers do not answer it is searched on arXiv, once (D30)."""
-    if _by_meaning(state) and not _answered(state) and not state["earlier"]:
+    """A question about our history whose papers do not answer it is searched on arXiv, once,
+    whether its papers were found by the library search or named (D30)."""
+    asked = _request(state).intent == "library"
+    if asked and state["read"] and not _answered(state) and not state["earlier"]:
         return "search_instead"
     return "respond"
 

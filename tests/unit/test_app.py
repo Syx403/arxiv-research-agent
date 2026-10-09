@@ -360,6 +360,10 @@ def test_library_papers_that_do_not_answer_lead_to_one_arxiv_search() -> None:
         missing=["token use per task"],
     )
     assert app.after_answer(unanswered) == "search_instead"
+    named: Any = {**unanswered, "request": request(intent="library", paper_ids=["2401.00001v1"])}
+    assert app.after_answer(named) == "search_instead", "also when a record named the paper"
+    unnamed: Any = app.search_instead(named)["request"]
+    assert not app.names(unnamed) and unnamed.intent == "library"
     moved: Any = {**unanswered, **app.search_instead(unanswered)}
     assert moved["earlier"] == read_first and moved["read"] == [] and moved["answer"] is None
     assert moved["gaps"] == ["token use per task"] and moved["missing"] == []

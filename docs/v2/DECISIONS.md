@@ -678,7 +678,12 @@ decision gets a new entry that names the one it replaces.
     not cover <aspects>, so I searched arXiv:'. It is assembled by code from this turn's facts, so
     no unverified model sentence is delivered (D19); without aspects it says "what you asked".
     Papers just tried are not offered again as library candidates in that search (Claude's
-    choice). A library question that names a paper keeps D29(d).
+    choice). A library question that names a paper keeps D29(d). Fixed after the first S6 attempt:
+    the fallback applies to every library question whose papers were read and did not answer,
+    also when understand took the paper's id from a research record ("the papers we read about
+    reasoning-and-acting agents" became a named read of ReAct, which then only got D29's "does not
+    seem to discuss this"); the arXiv search drops the names, so its papers are chosen as for a
+    topic and are not reported as mismatches.
   - Evidence, on every reading path (replaces D29's `merged`): each paper's own BM25 + dense
     candidates fused by RRF, its top 30; one Cohere rerank call over all papers' candidates; each
     paper keeps its top 8 (Ewan: 8, from the S1 figures above); one `select_evidence` per paper; at
