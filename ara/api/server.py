@@ -11,6 +11,7 @@ from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -18,11 +19,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Command
 from pydantic import BaseModel
 
+from ara.api import conversations as chats
 from ara.api import events
 from ara.arxiv.client import ArxivClient
 from ara.db.migrate import migrate
@@ -55,6 +58,7 @@ class Services:
     gateway: Gateway
     arxiv: ArxivClient
     memory: BaseStore
+    checkpointer: AsyncPostgresSaver
     graph: CompiledStateGraph[Any, Any, Any, Any]
     locks: defaultdict[str, asyncio.Lock]
 
@@ -84,8 +88,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         gateway = Gateway(settings, ledger)
         stack.push_async_callback(gateway.aclose)
         memory = await store.open_store(pool, gateway)
-        graph = conversation.build(await conversation.checkpointer(pool), memory)
-        services = Services(pool, gateway, arxiv, memory, graph, defaultdict(asyncio.Lock))
+        saver = await conversation.checkpointer(pool)
+        graph = conversation.build(saver, memory)
+        services = Services(pool, gateway, arxiv, memory, saver, graph, defaultdict(asyncio.Lock))
         yield
         services = None
 
@@ -105,6 +110,10 @@ class Message(BaseModel):
 
 class Resume(BaseModel):
     answer: str
+
+
+class Rename(BaseModel):
+    title: str
 
 
 @api.get("/api/graph")
@@ -133,39 +142,74 @@ def _drawn(mermaid: str) -> str:
     return "\n".join(lines)
 
 
-@api.post("/api/threads")
-def new_thread() -> dict[str, str]:
+@api.get("/api/conversations")
+async def conversations() -> list[dict[str, Any]]:
+    """The user's conversations, most recent first (the sidebar)."""
+    async with _services().pool.connection() as conn:
+        return await chats.listed(conn, USER)
+
+
+@api.post("/api/conversations")
+def new_conversation() -> dict[str, str]:
+    """An id for a new conversation; it is stored, and listed, from its first message."""
     return {"id": uuid4().hex}
 
 
-@api.get("/api/threads/{thread_id}")
-async def thread(thread_id: str) -> dict[str, Any]:
+@api.get("/api/conversations/{conversation_id}")
+async def opened(conversation_id: str) -> dict[str, Any]:
+    """Every turn of a conversation, each with its reply, answer, evidence, papers, path through
+    the graph and model calls, and the question it waits on, if any."""
+    async with _services().pool.connection() as conn:
+        found = await chats.opened(conn, conversation_id, USER)
+    if found is None:
+        raise HTTPException(404, f"no conversation {conversation_id}")
+    return found
+
+
+@api.patch("/api/conversations/{conversation_id}")
+async def renamed(conversation_id: str, body: Rename) -> dict[str, str]:
+    async with _services().pool.connection() as conn:
+        if not await chats.rename(conn, conversation_id, USER, body.title):
+            raise HTTPException(404, f"no conversation {conversation_id}")
+    return {"id": conversation_id, "title": body.title}
+
+
+@api.delete("/api/conversations/{conversation_id}")
+async def deleted(conversation_id: str) -> dict[str, str]:
+    """The conversation, its turns and its checkpoints; the ledger keeps its spend (D36)."""
     s = _services()
-    snapshot = await s.graph.aget_state(_config(thread_id))
-    values = snapshot.values or {}
-    waiting = [i.value for i in snapshot.interrupts]
-    return {**events.turn(values), "waiting": waiting[0] if waiting else None}
+    async with s.pool.connection() as conn:
+        if not await chats.delete(conn, conversation_id, USER):
+            raise HTTPException(404, f"no conversation {conversation_id}")
+    await s.checkpointer.adelete_thread(conversation_id)
+    return {"deleted": conversation_id}
 
 
-@api.post("/api/threads/{thread_id}/messages", response_class=EventSourceResponse)
-async def message(thread_id: str, body: Message) -> AsyncIterator[ServerSentEvent]:
-    async for event in _turn(thread_id, {"messages": [HumanMessage(body.text)]}):
+@api.post("/api/conversations/{conversation_id}/messages", response_class=EventSourceResponse)
+async def message(conversation_id: str, body: Message) -> AsyncIterator[ServerSentEvent]:
+    async with _services().pool.connection() as conn:
+        await chats.touch(conn, conversation_id, USER, body.text)
+    payload = {"messages": [HumanMessage(body.text)]}
+    async for event in _turn(conversation_id, body.text, payload):
         yield event
 
 
-@api.post("/api/threads/{thread_id}/resume", response_class=EventSourceResponse)
-async def resume(thread_id: str, body: Resume) -> AsyncIterator[ServerSentEvent]:
-    async for event in _turn(thread_id, Command(resume=body.answer)):
+@api.post("/api/conversations/{conversation_id}/resume", response_class=EventSourceResponse)
+async def resume(conversation_id: str, body: Resume) -> AsyncIterator[ServerSentEvent]:
+    async with _services().pool.connection() as conn:
+        await chats.touch(conn, conversation_id, USER, body.answer)
+    async for event in _turn(conversation_id, body.answer, Command(resume=body.answer)):
         yield event
 
 
-async def _turn(thread_id: str, payload: Any) -> AsyncIterator[ServerSentEvent]:
-    """Run one turn (or its resumption) and stream what happens. One turn at a time per thread."""
+async def _turn(conversation_id: str, said: str, payload: Any) -> AsyncIterator[ServerSentEvent]:
+    """Run one turn (or its resumption), stream what happens, then record it as a turn of the
+    conversation and send that record. One turn at a time per conversation."""
     s = _services()
-    turn_id = f"ui:{thread_id}:{uuid4().hex[:8]}"
-    config = _config(thread_id)
-    sent: set[int] = set()
-    async with s.locks[thread_id]:
+    turn_id = f"ui:{conversation_id}:{uuid4().hex[:8]}"
+    config = _config(conversation_id)
+    started, trace, sent = datetime.now(UTC), list[dict[str, Any]](), set[int]()
+    async with s.locks[conversation_id]:
         stream = s.graph.astream(
             payload,
             config,
@@ -177,10 +221,11 @@ async def _turn(thread_id: str, payload: Any) -> AsyncIterator[ServerSentEvent]:
         try:
             async for part in stream:
                 if (node := events.node_event(dict(part))) is not None:
+                    trace.append(node)
                     yield ServerSentEvent(data=node, event="node")
                 if node is not None and node["phase"] != "start":
-                    async for call in _calls(s, turn_id, sent):
-                        yield call
+                    async for event in _calls(s, turn_id, sent):
+                        yield event
         except Exception as error:
             # LangGraph 1.2.14 streaming with subgraphs=True re-raises, at the end, an error a
             # node's error handler already handled, after the run has finished and been
@@ -190,12 +235,26 @@ async def _turn(thread_id: str, payload: Any) -> AsyncIterator[ServerSentEvent]:
                 yield ServerSentEvent(data={"error": repr(error)}, event="error")
                 return
         snapshot = await s.graph.aget_state(config)
-    async for call in _calls(s, turn_id, sent):  # the last calls settle as the turn ends
-        yield call
-    if snapshot.interrupts:
-        yield ServerSentEvent(data=snapshot.interrupts[0].value, event="interrupt")
-    else:
-        yield ServerSentEvent(data=events.turn(snapshot.values), event="done")
+        waiting = snapshot.interrupts[0].value if snapshot.interrupts else None
+        turn = {
+            **events.outcome(snapshot.values),
+            "turn_id": turn_id,
+            "message": said,
+            "trace": trace,
+            "waiting": waiting,
+        }
+        if waiting is not None:  # the turn stops at a question: that question is its reply
+            turn |= {"reply": waiting["question"], "status": "needs_input", "answer": None}
+        async with s.pool.connection() as conn:
+            await chats.record(conn, conversation_id, turn, started)
+            calls = (await chats.turn_calls(conn, [turn_id])).get(turn_id, [])
+    for row in calls:
+        if row["id"] not in sent:  # the last calls settle as the turn ends
+            yield ServerSentEvent(data=row, event="call")
+    yield ServerSentEvent(
+        data={**turn, "calls": calls, "started_at": started, "finished_at": datetime.now(UTC)},
+        event="done",
+    )
 
 
 async def _calls(s: Services, turn_id: str, sent: set[int]) -> AsyncIterator[ServerSentEvent]:
@@ -206,9 +265,9 @@ async def _calls(s: Services, turn_id: str, sent: set[int]) -> AsyncIterator[Ser
         yield ServerSentEvent(data=call, event="call")
 
 
-def _config(thread_id: str) -> Any:
+def _config(conversation_id: str) -> Any:
     return {
-        "configurable": {"thread_id": thread_id},
+        "configurable": {"thread_id": conversation_id},
         "recursion_limit": conversation.RECURSION_LIMIT,
     }
 

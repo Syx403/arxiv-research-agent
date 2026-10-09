@@ -1,10 +1,10 @@
-"""What the UI is told during and after a turn (DESIGN §9, M5b): node starts and ends from
-LangGraph's task stream (subgraphs included), model calls from the ledger, a question the graph
-waits on, and the finished turn. Plain functions of their inputs, unit-tested without a model."""
+"""What the UI is told during and after a turn (DESIGN §9, M5b, D36): node starts and ends from
+LangGraph's task stream (subgraphs included), model calls from the ledger, and what the turn
+produced. Plain functions of their inputs, unit-tested without a model."""
 
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage
 
 from ara.db.pool import Connection
 
@@ -49,24 +49,18 @@ async def new_calls(conn: Connection, turn_id: str, sent: set[int]) -> list[dict
     ]
 
 
-def messages(values: dict[str, Any]) -> list[dict[str, str]]:
-    return [
-        {"role": "user" if isinstance(m, HumanMessage) else "assistant", "text": m.text}
-        for m in values.get("messages", [])
-        if isinstance(m, HumanMessage | AIMessage)
-    ]
-
-
-def turn(values: dict[str, Any]) -> dict[str, Any]:
-    """The finished turn: the reply, and what the evidence page shows (papers listed and read,
-    the answer with its cited evidence and the lines the verifier rejected)."""
+def outcome(values: dict[str, Any]) -> dict[str, Any]:
+    """What a finished turn (or a turn waiting on a question) produced, as the UI shows it: the
+    reply, the papers listed and read, the answer with its cited evidence and the lines the
+    verifier rejected, and anything that failed."""
     request, delivered = values.get("request"), values.get("answer")
+    replies = [m for m in values.get("messages", []) if isinstance(m, AIMessage)]
     return {
-        "messages": messages(values),
+        "reply": replies[-1].text if replies else "",
         "status": values.get("status", "complete"),
-        "problems": values.get("problems", []),
         "intent": request.intent if request else None,
         "papers": [p.model_dump() for p in values.get("papers", [])],
         "read": [p.model_dump() for p in values.get("read", [])],
         "answer": delivered.model_dump() if delivered else None,
+        "problems": values.get("problems", []),
     }

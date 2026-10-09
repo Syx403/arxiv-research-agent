@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from ara import faults
-from ara.api import events, server
+from ara.api import conversations, events, server
 from ara.db.pool import Pool
 from ara.memory import library
 from tests.unit.test_search import setup
@@ -64,21 +64,43 @@ async def test_the_graphs_are_drawn_from_the_compiled_code(client: httpx.AsyncCl
     assert "researcher" in drawn["discover"] and "search_instead" in drawn["main"]
 
 
-async def test_a_turn_streams_its_nodes_and_ends_with_the_reply(client: httpx.AsyncClient) -> None:
-    """Memory and understand are refused by injected faults: the turn degrades, never raises."""
-    thread = (await client.post("/api/threads")).json()["id"]
+async def test_a_conversation_keeps_each_turn_with_its_path(client: httpx.AsyncClient) -> None:
+    """Memory and understand are refused by injected faults: the turn degrades, never raises, and
+    is recorded with the nodes it went through (D36)."""
+    conversation = (await client.post("/api/conversations")).json()["id"]
+    assert (await client.get("/api/conversations")).json() == [], "listed from its first message"
     response = await client.post(
-        f"/api/threads/{thread}/messages", json={"text": "Find papers on KV-cache eviction"}
+        f"/api/conversations/{conversation}/messages",
+        json={"text": "Find papers on KV-cache eviction for long-context inference, please"},
     )
     assert response.headers["content-type"].startswith("text/event-stream")
     streamed = sse(response.text)
     nodes = [(d["node"], d["phase"]) for kind, d in streamed if kind == "node"]
     assert ("load_context", "degraded") in nodes and ("understand", "degraded") in nodes
     kind, done = streamed[-1]
-    assert kind == "done" and done["status"] == "failed"
-    assert done["messages"][-1]["text"].startswith("I could not process that message just now")
-    restored = (await client.get(f"/api/threads/{thread}")).json()
-    assert restored["messages"] == done["messages"] and restored["waiting"] is None
+    assert kind == "done" and done["status"] == "failed" and done["waiting"] is None
+    assert done["reply"].startswith("I could not process that message just now")
+    assert ("understand", "degraded") in [(t["node"], t["phase"]) for t in done["trace"]]
+
+    [listed] = (await client.get("/api/conversations")).json()
+    assert listed["id"] == conversation
+    assert listed["title"] == "Find papers on KV-cache eviction for long-context…"
+    kept = (await client.get(f"/api/conversations/{conversation}")).json()
+    [turn] = kept["turns"]
+    assert turn["message"].startswith("Find papers") and turn["reply"] == done["reply"]
+    assert turn["trace"] == done["trace"] and turn["calls"] == []
+
+    renamed = await client.patch(f"/api/conversations/{conversation}", json={"title": "KV cache"})
+    assert renamed.json()["title"] == "KV cache"
+    assert (await client.delete(f"/api/conversations/{conversation}")).status_code == 200
+    assert (await client.get(f"/api/conversations/{conversation}")).status_code == 404
+    assert (await client.delete(f"/api/conversations/{conversation}")).status_code == 404
+
+
+def test_a_title_is_the_first_message_cut_at_a_word() -> None:
+    assert conversations.title("  Read   2210.03629 ") == "Read 2210.03629"
+    long = "word " * 20
+    assert conversations.title(long).endswith("word…") and len(conversations.title(long)) <= 61
 
 
 async def test_documents_memory_and_evaluations_read_the_database(

@@ -25,6 +25,6 @@ async def pool(test_database: str) -> AsyncIterator[Pool]:
         async with pool.connection() as conn:
             await conn.execute(
                 "TRUNCATE llm_calls, eval_results, eval_runs, library_items, chunks, documents,"
-                " papers, embedding_cache RESTART IDENTITY CASCADE"
+                " papers, embedding_cache, conversations RESTART IDENTITY CASCADE"
             )
         yield pool
