@@ -239,6 +239,10 @@ def test_named_papers_are_read_without_asking_and_a_missing_one_is_reported() ->
     )
     assert app.choose_papers(state)["selected"] == ["arxiv:2401.00001v1"]
     assert "I could not find on arXiv: LLMCompiler." in app.reply(state)
+    failed: Any = {**state, "problems": ["an arXiv request failed: HTTP 503"]}
+    assert "I could not search arXiv for: LLMCompiler." in app.reply(failed), (
+        "a search that did not run is not a paper that was not found (D38)"
+    )
 
 
 def test_a_request_that_names_papers_reads_exactly_those() -> None:

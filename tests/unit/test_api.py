@@ -2,17 +2,24 @@
 in-process over ASGI. Model calls are blocked with injected faults (ARA_FAULTS), so a whole turn
 streams without a billable request."""
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 import pytest
+from langchain_core.messages import HumanMessage
 
 from ara import faults
 from ara.api import conversations, events, server
+from ara.api.runs import Run
 from ara.db.pool import Pool
-from ara.memory import library
+from ara.graph import app
+from ara.memory import library, store
+from ara.memory.store import Remembered
+from tests.unit.test_app import request
 from tests.unit.test_search import setup
 
 
@@ -56,6 +63,8 @@ def test_task_events_name_the_graph_the_node_and_the_phase() -> None:
         "phase": "degraded",
     }
     assert events.node_event({"ns": (), "data": {"id": "4", "name": "__start__"}}) is None
+    assert events.problems({"ns": (), "data": {"result": {"problems": ["p"]}}}) == ["p"]
+    assert events.problems(start) == []
 
 
 async def test_the_graphs_are_drawn_from_the_compiled_code(client: httpx.AsyncClient) -> None:
@@ -108,14 +117,165 @@ async def test_documents_memory_and_evaluations_read_the_database(
 ) -> None:
     gateway, _, second = await setup(pool)
     async with pool.connection() as conn:
+        await conn.execute("TRUNCATE store, store_vectors")  # created by the server's lifespan
         await library.record_read(conn, server.USER, [second])
     document = (await client.get("/api/papers/arxiv:2401.00002v1/document")).json()
     assert document["title"] == "Cache" and len(document["passages"]) == 3
     assert document["passages"][1]["text"] == "Evicting keys by attention score reduces memory."
     assert (await client.get("/api/papers/arxiv:9999.99999v1/document")).status_code == 404
-    remembered = (await client.get("/api/memory")).json()
-    assert remembered["facts"] == [] and remembered["library"][0]["arxiv_id"] == "2401.00002"
+    assert (await client.get("/api/memory/facts")).json() == {"items": [], "total": 0}
+    shelf = (await client.get("/api/memory/library")).json()
+    assert shelf["total"] == 1 and shelf["items"][0]["arxiv_id"] == "2401.00002"
+    assert (await client.get("/api/memory/library", params={"q": "cach"})).json()["total"] == 1
+    assert (await client.get("/api/memory/library", params={"q": "2401.0000"})).json()["total"] == 1
+    assert (await client.get("/api/memory/library", params={"q": "zebra"})).json()["total"] == 0
+    paper = (await client.get("/api/memory/library/2401.00002")).json()
+    assert paper["title"] == "Cache" and paper["read_in"] == []
+    assert (await client.get("/api/memory/library/9999.99999")).status_code == 404
     assert (await client.delete("/api/memory/unknown")).json() == {"forgotten": "unknown"}
     assert (await client.get("/api/evals")).json() == []
+    described = (await client.get("/api/evals/suites")).json()
+    assert [x["id"] for x in described["suites"]] == ["s1", "s2", "s3", "s4", "s5", "s6", "s7"]
+    s6 = described["suites"][5]
+    assert s6["items"] == {"dev": 11, "test": 8} and "passed" in s6["metrics"]
     assert (await client.get("/api/evals/nope")).status_code == 404
+    await gateway.aclose()
+
+
+async def test_a_turn_runs_on_when_its_page_leaves_and_can_be_rejoined() -> None:
+    """Followers read a run's events from the start, however late they come (D38)."""
+    run = Run("c", "ui:c:1", "hello", "messages")
+    early = run.follow()
+    await run.emit("node", {"node": "understand"})
+    late = run.follow()
+    await run.emit("done", {"reply": "hi"})
+    await run.finish()
+    assert [e async for e in early] == [e async for e in late] == run.events
+
+
+async def wait_running(client: httpx.AsyncClient, conversation: str) -> dict[str, Any]:
+    for _ in range(200):
+        opened = await client.get(f"/api/conversations/{conversation}")
+        if opened.status_code == 200 and (running := opened.json()["running"]):
+            return dict(running)
+        await asyncio.sleep(0.02)
+    raise AssertionError("the turn never started")
+
+
+async def test_a_stopped_turn_leaves_the_conversation_as_it_was(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """understand fails with 503 and is retried with backoff (no request is sent: the fault trips
+    before the gateway reserves anything), so the turn is still running when it is stopped. The
+    first turn of a conversation, stopped, removes the conversation; a later one is undone back
+    to the checkpoint before it (D38)."""
+    conversation = (await client.post("/api/conversations")).json()["id"]
+    monkeypatch.setenv("ARA_FAULTS", "embed=refused,understand=503")
+    sending = asyncio.create_task(
+        client.post(f"/api/conversations/{conversation}/messages", json={"text": "first try"})
+    )
+    running = await wait_running(client, conversation)
+    assert running["message"] == "first try" and running["kind"] == "messages"
+    assert [c["running"] for c in (await client.get("/api/conversations")).json()] == [True]
+    second = await client.post(f"/api/conversations/{conversation}/messages", json={"text": "x"})
+    assert second.status_code == 409, "one turn at a time"
+    stopped = (await client.post(f"/api/conversations/{conversation}/stop")).json()
+    assert stopped["message"] == "first try" and stopped["conversation_removed"]
+    assert stopped["spent_usd"] == 0
+    assert sse((await sending).text)[-1][0] == "stopped"
+    assert (await client.get(f"/api/conversations/{conversation}")).status_code == 404
+    assert (await client.get(f"/api/conversations/{conversation}/live")).status_code == 404
+    assert (await client.post(f"/api/conversations/{conversation}/stop")).status_code == 404
+
+    monkeypatch.setenv("ARA_FAULTS", "embed=refused,understand=refused")
+    await client.post(f"/api/conversations/{conversation}/messages", json={"text": "kept turn"})
+    config: Any = {"configurable": {"thread_id": conversation}}
+    graph = server._services().graph
+    kept = (await graph.aget_state(config)).values["messages"]
+    monkeypatch.setenv("ARA_FAULTS", "embed=refused,understand=503")
+    sending = asyncio.create_task(
+        client.post(f"/api/conversations/{conversation}/messages", json={"text": "undone"})
+    )
+    await wait_running(client, conversation)
+    while len((await graph.aget_state(config)).values["messages"]) == len(kept):
+        await asyncio.sleep(0.02)  # the graph has taken the message: there is something to undo
+    rejoined = asyncio.create_task(client.get(f"/api/conversations/{conversation}/live"))
+    stopped = (await client.post(f"/api/conversations/{conversation}/stop")).json()
+    assert not stopped["conversation_removed"]
+    assert sse((await rejoined).text)[0][0] == "started"
+    await sending
+    assert (await graph.aget_state(config)).values["messages"] == kept
+    turns = (await client.get(f"/api/conversations/{conversation}")).json()["turns"]
+    assert [t["message"] for t in turns] == ["kept turn"]
+
+
+async def test_a_stopped_answer_leaves_the_question_waiting(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stopping the turn that answers a question puts the question back: it waits again, asked
+    by re-running clarify, which calls no model (D38)."""
+    s = server._services()
+    conversation = (await client.post("/api/conversations")).json()["id"]
+    config: Any = {"configurable": {"thread_id": conversation}}
+    await s.graph.aupdate_state(
+        config,
+        {
+            "messages": [HumanMessage("find the best paper to cut my agent's cost")],
+            **app.fresh_turn(),
+            "request": request(clarification="Which cost?"),
+        },
+        as_node="understand",
+    )
+    await s.graph.ainvoke(None, config, context=s.context("ui:test"))
+    monkeypatch.setenv("ARA_FAULTS", "embed=refused,understand=503")
+    answering = asyncio.create_task(
+        client.post(f"/api/conversations/{conversation}/resume", json={"answer": "API spend"})
+    )
+    await wait_running(client, conversation)
+    while (await s.graph.aget_state(config)).interrupts:
+        await asyncio.sleep(0.02)  # the answer has been taken
+    stopped = (await client.post(f"/api/conversations/{conversation}/stop")).json()
+    assert stopped["kind"] == "resume" and stopped["message"] == "API spend"
+    await answering
+    [waiting] = (await s.graph.aget_state(config)).interrupts
+    assert waiting.value == {"kind": "clarify", "question": "Which cost?"}
+
+
+async def test_memory_links_facts_and_papers_to_their_conversations(
+    client: httpx.AsyncClient, pool: Pool
+) -> None:
+    gateway, _, second = await setup(pool)
+    async with pool.connection() as conn:
+        await conn.execute("TRUNCATE store, store_vectors")
+        await library.record_read(conn, server.USER, [second])
+        await conversations.touch(conn, "c1", server.USER, "Read the cache paper")
+        turn = {
+            "turn_id": "ui:c1:1",
+            "message": "Read the cache paper",
+            "reply": "r",
+            "status": "complete",
+            "intent": "read",
+            "answer": None,
+            "papers": [],
+            "read": [{"arxiv_id": "2401.00002", "title": "Cache"}],
+            "problems": [],
+            "trace": [],
+            "waiting": None,
+        }
+        await conversations.record(conn, "c1", turn, datetime.now(UTC))
+    s = server._services()
+    for n, thread in enumerate(["c1", "gone"]):
+        fact = Remembered(
+            key=f"k{n}", statement="s", quote="q", thread=thread, turn=0, day="2026-10-10"
+        )
+        await store.remember(s.memory, server.USER, fact)
+    facts = (await client.get("/api/memory/facts")).json()
+    assert [f["key"] for f in facts["items"]] == ["k0", "k1"], "oldest first"
+    assert [f["conversation"] for f in facts["items"]] == [
+        {"id": "c1", "title": "Read the cache paper"},
+        None,
+    ]
+    assert (await client.get("/api/memory/facts", params={"offset": 1})).json()["total"] == 2
+    [read_in] = (await client.get("/api/memory/library/2401.00002")).json()["read_in"]
+    assert (read_in["conversation_id"], read_in["title"]) == ("c1", "Read the cache paper")
     await gateway.aclose()

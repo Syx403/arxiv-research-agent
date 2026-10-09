@@ -7,7 +7,7 @@ from langgraph.graph import END
 
 from ara.graph import answer, read
 from ara.graph.read import Found
-from ara.graph.state import ABSTAIN, Claim, Evidence, Verdict
+from ara.graph.state import ABSTAIN, Answer, Claim, Evidence, Verdict
 
 
 def evidence(n: int, paragraph: int = 0, text: str = "") -> Evidence:
@@ -31,6 +31,28 @@ def test_parse_splits_the_direct_answer_cited_lines_and_uncited_lines() -> None:
         (1, "They report BLEU on WMT14.", ["E1", "E2"]),
     ]
     assert [c.text for c in uncited] == ["It is the best metric.", "See."]
+
+
+def test_an_answer_is_explained_in_paragraphs() -> None:
+    """An empty line between explanation lines starts a paragraph; the reply shows each paragraph
+    as prose after the direct answer (D37)."""
+    reply = "Answer: BLEU [E1]\n\nIt uses WMT14. [E1]\nScores rise. [E2]\n\n\nIt is cheap. [E2]"
+    claims, _ = answer.parse(reply, {"E1", "E2"})
+    assert [(c.index, c.paragraph) for c in claims] == [(0, 0), (1, 0), (2, 0), (3, 1)]
+    delivered = Answer(
+        question="q",
+        short="BLEU",
+        abstained=False,
+        sentences=claims[1:],
+        dropped=[],
+        checked=4,
+        rejected=[],
+        evidence=[],
+    )
+    assert delivered.render() == (
+        "BLEU\n\nIt uses WMT14. [E1] Scores rise. [E2]\n\nIt is cheap. [E2]"
+    )
+    assert claims[1].key == claim(1, "It uses WMT14.").key, "paragraphs do not change identity"
 
 
 def test_an_abstaining_answer_is_neither_claim_nor_dropped() -> None:

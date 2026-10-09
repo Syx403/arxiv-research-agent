@@ -83,7 +83,7 @@ async def test_a_line_that_cannot_be_verified_is_not_delivered(pool: Pool, fault
         result = await answer.verify(task, Runtime(context=ctx))
         await ctx.gateway.aclose()
     assert not result["verdicts"][line.key].supported
-    assert result["problems"] == ["verification failed (HTTPStatusError)"]
+    assert result["problems"] == ["verification failed: HTTP 400"]
 
 
 async def test_a_paper_that_cannot_be_fetched_is_skipped(pool: Pool, fault: Any) -> None:
@@ -98,7 +98,7 @@ async def test_a_paper_that_cannot_be_fetched_is_skipped(pool: Pool, fault: Any)
         await ctx.gateway.aclose()
     assert result == {
         "documents": [],
-        "problems": ["reading arxiv:2401.09999v1 failed (HTTPStatusError)"],
+        "problems": ["reading arxiv:2401.09999v1 failed: HTTP 500"],
     }
 
 
@@ -122,23 +122,44 @@ async def test_failed_searches_and_selections_add_no_evidence(pool: Pool, fault:
         (second, []),
     ]
     assert [f.sentences for f in selected["found"]] == [[]]
-    assert selected["problems"] == ["selecting evidence failed (ReadTimeout)"]
+    assert selected["problems"] == ["selecting evidence failed: it took too long"]
     empty: Any = {"question": "q", "documents": [], "requeried": True}
     collected: Any = read.collect(empty)
     assert collected["evidence"] == [] and collected["missing"] == []
     await gateway.aclose()
 
 
-async def test_an_arxiv_tool_failure_goes_back_to_the_researcher(pool: Pool, fault: Any) -> None:
+async def test_an_arxiv_failure_stops_the_search(pool: Pool, fault: Any) -> None:
+    """The first request meets a rate limit: the second is not sent. One failed round goes back
+    to the researcher; a second in a row ends the search (D38)."""
     fault("arxiv=429")
-    turn = Block("assistant", "", calls=(ToolCall("c1", "search_arxiv", '{"query": "ti:ReWOO"}'),))
-    state: Any = {"request": request(), "transcript": [turn]}
+    calls = (
+        ToolCall("c1", "search_arxiv", '{"query": "ti:ReWOO"}'),
+        ToolCall("c2", "search_arxiv", '{"query": "ti:LLMCompiler"}'),
+    )
+    state: Any = {"request": request(), "transcript": [Block("assistant", "", calls=calls)]}
     async with ArxivClient() as arxiv:
         ctx = context(pool, arxiv)
         result: Any = await discover.arxiv_tools(state, Runtime(context=ctx))
         await ctx.gateway.aclose()
-    assert result["transcript"][-1].text.startswith("arXiv did not answer (HTTPStatusError)")
-    assert result["problems"] == ["an arXiv request failed (HTTPStatusError)"]
+    assert [b.text for b in result["transcript"][-2:]] == [
+        "arXiv did not answer.",
+        "Not run: arXiv did not answer the previous request.",
+    ]
+    assert faults._tripped["arxiv"] == 1 and result["tool_calls"] == 1
+    assert result["problems"] == ["an arXiv request failed: too many requests right now (HTTP 429)"]
+    once: Any = {**state, **result}
+    assert result["failed_rounds"] == 1 and discover.after_tools(once) == "researcher"
+    async with ArxivClient() as arxiv:
+        ctx = context(pool, arxiv)
+        retry: Any = {
+            **once,
+            "transcript": [*once["transcript"], Block("assistant", "", calls=calls)],
+        }
+        again: Any = await discover.arxiv_tools(retry, Runtime(context=ctx))
+        await ctx.gateway.aclose()
+    twice: Any = {**retry, **again}
+    assert again["failed_rounds"] == 2 and discover.after_tools(twice) == "prerank"
 
 
 async def test_a_failed_screen_batch_leaves_its_papers_unjudged(pool: Pool, fault: Any) -> None:
@@ -148,7 +169,7 @@ async def test_a_failed_screen_batch_leaves_its_papers_unjudged(pool: Pool, faul
         task = discover.ScreenTask(request=request(), batch=[card(1)])
         result = await discover.screen(task, Runtime(context=ctx))
         await ctx.gateway.aclose()
-    assert result == {"judged": [], "problems": ["screening a batch failed (HTTPStatusError)"]}
+    assert result == {"judged": [], "problems": ["screening a batch failed: HTTP 400"]}
 
 
 def test_a_failed_part_becomes_a_note_and_the_turn_is_partial() -> None:
@@ -158,14 +179,14 @@ def test_a_failed_part_becomes_a_note_and_the_turn_is_partial() -> None:
     assert command.goto == "respond"
     assert command.update == {
         "papers": [],
-        "problems": ["the arXiv search failed (HTTPStatusError)"],
+        "problems": ["the arXiv search failed: HTTP 503"],
     }
     failed: Any = {**state, **command.update}
     result: Any = app.respond(failed)
     text = result["messages"][0].text
     assert "I found no arXiv papers" not in text and result["status"] == "partial"
-    assert text.endswith(
-        "Note: the arXiv search failed (HTTPStatusError). The rest of this reply is unaffected."
+    assert text == f"{app.UNFINISHED}\n\nNote: the arXiv search failed: HTTP 503.", (
+        "nothing else to show: no claim that the rest is unaffected (D38)"
     )
     library: Any = {
         **base_state(request(intent="library")),
@@ -176,9 +197,10 @@ def test_a_failed_part_becomes_a_note_and_the_turn_is_partial() -> None:
         **base_state(request(intent="memory")),
         "problems": ["saving to memory failed (X)"],
     }
-    assert (
-        app.reply(memory)
-        == "Note: saving to memory failed (X). The rest of this reply is unaffected."
+    assert app.reply(memory) == f"{app.UNFINISHED}\n\nNote: saving to memory failed (X)."
+    listed: Any = {**state, "problems": ["an arXiv request failed: HTTP 503"]}
+    assert app.reply(listed).endswith(
+        "Note: an arXiv request failed: HTTP 503. The rest of this reply is unaffected."
     )
 
 
@@ -200,7 +222,7 @@ async def test_a_synthesis_that_keeps_failing_ends_in_an_abstention(pool: Pool, 
         result = await answer.build().ainvoke(inputs, context=ctx)
         await ctx.gateway.aclose()
     assert result["answer"].abstained
-    assert result["problems"] == ["writing the answer failed (HTTPStatusError)"]
+    assert result["problems"] == ["writing the answer failed: HTTP 500"]
     assert faults._tripped["synthesize"] == 3, "retried twice before giving up"
 
 
@@ -224,6 +246,23 @@ async def test_a_failed_search_still_replies_with_a_note(pool: Pool, fault: Any)
         state = await graph.ainvoke(None, config, context=ctx)
         await ctx.gateway.aclose()
     assert state["status"] == "partial"
-    assert state["messages"][-1].text.endswith(
-        "Note: the arXiv search failed (HTTPStatusError). The rest of this reply is unaffected."
+    assert state["messages"][-1].text.endswith("Note: the arXiv search failed: HTTP 503.")
+
+
+def test_a_failure_is_described_in_words() -> None:
+    """The reply names what went wrong, not the exception class (D38)."""
+    assert reliability.why(status(429)) == "too many requests right now (HTTP 429)"
+    assert reliability.why(status(503)) == "HTTP 503"
+    assert (
+        reliability.why(NodeTimeoutError("node", 60.0, kind="run", run_timeout=60.0))
+        == "it took too long"
     )
+    request_ = httpx.Request("GET", "https://export.arxiv.org")
+    assert reliability.why(httpx.ReadTimeout("t", request=request_)) == "it took too long"
+    assert reliability.why(httpx.ConnectError("c", request=request_)) == (
+        "the service could not be reached"
+    )
+    timed_out = openai.APITimeoutError(request=httpx2.Request("POST", "https://api.invalid"))
+    assert reliability.why(timed_out) == "it took too long"
+    assert reliability.why(InvalidOutput("empty")) == "the model returned nothing usable"
+    assert reliability.why(ValueError("x")) == "an unexpected error"

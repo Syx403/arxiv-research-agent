@@ -108,6 +108,7 @@ class Claim(BaseModel):
     index: int
     text: str
     citations: list[str]
+    paragraph: int = 0  # explanation lines are grouped into paragraphs (D37)
 
     @property
     def direct(self) -> bool:
@@ -137,8 +138,11 @@ class Answer(BaseModel):
     context: str = ""  # the model's opening on how the answer was found: not verified (D31)
 
     def render(self) -> str:
-        lines = [self.short, *(f"{c.text} [{', '.join(c.citations)}]" for c in self.sentences)]
-        return "\n".join(lines)
+        """The direct answer, then the explanation as paragraphs of cited sentences (D37)."""
+        paragraphs: dict[int, list[str]] = {}
+        for c in self.sentences:
+            paragraphs.setdefault(c.paragraph, []).append(f"{c.text} [{', '.join(c.citations)}]")
+        return "\n\n".join([self.short, *(" ".join(p) for p in paragraphs.values())])
 
 
 @dataclass(frozen=True)

@@ -35,6 +35,7 @@ from ara.llm.stages import STAGES
 from ara.rag.embed import embed
 
 MAX_TOOL_CALLS = 8  # per turn (DESIGN §2)
+MAX_FAILED_ROUNDS = 2  # researcher rounds in a row with a failed arXiv request (D38)
 RESULTS = 20  # per search
 SNIPPET = 300  # abstract characters shown to the researcher for a new paper
 SHORTLIST, BATCH = 24, 8  # prerank keeps three screening batches
@@ -99,6 +100,7 @@ class DiscoverState(DiscoverInput, DiscoverOutput):
     transcript: list[Block]  # researcher turns and tool results, append-only
     found: dict[str, PaperCard]  # the candidate pool, in the order found
     tool_calls: int
+    failed_rounds: int  # researcher rounds in a row whose arXiv requests failed (D38)
     shortlist: list[PaperCard]
     judged: Annotated[list[Judgement], operator.add]
 
@@ -128,18 +130,22 @@ async def researcher(state: DiscoverState, runtime: Runtime[Context]) -> dict[st
 
 
 async def arxiv_tools(state: DiscoverState, runtime: Runtime[Context]) -> dict[str, object]:
-    """Run the last turn's tool calls within the budget; every call gets a tool message back."""
+    """Run the last turn's tool calls within the budget; every call gets a tool message back.
+    Once arXiv fails (rate limit, error, timeout), the round's other calls are not sent: they
+    would meet the same limit (D38)."""
     found = dict(state.get("found", {}))
     used = state.get("tool_calls", 0)
-    results, problems = [], []
+    results, problems = list[Block](), list[str]()
     for call in state["transcript"][-1].calls:
-        if used < MAX_TOOL_CALLS:
+        if problems:
+            text = "Not run: arXiv did not answer the previous request."
+        elif used < MAX_TOOL_CALLS:
             used += 1
             try:
                 text = await run_tool(call, state["request"], found, runtime.context)
             except httpx.HTTPError as error:  # arXiv busy or unreachable (M5a)
                 problems.append(problem("an arXiv request", error))
-                text = f"arXiv did not answer ({type(error).__name__}); try again later."
+                text = "arXiv did not answer."
         else:
             text = "Not run: the tool-call budget is used up."
         results.append(Block("tool", text, call_id=call.id))
@@ -147,6 +153,7 @@ async def arxiv_tools(state: DiscoverState, runtime: Runtime[Context]) -> dict[s
         "transcript": [*state["transcript"], *results],
         "found": found,
         "tool_calls": used,
+        "failed_rounds": state.get("failed_rounds", 0) + 1 if problems else 0,
         "problems": problems,
     }
 
@@ -405,8 +412,12 @@ def after_researcher(state: DiscoverState) -> str:
 
 
 def after_tools(state: DiscoverState) -> str:
-    """Once the budget is spent, asking the researcher again would only cost a call."""
-    return "researcher" if state["tool_calls"] < MAX_TOOL_CALLS else "prerank"
+    """Once the budget is spent, or arXiv has failed twice in a row, asking the researcher again
+    would only cost a call; one failed round is tried again, since a single refusal often passes
+    (S7's f-arxiv-blip)."""
+    failing = state.get("failed_rounds", 0) >= MAX_FAILED_ROUNDS
+    more = state["tool_calls"] < MAX_TOOL_CALLS and not failing
+    return "researcher" if more else "prerank"
 
 
 def to_screen(state: DiscoverState) -> list[Send] | str:

@@ -68,7 +68,7 @@ async def open_store(pool: Pool, gateway: Gateway) -> AsyncPostgresStore:
     return store
 
 
-def _profile(user: str) -> tuple[str, ...]:
+def profile_namespace(user: str) -> tuple[str, ...]:
     return ("users", user, "profile")
 
 
@@ -77,17 +77,17 @@ def _episodes(user: str) -> tuple[str, ...]:
 
 
 async def profile(store: BaseStore, user: str) -> list[Remembered]:
-    items = await store.asearch(_profile(user), limit=100)
+    items = await store.asearch(profile_namespace(user), limit=100)
     return sorted((Remembered(**i.value) for i in items), key=lambda f: f.key)
 
 
 async def remember(store: BaseStore, user: str, fact: Remembered) -> None:
     """A fact with an existing key replaces the old one (DESIGN §7: newer supersedes)."""
-    await store.aput(_profile(user), fact.key, fact.model_dump(), index=False)
+    await store.aput(profile_namespace(user), fact.key, fact.model_dump(), index=False)
 
 
 async def forget(store: BaseStore, user: str, key: str) -> None:
-    await store.adelete(_profile(user), key)
+    await store.adelete(profile_namespace(user), key)
 
 
 async def record(store: BaseStore, user: str, key: str, episode: Episode) -> None:

@@ -16,7 +16,7 @@ from ara.rag.sources import ParsedPaper, arxiv_html_paper, arxiv_pdf_paper
 
 API_URL = "https://export.arxiv.org/api/query"
 INTERVAL_S = 3.0
-MAX_PAUSE_S = 60.0  # longest Retry-After honoured before the next request
+MAX_PAUSE_S = 20.0  # longest Retry-After honoured: well inside the node timeout (D38)
 ATOM = {"atom": "http://www.w3.org/2005/Atom"}
 USER_AGENT = "ara-v2/0.1 (+https://github.com/Syx403/arxiv-research-agent)"
 ARXIV_ID = re.compile(r"^(\d{4}\.\d{4,5})(?:v(\d+))?$")
@@ -63,7 +63,7 @@ class ArxivClient:
 
     async def get(self, url: str, params: dict[str, str] | None = None) -> httpx.Response:
         """One request at a time, 3 s apart. After a 429 the next request also waits out arXiv's
-        Retry-After (at most a minute); the caller's node retry sends it again (M5a)."""
+        Retry-After (at most MAX_PAUSE_S); the caller's node retry sends it again (M5a, D38)."""
         async with self._turn:
             await asyncio.sleep(max(0.0, self._last + INTERVAL_S - time.monotonic()))
             pause = 0.0

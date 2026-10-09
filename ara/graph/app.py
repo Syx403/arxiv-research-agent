@@ -86,6 +86,7 @@ NOT_DISCUSSED = (
     "We have not discussed this in any paper we have read."
     " Would you like me to search arXiv for papers on it?"
 )
+UNFINISHED = "I could not finish this request, so there is nothing to show yet. Please try again."
 RESEARCH = ("discover", "discover_read", "read", "library")
 # Our types kept in checkpoints, subgraph states included: the serializer loads any other type as
 # a plain dict. A unit test walks every state schema to keep this list complete (D29).
@@ -618,11 +619,14 @@ def respond(state: ConversationState) -> dict[str, object]:
 
 
 def reply(state: ConversationState) -> str:
-    """The reply, with a note on any part that failed (M5a), never an error."""
+    """The reply, with a note on any part that failed (M5a), never an error. A failure that left
+    nothing to show says so first, rather than a note about a reply that is not there (D38)."""
     body = _body(state)
     if problems := list(dict.fromkeys(state["problems"])):
-        note = f"Note: {'; '.join(problems)}. The rest of this reply is unaffected."
-        return f"{body}\n\n{note}" if body else note
+        note = f"Note: {'; '.join(problems)}."
+        if body:
+            return f"{body}\n\n{note} The rest of this reply is unaffected."
+        return f"{UNFINISHED}\n\n{note}"
     return body
 
 
@@ -644,7 +648,9 @@ def _body(state: ConversationState) -> str:
     parts += [_conflict(p) for p in state["read"] if p.violated]
     found = {*state["identified"], *(p.named for p in state["papers"])}
     if missing := [t for t in request.titles if t not in found]:
-        parts.append(f"I could not find on arXiv: {'; '.join(missing)}.")
+        unchecked = any("arXiv" in p for p in state["problems"])  # not found, or not searched
+        lead = "I could not search arXiv for" if unchecked else "I could not find on arXiv"
+        parts.append(f"{lead}: {'; '.join(missing)}.")
     if state["papers"]:
         listing = "\n".join(_listing(n, p) for n, p in enumerate(state["papers"], 1))
         parts.append(("From your library:\n" if _from_library(state) else "") + listing)

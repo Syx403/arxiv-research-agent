@@ -75,6 +75,25 @@ async def delete(conn: Connection, conversation: str, user: str) -> bool:
     return cursor.rowcount == 1
 
 
+async def forget_if_empty(conn: Connection, conversation: str) -> bool:
+    """A conversation whose only turn was stopped is not kept: it never had a turn (D38)."""
+    cursor = await conn.execute(
+        "DELETE FROM conversations c WHERE id = %s"
+        " AND NOT EXISTS (SELECT 1 FROM turns t WHERE t.conversation_id = c.id)",
+        (conversation,),
+    )
+    return cursor.rowcount == 1
+
+
+async def charged(conn: Connection, turn_id: str) -> float:
+    """What a turn's model calls count against the caps, open reservations included."""
+    cursor = await conn.execute(
+        "SELECT coalesce(sum(charge_usd), 0) AS usd FROM llm_calls WHERE turn_id = %s", (turn_id,)
+    )
+    row = await cursor.fetchone()
+    return float(row["usd"]) if row else 0.0
+
+
 async def record(
     conn: Connection, conversation: str, turn: dict[str, Any], started_at: datetime
 ) -> None:
@@ -112,6 +131,22 @@ async def opened(conn: Connection, conversation: str, user: str) -> dict[str, An
     turns = list(await cursor.fetchall())
     calls = await turn_calls(conn, [t["turn_id"] for t in turns])
     return {**head, "turns": [{**t, "calls": calls.get(t["turn_id"], [])} for t in turns]}
+
+
+async def reading(conn: Connection, user: str, arxiv_id: str) -> list[dict[str, Any]]:
+    """The turns that read a paper, newest first, with their conversation's title."""
+    cursor = await conn.execute(
+        "SELECT t.conversation_id, c.title, t.turn_id, t.message, t.finished_at FROM turns t"
+        " JOIN conversations c ON c.id = t.conversation_id"
+        " WHERE c.user_id = %s AND t.read @> %s::jsonb ORDER BY t.id DESC",
+        (user, json.dumps([{"arxiv_id": arxiv_id}])),
+    )
+    return list(await cursor.fetchall())
+
+
+async def titles(conn: Connection, ids: list[str]) -> dict[str, str]:
+    cursor = await conn.execute("SELECT id, title FROM conversations WHERE id = ANY(%s)", (ids,))
+    return {row["id"]: row["title"] for row in await cursor.fetchall()}
 
 
 async def turn_calls(conn: Connection, turn_ids: list[str]) -> dict[str, list[dict[str, Any]]]:

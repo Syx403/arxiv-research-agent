@@ -298,6 +298,9 @@ class Gateway:
             except Exception as error:
                 await self.ledger.fail(call_id, repr(error), released=_rejected(error))
                 raise
+            except asyncio.CancelledError:  # the user stopped the turn (D38): it may be billed
+                await self.ledger.fail(call_id, "cancelled", released=False)
+                raise
 
 
 def _rejected(error: Exception) -> bool:

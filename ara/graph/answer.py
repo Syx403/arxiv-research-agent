@@ -75,17 +75,33 @@ def parse(reply: str, known: set[str]) -> tuple[list[Claim], list[Claim]]:
     direct answer, written "Answer: ..."; an abstaining answer is neither."""
     claims: list[Claim] = []
     uncited: list[Claim] = []
-    lines = [line.strip() for line in reply.splitlines() if line.strip()]
-    for index, line in enumerate(lines):
+    for index, paragraph, line in _lines(reply):
         if index == 0:
             line = line.removeprefix("Answer:").strip()
         ids = list(dict.fromkeys(i.strip() for g in CITATION.findall(line) for i in g.split(",")))
         text = re.sub(r"\s+([.,;:!?])", r"\1", " ".join(CITATION.sub(" ", line).split()))
-        claim = Claim(index=index, text=text, citations=ids)
+        claim = Claim(index=index, text=text, citations=ids, paragraph=paragraph)
         if index == 0 and text.startswith(ABSTAIN.rstrip(".")):
             continue  # the model abstained, with or without a citation
         (claims if ids and set(ids) <= known else uncited).append(claim)
     return claims, uncited
+
+
+def _lines(reply: str) -> list[tuple[int, int, str]]:
+    """Each non-empty line with its index and its paragraph: an empty line between explanation
+    lines starts a new paragraph (D37)."""
+    found: list[tuple[int, int, str]] = []
+    paragraph, gap = 0, False
+    for raw in reply.splitlines():
+        line = raw.strip()
+        if not line:
+            gap = True
+            continue
+        if gap and len(found) > 1:
+            paragraph += 1
+        found.append((len(found), paragraph, line))
+        gap = False
+    return found
 
 
 def pack(evidence: list[Evidence]) -> Block:

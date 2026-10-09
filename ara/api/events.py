@@ -34,6 +34,12 @@ def node_event(part: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def problems(part: dict[str, Any]) -> list[str]:
+    """What a finished task recorded as failed, so the page can say so while the turn runs."""
+    result = part["data"].get("result")
+    return list(result.get("problems", [])) if isinstance(result, dict) else []
+
+
 def _graph(ns: tuple[str, ...]) -> str:
     """ "discover:1f0…" → "discover": a subgraph is named by the main node that runs it."""
     return ns[-1].split(":")[0] if ns else "main"

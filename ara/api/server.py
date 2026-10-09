@@ -7,30 +7,31 @@ then the finished turn or the question the graph waits on. The built UI (ui/dist
 
 import asyncio
 import re
-from collections import defaultdict
-from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import AsyncExitStack, aclosing, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any, cast
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
-from langgraph.types import Command
+from langgraph.types import Command, StateSnapshot
 from pydantic import BaseModel
 
 from ara.api import conversations as chats
 from ara.api import events
+from ara.api.runs import Run
 from ara.arxiv.client import ArxivClient
 from ara.db.migrate import migrate
 from ara.db.pool import Pool, make_pool
 from ara.graph import app as conversation
+from ara.graph.reliability import why
 from ara.graph.state import Context
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
@@ -39,6 +40,7 @@ from ara.rag.ingest import PIPELINE_VERSION
 from ara.rag.sources import ParsedPaper
 from ara.settings import ROOT, configure_tracing, get_settings
 from evals import report
+from evals.catalog import catalog
 
 HOST, PORT = "127.0.0.1", 8000
 USER = "local"  # single user, no login (DESIGN §9)
@@ -60,7 +62,7 @@ class Services:
     memory: BaseStore
     checkpointer: AsyncPostgresSaver
     graph: CompiledStateGraph[Any, Any, Any, Any]
-    locks: defaultdict[str, asyncio.Lock]
+    runs: dict[str, Run]  # the running turn of each conversation (D38)
 
     def context(self, turn_id: str) -> Context:
         async def fetch(reference: str) -> ParsedPaper:
@@ -90,9 +92,21 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         memory = await store.open_store(pool, gateway)
         saver = await conversation.checkpointer(pool)
         graph = conversation.build(saver, memory)
-        services = Services(pool, gateway, arxiv, memory, saver, graph, defaultdict(asyncio.Lock))
-        yield
-        services = None
+        services = Services(pool, gateway, arxiv, memory, saver, graph, {})
+        try:
+            yield
+        finally:
+            await _stop_all(services)
+            services = None
+
+
+async def _stop_all(s: Services) -> None:
+    """Shutting down stops running turns as the stop button does."""
+    tasks = [r.task for r in s.runs.values() if r.task is not None]
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.wait(tasks)
 
 
 api = FastAPI(title="ARA", lifespan=lifespan)
@@ -144,9 +158,12 @@ def _drawn(mermaid: str) -> str:
 
 @api.get("/api/conversations")
 async def conversations() -> list[dict[str, Any]]:
-    """The user's conversations, most recent first (the sidebar)."""
-    async with _services().pool.connection() as conn:
-        return await chats.listed(conn, USER)
+    """The user's conversations, most recent first (the sidebar), each marked if a turn is
+    running in it."""
+    s = _services()
+    async with s.pool.connection() as conn:
+        found = await chats.listed(conn, USER)
+    return [{**c, "running": c["id"] in s.runs} for c in found]
 
 
 @api.post("/api/conversations")
@@ -159,11 +176,15 @@ def new_conversation() -> dict[str, str]:
 async def opened(conversation_id: str) -> dict[str, Any]:
     """Every turn of a conversation, each with its reply, answer, evidence, papers, path through
     the graph and model calls, and the question it waits on, if any."""
-    async with _services().pool.connection() as conn:
+    s = _services()
+    async with s.pool.connection() as conn:
         found = await chats.opened(conn, conversation_id, USER)
+    run = s.runs.get(conversation_id)
     if found is None:
-        raise HTTPException(404, f"no conversation {conversation_id}")
-    return found
+        if run is None:
+            raise HTTPException(404, f"no conversation {conversation_id}")
+        found = {"id": conversation_id, "title": chats.title(run.message), "turns": []}
+    return {**found, "running": run.summary() if run else None}
 
 
 @api.patch("/api/conversations/{conversation_id}")
@@ -176,8 +197,12 @@ async def renamed(conversation_id: str, body: Rename) -> dict[str, str]:
 
 @api.delete("/api/conversations/{conversation_id}")
 async def deleted(conversation_id: str) -> dict[str, str]:
-    """The conversation, its turns and its checkpoints; the ledger keeps its spend (D36)."""
+    """The conversation, its turns and its checkpoints; the ledger keeps its spend (D36). A turn
+    running in it is stopped first."""
     s = _services()
+    if (run := s.runs.get(conversation_id)) is not None and run.task is not None:
+        run.task.cancel()
+        await asyncio.wait({run.task})
     async with s.pool.connection() as conn:
         if not await chats.delete(conn, conversation_id, USER):
             raise HTTPException(404, f"no conversation {conversation_id}")
@@ -185,84 +210,190 @@ async def deleted(conversation_id: str) -> dict[str, str]:
     return {"deleted": conversation_id}
 
 
+async def _sent(conversation_id: str, body: Message) -> Run:
+    return _start(conversation_id, "messages", body.text, {"messages": [HumanMessage(body.text)]})
+
+
+async def _answered(conversation_id: str, body: Resume) -> Run:
+    return _start(conversation_id, "resume", body.answer, Command(resume=body.answer))
+
+
+async def _running(conversation_id: str) -> Run:
+    run = _services().runs.get(conversation_id)
+    if run is None:
+        raise HTTPException(404, f"no running turn in {conversation_id}")
+    return run
+
+
+# The run is started (or found) in a dependency, before the stream begins, so a refusal is an
+# ordinary HTTP error rather than a broken stream.
 @api.post("/api/conversations/{conversation_id}/messages", response_class=EventSourceResponse)
-async def message(conversation_id: str, body: Message) -> AsyncIterator[ServerSentEvent]:
-    async with _services().pool.connection() as conn:
-        await chats.touch(conn, conversation_id, USER, body.text)
-    payload = {"messages": [HumanMessage(body.text)]}
-    async for event in _turn(conversation_id, body.text, payload):
+async def message(run: Annotated[Run, Depends(_sent)]) -> AsyncIterator[ServerSentEvent]:
+    async for event in _follow(run):
         yield event
 
 
 @api.post("/api/conversations/{conversation_id}/resume", response_class=EventSourceResponse)
-async def resume(conversation_id: str, body: Resume) -> AsyncIterator[ServerSentEvent]:
-    async with _services().pool.connection() as conn:
-        await chats.touch(conn, conversation_id, USER, body.answer)
-    async for event in _turn(conversation_id, body.answer, Command(resume=body.answer)):
+async def resume(run: Annotated[Run, Depends(_answered)]) -> AsyncIterator[ServerSentEvent]:
+    async for event in _follow(run):
         yield event
 
 
-async def _turn(conversation_id: str, said: str, payload: Any) -> AsyncIterator[ServerSentEvent]:
-    """Run one turn (or its resumption), stream what happens, then record it as a turn of the
-    conversation and send that record. One turn at a time per conversation."""
+@api.get("/api/conversations/{conversation_id}/live", response_class=EventSourceResponse)
+async def live(run: Annotated[Run, Depends(_running)]) -> AsyncIterator[ServerSentEvent]:
+    """The running turn's events from its start: how a page rejoins a turn it left (D38)."""
+    async for event in _follow(run):
+        yield event
+
+
+@api.post("/api/conversations/{conversation_id}/stop")
+async def stop(conversation_id: str) -> dict[str, Any]:
+    """End the running turn now. It is not recorded and the conversation is put back as it was
+    before it, so the message can be edited and sent again; its spend stays in the ledger (D38)."""
+    run = await _running(conversation_id)
+    assert run.task is not None  # set when the run is claimed
+    run.task.cancel()
+    await asyncio.wait({run.task})
+    stopped = next((data for event, data in run.events if event == "stopped"), None)
+    if stopped is None:  # it finished before the stop arrived
+        raise HTTPException(409, "the turn had already finished")
+    return dict(stopped)
+
+
+def _start(conversation_id: str, kind: str, said: str, payload: Any) -> Run:
+    """One turn at a time per conversation; the check and the claim happen with no await between
+    them, so two requests cannot both start one."""
     s = _services()
-    turn_id = f"ui:{conversation_id}:{uuid4().hex[:8]}"
-    config = _config(conversation_id)
-    started, trace, sent = datetime.now(UTC), list[dict[str, Any]](), set[int]()
-    async with s.locks[conversation_id]:
-        stream = s.graph.astream(
-            payload,
-            config,
-            context=s.context(turn_id),
-            stream_mode="tasks",
-            subgraphs=True,
-            version="v2",
-        )
+    if conversation_id in s.runs:
+        raise HTTPException(409, "a turn is already running in this conversation")
+    run = Run(conversation_id, f"ui:{conversation_id}:{uuid4().hex[:8]}", said, kind)
+    s.runs[conversation_id] = run
+    run.task = asyncio.create_task(_run(s, run, payload))
+    return run
+
+
+async def _follow(run: Run) -> AsyncIterator[ServerSentEvent]:
+    async for event, data in run.follow():
+        yield ServerSentEvent(data=data, event=event)
+
+
+async def _run(s: Services, run: Run, payload: Any) -> None:
+    """Run the turn, keep what happens as events, record the finished turn and send its record.
+    Stopped, the conversation goes back to its state before the turn."""
+    config = _config(run.conversation)
+    started, trace, sent, noted = datetime.now(UTC), list[dict[str, Any]](), set[int](), set[str]()
+    before: StateSnapshot | None = None
+    try:
+        async with s.pool.connection() as conn:
+            await chats.touch(conn, run.conversation, USER, run.message)
+        before = await s.graph.aget_state(config)
+        await run.emit("started", {**run.summary(), "started_at": started})
         try:
-            async for part in stream:
-                if (node := events.node_event(dict(part))) is not None:
-                    trace.append(node)
-                    yield ServerSentEvent(data=node, event="node")
-                if node is not None and node["phase"] != "start":
-                    async for event in _calls(s, turn_id, sent):
-                        yield event
+            async with aclosing(
+                cast(
+                    AsyncGenerator[Any],
+                    s.graph.astream(
+                        payload,
+                        config,
+                        context=s.context(run.turn_id),
+                        stream_mode="tasks",
+                        subgraphs=True,
+                        version="v2",
+                    ),
+                )
+            ) as stream:
+                async for part in stream:
+                    await _observe(s, run, dict(part), trace, sent, noted)
         except Exception as error:
             # LangGraph 1.2.14 streaming with subgraphs=True re-raises, at the end, an error a
             # node's error handler already handled, after the run has finished and been
             # checkpointed (reproduced on a two-node graph, D35). A finished run is a turn.
             snapshot = await s.graph.aget_state(config)
             if snapshot.next and not snapshot.interrupts:
-                yield ServerSentEvent(data={"error": repr(error)}, event="error")
+                await run.emit("error", {"error": "The turn failed: " + why(error)})
                 return
-        snapshot = await s.graph.aget_state(config)
-        waiting = snapshot.interrupts[0].value if snapshot.interrupts else None
-        turn = {
-            **events.outcome(snapshot.values),
-            "turn_id": turn_id,
-            "message": said,
-            "trace": trace,
-            "waiting": waiting,
-        }
-        if waiting is not None:  # the turn stops at a question: that question is its reply
-            turn |= {"reply": waiting["question"], "status": "needs_input", "answer": None}
+        await _record(s, run, config, started, trace, sent)
+    except asyncio.CancelledError:
+        await _undo(s, run, before)
+    finally:
+        s.runs.pop(run.conversation, None)
+        await run.finish()
+
+
+async def _observe(
+    s: Services,
+    run: Run,
+    part: dict[str, Any],
+    trace: list[dict[str, Any]],
+    sent: set[int],
+    noted: set[str],
+) -> None:
+    """A task event: the node's start or end, what it reported failed, and model calls settled."""
+    if (node := events.node_event(part)) is None:
+        return
+    trace.append(node)
+    await run.emit("node", node)
+    for text in events.problems(part):
+        if text not in noted:
+            noted.add(text)
+            await run.emit("problem", {"text": text})
+    if node["phase"] != "start":
         async with s.pool.connection() as conn:
-            await chats.record(conn, conversation_id, turn, started)
-            calls = (await chats.turn_calls(conn, [turn_id])).get(turn_id, [])
+            found = await events.new_calls(conn, run.turn_id, sent)
+        for call in found:
+            sent.add(call["id"])
+            await run.emit("call", call)
+
+
+async def _record(
+    s: Services,
+    run: Run,
+    config: Any,
+    started: datetime,
+    trace: list[dict[str, Any]],
+    sent: set[int],
+) -> None:
+    snapshot = await s.graph.aget_state(config)
+    waiting = snapshot.interrupts[0].value if snapshot.interrupts else None
+    turn = {
+        **events.outcome(snapshot.values),
+        "turn_id": run.turn_id,
+        "message": run.message,
+        "trace": trace,
+        "waiting": waiting,
+    }
+    if waiting is not None:  # the turn stops at a question: that question is its reply
+        turn |= {"reply": waiting["question"], "status": "needs_input", "answer": None}
+    async with s.pool.connection() as conn:
+        await chats.record(conn, run.conversation, turn, started)
+        calls = (await chats.turn_calls(conn, [run.turn_id])).get(run.turn_id, [])
     for row in calls:
         if row["id"] not in sent:  # the last calls settle as the turn ends
-            yield ServerSentEvent(data=row, event="call")
-    yield ServerSentEvent(
-        data={**turn, "calls": calls, "started_at": started, "finished_at": datetime.now(UTC)},
-        event="done",
-    )
+            await run.emit("call", row)
+    finished = datetime.now(UTC)
+    await run.emit("done", {**turn, "calls": calls, "started_at": started, "finished_at": finished})
 
 
-async def _calls(s: Services, turn_id: str, sent: set[int]) -> AsyncIterator[ServerSentEvent]:
+async def _undo(s: Services, run: Run, before: StateSnapshot | None) -> None:
+    """Put the conversation back as it was before a stopped turn: the checkpoint from before it
+    becomes the latest again (a question it was answering is asked again, without a model
+    call); a conversation the turn started is removed."""
+    config = _config(run.conversation)
     async with s.pool.connection() as conn:
-        found = await events.new_calls(conn, turn_id, sent)
-    for call in found:
-        sent.add(call["id"])
-        yield ServerSentEvent(data=call, event="call")
+        spent = await chats.charged(conn, run.turn_id)
+        if before is not None and before.config["configurable"].get("checkpoint_id"):
+            await s.graph.aupdate_state(before.config, None, as_node="__copy__")
+            if before.interrupts:
+                await s.graph.ainvoke(None, config, context=s.context(run.turn_id))
+            removed = False
+        else:  # the turn started the conversation, or stopped before the graph ran
+            if before is not None:
+                await s.checkpointer.adelete_thread(run.conversation)
+            removed = await chats.forget_if_empty(conn, run.conversation)
+    await run.emit(
+        "stopped",
+        {**run.summary(), "spent_usd": spent, "conversation_removed": removed},
+    )
 
 
 def _config(conversation_id: str) -> Any:
@@ -295,6 +426,12 @@ async def evals() -> list[dict[str, Any]]:
     return await report.runs(_services().pool)
 
 
+@api.get("/api/evals/suites")
+def suites() -> dict[str, Any]:
+    """What each suite tests, its data, grading and metrics, and the shared protocol (D38)."""
+    return catalog()
+
+
 @api.get("/api/evals/{run_id}")
 async def evaluation(run_id: str) -> dict[str, Any]:
     try:
@@ -303,19 +440,49 @@ async def evaluation(run_id: str) -> dict[str, Any]:
         raise HTTPException(404, str(error)) from error
 
 
-@api.get("/api/memory")
-async def memory() -> dict[str, Any]:
-    """What is remembered about the user (with each fact's source turn) and the papers read."""
+PAGE = 50  # items per page of a memory list
+
+
+@api.get("/api/memory/facts")
+async def facts(offset: int = 0, limit: int = PAGE) -> dict[str, Any]:
+    """What is remembered about the user, oldest first (new facts are added at the end), each
+    with the conversation it came from when that conversation is still kept (D38)."""
     s = _services()
+    items = await s.memory.asearch(store.profile_namespace(USER), limit=10_000)
+    ordered = sorted(items, key=lambda i: i.created_at)
+    page = [store.Remembered(**i.value) for i in ordered[offset : offset + limit]]
     async with s.pool.connection() as conn:
-        papers = await library.papers(conn, USER)
-    facts = await store.profile(s.memory, USER)
+        named = await chats.titles(conn, [f.thread for f in page])
     return {
-        "facts": [f.model_dump() for f in facts],
-        "library": [
-            p.model_dump(include={"arxiv_id", "version", "title", "published"}) for p in papers
+        "items": [
+            {
+                **f.model_dump(),
+                "conversation": {"id": f.thread, "title": named[f.thread]}
+                if f.thread in named
+                else None,
+            }
+            for f in page
         ],
+        "total": len(ordered),
     }
+
+
+@api.get("/api/memory/library")
+async def shelf(q: str = "", offset: int = 0, limit: int = PAGE) -> dict[str, Any]:
+    """The papers read, in the order first read, matched by title or id."""
+    async with _services().pool.connection() as conn:
+        items, total = await library.shelf(conn, USER, q, offset, min(limit, 200))
+    return {"items": items, "total": total}
+
+
+@api.get("/api/memory/library/{arxiv_id}")
+async def paper(arxiv_id: str) -> dict[str, Any]:
+    """One paper read: its abstract, dates, and the conversations that read it."""
+    async with _services().pool.connection() as conn:
+        found = await library.entry(conn, USER, arxiv_id)
+        if found is None:
+            raise HTTPException(404, f"{arxiv_id} is not in the library")
+        return {**found, "read_in": await chats.reading(conn, USER, arxiv_id)}
 
 
 @api.delete("/api/memory/{key}")

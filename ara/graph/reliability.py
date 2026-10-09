@@ -66,9 +66,28 @@ RETRY = (
 
 
 def problem(what: str, error: BaseException) -> str:
-    """What the reply tells the user about a part that failed."""
+    """What the reply tells the user about a part that failed, in words rather than an exception
+    name (D38); the exception itself goes to the log."""
     log.warning("%s failed: %r", what, error)
-    return f"{what} failed ({type(error).__name__})"
+    return f"{what} failed: {why(error)}"
+
+
+def why(error: BaseException) -> str:
+    if isinstance(error, httpx.HTTPStatusError | openai.APIStatusError):
+        code = (
+            error.response.status_code
+            if isinstance(error, httpx.HTTPStatusError)
+            else error.status_code
+        )
+        return "too many requests right now (HTTP 429)" if code == 429 else f"HTTP {code}"
+    timeouts = NodeTimeoutError | TimeoutError | httpx.TimeoutException | openai.APITimeoutError
+    if isinstance(error, timeouts):
+        return "it took too long"
+    if isinstance(error, httpx.TransportError | openai.APIConnectionError):
+        return "the service could not be reached"
+    if isinstance(error, InvalidOutput):
+        return "the model returned nothing usable"
+    return "an unexpected error"
 
 
 def degrade[F: Callable[..., Awaitable[dict[str, Any]]]](

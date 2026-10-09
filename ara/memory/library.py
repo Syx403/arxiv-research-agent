@@ -1,6 +1,8 @@
 """The user's library (DESIGN §7, §8): papers read, in SQL; the library-wide search that ranks
 them for a question or a need (D27, D30); and the passages a screen sees with each (D30)."""
 
+from typing import Any
+
 from ara.db.pool import Connection
 from ara.graph.state import PaperCard
 from ara.rag.embed import Vector
@@ -18,6 +20,20 @@ PAPERS = """
 SELECT p.arxiv_id, p.version, p.title, p.abstract, p.published FROM library_items l
 JOIN papers p ON p.id = l.paper_id
 WHERE l.user_id = %s AND p.source = 'arxiv' ORDER BY l.first_read_at
+"""
+SHELF = """
+SELECT p.arxiv_id, p.version, p.title, p.published, l.first_read_at, count(*) OVER () AS total
+FROM library_items l JOIN papers p ON p.id = l.paper_id
+WHERE l.user_id = %(user)s AND p.source = 'arxiv'
+  AND (%(query)s = '' OR p.title ILIKE '%%' || %(query)s || '%%'
+       OR p.arxiv_id LIKE %(query)s || '%%')
+ORDER BY l.first_read_at, p.arxiv_id OFFSET %(offset)s LIMIT %(limit)s
+"""
+ENTRY = """
+SELECT p.arxiv_id, p.version, p.title, p.abstract, p.published, l.first_read_at, l.last_read_at
+FROM library_items l JOIN papers p ON p.id = l.paper_id
+WHERE l.user_id = %s AND p.arxiv_id = %s AND p.source = 'arxiv'
+ORDER BY p.version DESC LIMIT 1
 """
 # HNSW over every chunk, filtered to the user's papers; the iterative scan keeps searching the
 # index until enough rows pass the filter (pgvector >= 0.8). Ordered by distance alone: a second
@@ -58,6 +74,22 @@ async def papers(conn: Connection, user: str) -> list[PaperCard]:
         )
         for row in await cursor.fetchall()
     ]
+
+
+async def shelf(
+    conn: Connection, user: str, query: str, offset: int, limit: int
+) -> tuple[list[dict[str, Any]], int]:
+    """A page of the library for the memory page, in the order first read, matched by title or
+    id; and how many match in all."""
+    params = {"user": user, "query": query.strip(), "offset": offset, "limit": limit}
+    rows = await (await conn.execute(SHELF, params)).fetchall()
+    total = rows[0]["total"] if rows else 0
+    return [{k: v for k, v in row.items() if k != "total"} for row in rows], total
+
+
+async def entry(conn: Connection, user: str, arxiv_id: str) -> dict[str, Any] | None:
+    """One paper of the library, with its abstract and when it was first and last read."""
+    return await (await conn.execute(ENTRY, (user, arxiv_id))).fetchone()
 
 
 async def closest_papers(conn: Connection, user: str, vector: Vector, limit: int) -> list[str]:
