@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ara",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "ara", "serve"],
+      "port": 8000
+    }
+  ]
+}

@@ -1,0 +1,844 @@
+/* ARA — an editorial, paper-like interface: warm ivory paper, ink, one clay accent, serif display
+   type, hairline rules. Open-source fonts bundled locally (no network, no brand fonts). */
+
+:root {
+  --paper: #f5f3ec;
+  --paper-raised: #fbfaf6;
+  --paper-sunk: #ece9df;
+  --ink: #1a1915;
+  --ink-soft: #3d3a33;
+  --muted: #7c786d;
+  --faint: #a8a396;
+  --rule: #dedacd;
+  --rule-strong: #c9c4b4;
+  --clay: #c2653f;
+  --clay-deep: #9e4b2b;
+  --clay-wash: #f1e1d6;
+  --sage: #5f7a5a;
+  --sage-wash: #e3ead9;
+  --amber: #b07d1c;
+  --amber-wash: #f4e8c9;
+  --rust: #a8392b;
+  --rust-wash: #f3dcd5;
+
+  --serif: "Newsreader Variable", "Iowan Old Style", Georgia, serif;
+  --sans: "Hanken Grotesk Variable", "Helvetica Neue", sans-serif;
+  --mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+  --radius: 10px;
+  --radius-small: 6px;
+  --shadow: 0 1px 0 rgba(26, 25, 21, 0.04), 0 8px 24px -16px rgba(26, 25, 21, 0.25);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 15px/1.55 var(--sans);
+  font-feature-settings: "ss01", "kern";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* a faint paper grain, so the large ivory fields are not flat */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image: radial-gradient(rgba(26, 25, 21, 0.035) 1px, transparent 1px);
+  background-size: 3px 3px;
+  z-index: 0;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+h1 {
+  font-size: 2.6rem;
+  line-height: 1.08;
+}
+
+h2 {
+  font-size: 1.55rem;
+  line-height: 1.2;
+}
+
+h3 {
+  font-size: 1.15rem;
+}
+
+a {
+  color: var(--clay-deep);
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+
+/* ---------- masthead ---------- */
+
+.app {
+  position: relative;
+  z-index: 1;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  gap: 2.5rem;
+  padding: 1.4rem 2.4rem 1.1rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.wordmark b {
+  font: 500 1.7rem/1 var(--serif);
+  letter-spacing: 0.02em;
+}
+
+.wordmark span {
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.nav {
+  display: flex;
+  gap: 1.6rem;
+  margin-left: auto;
+}
+
+.nav a {
+  position: relative;
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: 0.92rem;
+  padding-bottom: 0.25rem;
+}
+
+.nav a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1.5px;
+  background: var(--clay);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.35s var(--ease);
+}
+
+.nav a:hover::after,
+.nav a[aria-current="page"]::after {
+  transform: scaleX(1);
+}
+
+.nav a[aria-current="page"] {
+  color: var(--ink);
+}
+
+main {
+  flex: 1;
+  padding: 2rem 2.4rem 3rem;
+  animation: rise 0.6s var(--ease) both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.lede {
+  color: var(--ink-soft);
+  max-width: 46rem;
+  font-size: 1.02rem;
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 1.6rem 0;
+}
+
+/* ---------- workflow page ---------- */
+
+.workflow {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.9fr) minmax(0, 1.25fr);
+  gap: 2.2rem;
+  align-items: start;
+}
+
+.chat {
+  position: sticky;
+  top: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 8.5rem);
+  min-height: 520px;
+}
+
+.chat-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.bubble {
+  max-width: 92%;
+  white-space: pre-wrap;
+  animation: rise 0.4s var(--ease) both;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  background: var(--ink);
+  color: var(--paper-raised);
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius) var(--radius) 2px var(--radius);
+}
+
+.bubble.assistant {
+  align-self: stretch;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  border-left: 2px solid var(--clay);
+  padding: 0.1rem 0 0.1rem 1rem;
+}
+
+.empty {
+  margin: auto 0;
+  color: var(--muted);
+}
+
+.empty h2 {
+  color: var(--ink);
+  margin-bottom: 0.6rem;
+}
+
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1.2rem;
+}
+
+.suggestion {
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-small);
+  padding: 0.6rem 0.8rem;
+  color: var(--ink-soft);
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.suggestion:hover {
+  border-color: var(--clay);
+  background: var(--paper-raised);
+}
+
+.composer {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-end;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.55rem 0.55rem 0.9rem;
+  box-shadow: var(--shadow);
+}
+
+.composer:focus-within {
+  border-color: var(--clay);
+}
+
+.composer textarea {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  resize: none;
+  font: inherit;
+  color: var(--ink);
+  outline: none;
+  min-height: 2.6rem;
+  max-height: 9rem;
+}
+
+.button {
+  border: 0;
+  border-radius: var(--radius-small);
+  background: var(--clay);
+  color: #fff;
+  padding: 0.55rem 1.05rem;
+  font-weight: 500;
+  transition:
+    background 0.2s,
+    transform 0.15s;
+}
+
+.button:hover {
+  background: var(--clay-deep);
+}
+
+.button:active {
+  transform: translateY(1px);
+}
+
+.button:disabled {
+  background: var(--faint);
+  cursor: default;
+}
+
+.button.quiet {
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--rule-strong);
+}
+
+.button.quiet:hover {
+  border-color: var(--ink-soft);
+}
+
+.waiting {
+  border: 1px solid var(--clay);
+  background: var(--clay-wash);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  font-family: var(--serif);
+}
+
+.waiting .eyebrow {
+  color: var(--clay-deep);
+  font-family: var(--sans);
+}
+
+.panel {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 1rem 1.2rem 0.4rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.2rem;
+  margin-left: auto;
+}
+
+.tab {
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.tab[aria-selected="true"] {
+  background: var(--ink);
+  color: var(--paper-raised);
+}
+
+.tab .dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-left: 0.4rem;
+  background: var(--clay);
+  vertical-align: middle;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.graph {
+  padding: 0.4rem 1rem 1rem;
+  min-height: 360px;
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+}
+
+.graph svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* mermaid nodes, restyled: LangGraph's own colours are stripped before rendering */
+.graph .node rect,
+.graph .node polygon,
+.graph .node circle {
+  fill: var(--paper) !important;
+  stroke: var(--rule-strong) !important;
+  stroke-width: 1px !important;
+  transition:
+    fill 0.3s,
+    stroke 0.3s;
+}
+
+.graph .node .nodeLabel,
+.graph .node text {
+  font-family: var(--sans) !important;
+  color: var(--ink-soft) !important;
+  fill: var(--ink-soft) !important;
+}
+
+.graph .edgePath path,
+.graph .flowchart-link {
+  stroke: var(--faint) !important;
+}
+
+.graph .node.is-active rect,
+.graph .node.is-active polygon {
+  fill: var(--clay-wash) !important;
+  stroke: var(--clay) !important;
+  stroke-width: 2px !important;
+  animation: glow 1.1s ease-in-out infinite;
+}
+
+.graph .node.is-done rect,
+.graph .node.is-done polygon {
+  fill: var(--sage-wash) !important;
+  stroke: var(--sage) !important;
+}
+
+.graph .node.is-degraded rect,
+.graph .node.is-degraded polygon {
+  fill: var(--amber-wash) !important;
+  stroke: var(--amber) !important;
+  stroke-dasharray: 4 3;
+}
+
+.graph .node.is-failed rect,
+.graph .node.is-failed polygon {
+  fill: var(--rust-wash) !important;
+  stroke: var(--rust) !important;
+}
+
+@keyframes glow {
+  50% {
+    stroke-opacity: 0.35;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.legend {
+  display: flex;
+  gap: 1.1rem;
+  padding: 0 1.2rem 1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 0.35rem;
+  vertical-align: -1px;
+  border: 1px solid;
+}
+
+.timeline {
+  margin-top: 1.6rem;
+}
+
+.timeline table,
+.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.data th,
+.timeline th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--rule-strong);
+  padding: 0.5rem 0.6rem;
+}
+
+.data td,
+.timeline td {
+  border-bottom: 1px solid var(--rule);
+  padding: 0.5rem 0.6rem;
+  vertical-align: top;
+}
+
+.data td.num,
+.timeline td.num,
+.data th.num,
+.timeline th.num {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.data tr.clickable {
+  cursor: pointer;
+}
+
+.data tr.clickable:hover td {
+  background: var(--paper-sunk);
+}
+
+.timeline tbody tr {
+  animation: rise 0.35s var(--ease) both;
+}
+
+.totals {
+  display: flex;
+  gap: 2.4rem;
+  margin: 0.4rem 0 0.8rem;
+}
+
+.figure b {
+  display: block;
+  font: 400 1.7rem/1.1 var(--serif);
+}
+
+.figure span {
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pill {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  background: var(--paper-sunk);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.pill.clay {
+  background: var(--clay-wash);
+  color: var(--clay-deep);
+}
+
+.pill.sage {
+  background: var(--sage-wash);
+  color: var(--sage);
+}
+
+.pill.amber {
+  background: var(--amber-wash);
+  color: var(--amber);
+}
+
+.pill.rust {
+  background: var(--rust-wash);
+  color: var(--rust);
+}
+
+/* ---------- evidence page ---------- */
+
+.evidence {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 2.4rem;
+  align-items: start;
+}
+
+.answer-short {
+  font: 400 1.6rem/1.3 var(--serif);
+  margin: 0.6rem 0 1.2rem;
+}
+
+.answer-line {
+  font: 400 1.06rem/1.65 var(--serif);
+  margin: 0 0 0.8rem;
+}
+
+.chip {
+  font: 500 0.7rem/1 var(--mono);
+  border: 1px solid var(--clay);
+  color: var(--clay-deep);
+  background: transparent;
+  border-radius: 4px;
+  padding: 0.18rem 0.35rem;
+  margin-left: 0.25rem;
+  vertical-align: 2px;
+  transition: background 0.2s;
+}
+
+.chip:hover,
+.chip[aria-pressed="true"] {
+  background: var(--clay);
+  color: #fff;
+}
+
+.verified {
+  color: var(--sage);
+  font-size: 0.76rem;
+  margin-left: 0.4rem;
+}
+
+.rejected {
+  border-left: 2px solid var(--rust);
+  padding-left: 0.9rem;
+  color: var(--ink-soft);
+  margin-bottom: 0.6rem;
+}
+
+.source {
+  position: sticky;
+  top: 1.2rem;
+  max-height: calc(100vh - 9rem);
+  overflow-y: auto;
+  padding: 1.2rem 1.4rem;
+}
+
+.passage {
+  margin: 0 0 1.1rem;
+  padding: 0.4rem 0 0.4rem 0.9rem;
+  border-left: 2px solid transparent;
+  font: 400 0.98rem/1.65 var(--serif);
+  color: var(--ink-soft);
+  transition: border-color 0.3s;
+}
+
+.passage.cited {
+  border-left-color: var(--clay);
+  color: var(--ink);
+}
+
+.passage small {
+  display: block;
+  font: 500 0.7rem/1.4 var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+
+mark {
+  background: linear-gradient(transparent 55%, var(--clay-wash) 55%);
+  color: inherit;
+  padding: 0 0.05em;
+}
+
+.papers {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.paper-card {
+  padding: 0.9rem 1.1rem;
+}
+
+.paper-card h3 {
+  font-size: 1.02rem;
+  line-height: 1.35;
+  margin-bottom: 0.3rem;
+}
+
+.paper-card p {
+  margin: 0.35rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* ---------- evaluation page ---------- */
+
+.runs-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.75fr) minmax(0, 1.6fr);
+  gap: 2.2rem;
+  align-items: start;
+}
+
+.ci {
+  position: relative;
+  width: 140px;
+  height: 14px;
+}
+
+.ci::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6.5px;
+  height: 1px;
+  background: var(--rule);
+}
+
+.ci .band {
+  position: absolute;
+  top: 3px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--clay-wash);
+  border: 1px solid var(--clay);
+}
+
+.ci .mean {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 14px;
+  background: var(--clay-deep);
+}
+
+.split-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  margin: 1.6rem 0 0.4rem;
+}
+
+/* ---------- memory page ---------- */
+
+.memory {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 2.4rem;
+  align-items: start;
+}
+
+.fact {
+  padding: 1rem 1.2rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.fact blockquote {
+  margin: 0;
+  font: italic 400 1.05rem/1.5 var(--serif);
+}
+
+.fact p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.notice {
+  color: var(--muted);
+  font-style: italic;
+  font-family: var(--serif);
+}
+
+.error-box {
+  border: 1px solid var(--rust);
+  background: var(--rust-wash);
+  color: var(--rust);
+  border-radius: var(--radius-small);
+  padding: 0.6rem 0.8rem;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 980px) {
+  .workflow,
+  .evidence,
+  .runs-layout,
+  .memory {
+    grid-template-columns: 1fr;
+  }
+  .chat,
+  .source {
+    position: static;
+    height: auto;
+    max-height: none;
+  }
+  .masthead,
+  main {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  .nav {
+    gap: 1rem;
+  }
+}

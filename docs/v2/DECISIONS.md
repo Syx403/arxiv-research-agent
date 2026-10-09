@@ -831,3 +831,37 @@ decision gets a new entry that names the one it replaces.
 - Alternatives: retries inside the gateway and the arXiv client (two retry layers, what v1 did);
   one error handler on the subgraph nodes only (one failed paper or line would end the whole
   phase).
+
+## D35 — M5b: the local web app (2026-10-09, Ewan approved the plan)
+- Ewan's choices: subgraphs drawn as separate diagrams (option a); pages 1, 2, 4 plus a simple
+  memory page; hand-written CSS with design tokens, in a visual language like Anthropic's website
+  (warm ivory paper, ink, one clay accent, serif display type, generous whitespace), with no
+  Anthropic name, logo or brand fonts: open-source Newsreader, Hanken Grotesk and JetBrains Mono,
+  bundled locally.
+- Built: `ara/api/server.py` (FastAPI 0.143 on 127.0.0.1:8000, one user; routes under `/api`, so
+  the built UI owns `/`: `POST /api/threads`, `GET /api/threads/{id}`, `POST
+  /api/threads/{id}/messages` and `/resume` as Server-Sent Events, `GET /api/graph`, `GET
+  /api/papers/{id}/document`, `GET /api/evals`, `GET /api/evals/{run}`, `GET /api/memory`, `DELETE
+  /api/memory/{key}`); `ara/api/events.py` (task events → node events, finished ledger calls, the
+  finished turn); `evals.report.runs` / `summary` (the evaluation page's data, from the same
+  results as the markdown report); `ara serve`; the UI in `ui/` (React 19.3, Vite 8.3, TypeScript
+  7.0, mermaid 12.1, exact versions); `make ui`, `make ui-check`, `make ui-dev`, `make start`; a CI
+  job that builds the UI.
+- Deviations from the M5b proposal, recorded here: SSE uses FastAPI's own `EventSourceResponse`
+  (added in FastAPI 0.13x, found installed) rather than a hand-built `StreamingResponse`; routes
+  carry an `/api` prefix (DESIGN §9 listed them without one).
+- Checked on the installed LangGraph 1.2.14: `get_graph(xray=True)` does not show subgraphs that a
+  node invokes, so `/api/graph` returns the main graph and the three subgraphs, each drawn from its
+  compiled graph, without error-handler nodes (drawn unconnected) or LangGraph's colour classes;
+  `astream(stream_mode="tasks", subgraphs=True)` does stream subgraph nodes (namespaced
+  "discover:<id>"), but then re-raises at the end an error a node's handler already handled,
+  after the run has finished and been checkpointed (reproduced on a two-node graph). The server
+  treats that case as a finished turn when the checkpoint has no next step; any other exception
+  becomes an `error` event.
+- The step timeline shows ledger rows once settled (a call in flight is not shown half-filled);
+  the rows of the last calls are sent after the turn ends.
+- Live check (approved ≤ US$0.01): in the built-in browser, "Read 2210.03629 and explain how it
+  interleaves reasoning and actions." ran load_context → understand → resolve → read → conflicts →
+  answer → respond with the path coloured live; 8 model calls, US$0.00188; the answer's four lines
+  verified, each citation opening its passage with the sentence marked; the memory page listed
+  ReAct with its date. Evaluation, memory and graph pages checked against the real database.

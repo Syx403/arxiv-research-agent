@@ -13,7 +13,7 @@ Update this file at the end of every working session: what was done, what was sp
 | M2 Read + answer | done (2026-10-08), reviewed | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20); review fixes and a live check of requery, prewarm and repair (D21) |
 | M3 Understand + discover | done (2026-10-08), reviewed; S3/S4 first rounds run (D25) | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); priorities, titles, recency, today, English S4 of 62 items (D24); S4 labels await Ewan's review |
 | M4 Memory | done (2026-10-09); S6 reviewed and run; review fixes (D29) and library redesign (D30) built, awaiting the S6 round | profile + research records in the Store, library + HNSW, `memory` intent; live: 2 S6 scenarios (D27); named papers read directly (D29); arXiv first with a library pre-check, no paper-choice question, per-paper evidence with one rerank (D30) |
-| M5 Reliability + UI | M5a done (2026-10-09, D34): S7 graceful 6/6, injection 0/3; S6 ran 19/19 without an error. M5b (API + UI) next | |
+| M5 Reliability + UI | done (2026-10-09): M5a (D34) S7 graceful 6/6, injection 0/3, S6 19/19 without an error; M5b (D35) `make start` → http://127.0.0.1:8000, four pages, a demo turn checked live | |
 | Architecture review (Ewan) | — | gate before any large-scale LLM testing |
 | E1–E6 evaluation rounds | — | ≤ US$1 each |
 
@@ -51,7 +51,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-09 | S6 round | 19 scenarios, 37 turns, off-peak (`s6-20261009T121705`) | 489 | 0.1265 | Ewan (S6 cap raised to US$0.20) |
 | 2026-10-09 | S7 round | 6 fault turns, 3 injection questions (`s7-20261009T141936`) | 44 | 0.0085 | Ewan (cap US$0.05) |
 | 2026-10-09 | S6 rerun after M5a | 19 scenarios, off-peak (`s6-20261009T142221`) | 500 | 0.1251 | Ewan (cap US$0.20) |
-| | | **Total so far** | 2880 | **0.7409** | |
+| 2026-10-09 | M5b live check | one demo turn in the app (`ui:` turn ids, no run id) | 8 | 0.0019 | Ewan (≤ US$0.01) |
+| | | **Total so far** | 2888 | **0.7428** | |
 
 ## Session log
 
@@ -316,3 +317,10 @@ Update this file at the end of every working session: what was done, what was sp
   train models myself"); dev s6-conflict the same with Toolformer; dev s6-library's diffusion
   question read ReAct and fell back to arXiv instead of "not discussed" (the library screen let
   ReAct through); dev s6-premise still abstains. These go to the E rounds (dev).
+- 2026-10-09 — M5b (D35; Ewan approved: subgraphs as separate diagrams, pages 1, 2, 4 and a simple
+  memory page, an Anthropic-like visual language without its branding). Built the FastAPI server
+  (SSE turns, graph, documents, evaluations, memory), the React UI, `make start`, a UI CI job.
+  Found on LangGraph 1.2.14: xray cannot draw subgraphs a node invokes; streaming with
+  `subgraphs=True` re-raises an already handled error after the run finished (worked around).
+  Live: one demo turn in the browser, 8 calls, US$0.0019. 145 unit tests (4 for the API). Next:
+  the architecture review (DESIGN §14 gate), then the E rounds.

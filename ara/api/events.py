@@ -12,7 +12,7 @@ HANDLER = "__error_handler__"
 CALLS = """
 SELECT id, stage, model, status, latency_ms, input_tokens, cached_tokens, output_tokens,
        reasoning_tokens, cost_usd
-FROM llm_calls WHERE turn_id = %s AND id > %s ORDER BY id
+FROM llm_calls WHERE turn_id = %s AND status <> 'reserved' AND NOT id = ANY(%s) ORDER BY id
 """
 
 
@@ -39,10 +39,10 @@ def _graph(ns: tuple[str, ...]) -> str:
     return ns[-1].split(":")[0] if ns else "main"
 
 
-async def new_calls(conn: Connection, turn_id: str, after: int) -> list[dict[str, Any]]:
-    """The model calls this turn made since call `after` (ledger rows: stage, model, latency,
-    tokens, cache hits, cost)."""
-    cursor = await conn.execute(CALLS, (turn_id, after))
+async def new_calls(conn: Connection, turn_id: str, sent: set[int]) -> list[dict[str, Any]]:
+    """This turn's model calls that have finished since the ones already `sent` (ledger rows:
+    stage, model, latency, tokens, cache hits, cost). A call in flight waits for its result."""
+    cursor = await conn.execute(CALLS, (turn_id, list(sent)))
     return [
         {**row, "cost_usd": float(row["cost_usd"]) if row["cost_usd"] is not None else None}
         for row in await cursor.fetchall()

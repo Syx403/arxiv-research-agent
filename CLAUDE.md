@@ -60,4 +60,7 @@ Read first: `docs/v2/DESIGN.md` (spec), `docs/v2/DECISIONS.md` (why), `docs/v2/P
   (reading QA through the graphs); S5 the same with `s5` (`--limit N` = claim pairs). S3 (`--limit N` per split; PaSa, no LangSmith dataset) and S4 (needs reviewed labels)
   run the same way. S5 data: `uv run ara eval perturb` (dry run) / `--execute
   --max-usd X` (resumes from `data/s5_rewrites.json`; output for Ewan's review).
-- API server and UI: added in M5.
+- App (M5b): `make start` (database, migrations, UI build, `uv run ara serve` on
+  http://127.0.0.1:8000); `make ui-dev` for Vite hot reload on :5173 against a running server;
+  `make ui-check` type-checks the UI. A turn in the app is billable like any other.
+- Fault hooks (M5a): `ARA_FAULTS="point=kind[xN]"` (e.g. `arxiv=429x1`, `synthesize=empty`).

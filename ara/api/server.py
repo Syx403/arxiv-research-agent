@@ -6,6 +6,7 @@ then the finished turn or the question the graph waits on. The built UI (ui/dist
 """
 
 import asyncio
+import re
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -111,12 +112,25 @@ def graph() -> dict[str, str]:
     """Mermaid for the main graph and the three subgraphs its nodes run, drawn from the compiled
     graphs, so the picture always matches the code (xray cannot see subgraphs called inside a
     node, D35)."""
-    return {
-        "main": conversation.build().get_graph().draw_mermaid(),
-        "discover": conversation.DISCOVER.get_graph().draw_mermaid(),
-        "read": conversation.READ.get_graph().draw_mermaid(),
-        "answer": conversation.ANSWER.get_graph().draw_mermaid(),
+    graphs: dict[str, CompiledStateGraph[Any, Any, Any, Any]] = {
+        "main": conversation.build(),
+        "discover": conversation.DISCOVER,
+        "read": conversation.READ,
+        "answer": conversation.ANSWER,
     }
+    return {name: _drawn(g.get_graph().draw_mermaid()) for name, g in graphs.items()}
+
+
+def _drawn(mermaid: str) -> str:
+    """LangGraph draws each error handler as an unconnected node; the UI colours the node it
+    handles instead (degraded), so the handlers are left out. Its colour classes are left out
+    too, so the UI's own palette applies."""
+    lines = [
+        re.sub(r":::\w+", "", line)
+        for line in mermaid.splitlines()
+        if events.HANDLER not in line and not line.strip().startswith("classDef")
+    ]
+    return "\n".join(lines)
 
 
 @api.post("/api/threads")
@@ -150,7 +164,7 @@ async def _turn(thread_id: str, payload: Any) -> AsyncIterator[ServerSentEvent]:
     s = _services()
     turn_id = f"ui:{thread_id}:{uuid4().hex[:8]}"
     config = _config(thread_id)
-    last_call = 0
+    sent: set[int] = set()
     async with s.locks[thread_id]:
         stream = s.graph.astream(
             payload,
@@ -165,10 +179,8 @@ async def _turn(thread_id: str, payload: Any) -> AsyncIterator[ServerSentEvent]:
                 if (node := events.node_event(dict(part))) is not None:
                     yield ServerSentEvent(data=node, event="node")
                 if node is not None and node["phase"] != "start":
-                    async with s.pool.connection() as conn:
-                        for call in await events.new_calls(conn, turn_id, last_call):
-                            last_call = call["id"]
-                            yield ServerSentEvent(data=call, event="call")
+                    async for call in _calls(s, turn_id, sent):
+                        yield call
         except Exception as error:
             # LangGraph 1.2.14 streaming with subgraphs=True re-raises, at the end, an error a
             # node's error handler already handled, after the run has finished and been
@@ -178,10 +190,20 @@ async def _turn(thread_id: str, payload: Any) -> AsyncIterator[ServerSentEvent]:
                 yield ServerSentEvent(data={"error": repr(error)}, event="error")
                 return
         snapshot = await s.graph.aget_state(config)
+    async for call in _calls(s, turn_id, sent):  # the last calls settle as the turn ends
+        yield call
     if snapshot.interrupts:
         yield ServerSentEvent(data=snapshot.interrupts[0].value, event="interrupt")
     else:
         yield ServerSentEvent(data=events.turn(snapshot.values), event="done")
+
+
+async def _calls(s: Services, turn_id: str, sent: set[int]) -> AsyncIterator[ServerSentEvent]:
+    async with s.pool.connection() as conn:
+        found = await events.new_calls(conn, turn_id, sent)
+    for call in found:
+        sent.add(call["id"])
+        yield ServerSentEvent(data=call, event="call")
 
 
 def _config(thread_id: str) -> Any:

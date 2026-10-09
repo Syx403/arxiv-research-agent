@@ -5,8 +5,8 @@ sentence-level citations that are checked against the source. It is a personal p
 with measured evidence, how an agent system is built and evaluated: LangGraph orchestration, RAG,
 an LLM layer with cost and cache control, memory and PostgreSQL. It is not a production service.
 
-**Status:** v2 is being rebuilt; milestone M0 (foundation) is done. The full README arrives with
-the UI in M5.
+**Status:** v2 milestones M0–M5 are built (M5b: the local web app); the architecture review and
+the evaluation rounds come next. The full README follows the review.
 
 - Design: [docs/v2/DESIGN.md](docs/v2/DESIGN.md)
 - Decisions and their reasons: [docs/v2/DECISIONS.md](docs/v2/DECISIONS.md)
@@ -24,6 +24,19 @@ make db-up      # PostgreSQL 18 + pgvector + pg_search on 127.0.0.1:5434
 make migrate
 make check      # ruff, mypy, and unit tests against the real database
 ```
+
+## Run the app
+
+Requirements as above, plus Node (only to build the UI).
+
+```sh
+make start      # database, migrations, UI build, server
+```
+
+Then open http://127.0.0.1:8000 (bound to this machine only, one user, no login). Four pages:
+the workflow (chat, the live LangGraph drawn from the compiled graphs, a step timeline from the
+cost ledger), the evidence behind the last answer, the evaluation rounds, and memory. During UI
+work, `uv run ara serve` with `make ui-dev` gives hot reload on http://127.0.0.1:5173.
 
 `make test-live` calls the real models and is billed; every call is recorded in the `llm_calls`
 ledger and traced in LangSmith.

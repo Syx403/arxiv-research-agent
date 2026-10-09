@@ -34,3 +34,6 @@ Thumbs.db
 dist/
 build/
 *.egg
+
+# UI packages (M5b)
+node_modules/
