@@ -31,12 +31,17 @@ export function Graph({ definition, phases }: { definition: string; phases: Reco
   const id = useId().replace(/:/g, "");
   const [error, setError] = useState<string | null>(null);
 
+  const painted = useRef(phases);
+  painted.current = phases;
+
   useEffect(() => {
     let live = true;
     mermaid
       .render(`graph-${id}`, definition)
       .then(({ svg }) => {
-        if (live && host.current) host.current.innerHTML = svg;
+        if (!live || !host.current) return;
+        host.current.innerHTML = svg;
+        paint(host.current, painted.current); // the drawing arrives after the phases
       })
       .catch((e: unknown) => live && setError(String(e)));
     return () => {
@@ -45,16 +50,18 @@ export function Graph({ definition, phases }: { definition: string; phases: Reco
   }, [definition, id]);
 
   useEffect(() => {
-    const root = host.current;
-    if (!root) return;
-    for (const node of root.querySelectorAll<SVGGElement>("g.node")) {
-      node.classList.remove(...Object.values(CLASS));
-      const phase = phases[name(node)];
-      if (phase) node.classList.add(CLASS[phase]);
-    }
-  });
+    if (host.current) paint(host.current, phases);
+  }, [phases]);
 
   return error ? <div className="error-box">{error}</div> : <div className="graph" ref={host} />;
+}
+
+function paint(root: HTMLElement, phases: Record<string, Phase>) {
+  for (const node of root.querySelectorAll<SVGGElement>("g.node")) {
+    node.classList.remove(...Object.values(CLASS));
+    const phase = phases[name(node)];
+    if (phase) node.classList.add(CLASS[phase]);
+  }
 }
 
 /** "graph-r1-flowchart-understand-12" → "understand" (mermaid's node element ids). */

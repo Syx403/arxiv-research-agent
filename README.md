@@ -33,9 +33,11 @@ Requirements as above, plus Node (only to build the UI).
 make start      # database, migrations, UI build, server
 ```
 
-Then open http://127.0.0.1:8000 (bound to this machine only, one user, no login). Four pages:
-the workflow (chat, the live LangGraph drawn from the compiled graphs, a step timeline from the
-cost ledger), the evidence behind the last answer, the evaluation rounds, and memory. During UI
+Then open http://127.0.0.1:8000 (bound to this machine only, one user, no login). It is a chat
+with stored conversations: under each reply a fold shows how the turn ran, and a side panel shows
+that turn's path through the LangGraph graphs (drawn from the compiled code), its model calls from
+the cost ledger, the cited sentences marked in their papers, and the papers. Evaluation rounds and
+memory are pages of their own. During UI
 work, `uv run ara serve` with `make ui-dev` gives hot reload on http://127.0.0.1:5173.
 
 `make test-live` calls the real models and is billed; every call is recorded in the `llm_calls`

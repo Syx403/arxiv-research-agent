@@ -11,10 +11,7 @@ export function Timeline({ calls }: { calls: Call[] }) {
   const cached = calls.reduce((sum, c) => sum + (c.cached_tokens ?? 0), 0);
   return (
     <section className="timeline">
-      <div className="panel-head" style={{ padding: "0 0 0.6rem" }}>
-        <h3>Step timeline</h3>
-        <span className="eyebrow">from the cost ledger</span>
-      </div>
+      <div className="eyebrow">Model calls, from the cost ledger</div>
       <div className="totals">
         <div className="figure">
           <b>{calls.length}</b>

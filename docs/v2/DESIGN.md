@@ -516,6 +516,9 @@ The diagram is generated from the compiled graph, so it always matches the code.
 As built (M5b, D35): routes under `/api`; SSE through FastAPI's `EventSourceResponse`; the main
 graph and its three subgraphs are drawn separately (xray cannot see subgraphs a node invokes);
 the paper-choice card is gone (D30); `make start` serves the built UI at http://127.0.0.1:8000.
+Since D36 the UI is a chat (sidebar of conversations, a fold under each reply, a side panel per
+turn with its workflow, evidence and papers); turns are recorded in `conversations` / `turns`
+(0007) by the API, and the evidence viewer reads passages from `chunks` as before.
 
 API (FastAPI + SSE): `POST /threads`, `POST /threads/{id}/messages` (SSE run stream),
 `POST /threads/{id}/resume`, `GET /threads/{id}`, `GET /graph`, `GET /papers/{id}/document`,

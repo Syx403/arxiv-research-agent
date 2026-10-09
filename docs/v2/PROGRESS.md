@@ -52,7 +52,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-09 | S7 round | 6 fault turns, 3 injection questions (`s7-20261009T141936`) | 44 | 0.0085 | Ewan (cap US$0.05) |
 | 2026-10-09 | S6 rerun after M5a | 19 scenarios, off-peak (`s6-20261009T142221`) | 500 | 0.1251 | Ewan (cap US$0.20) |
 | 2026-10-09 | M5b live check | one demo turn in the app (`ui:` turn ids, no run id) | 8 | 0.0019 | Ewan (≤ US$0.01) |
-| | | **Total so far** | 2888 | **0.7428** | |
+| 2026-10-10 | Chat UI live check | three turns in two conversations (`ui:` turn ids) | 33 | 0.0064 | Ewan (≤ US$0.01) |
+| | | **Total so far** | 2921 | **0.7492** | |
 
 ## Session log
 
@@ -324,3 +325,8 @@ Update this file at the end of every working session: what was done, what was sp
   `subgraphs=True` re-raises an already handled error after the run finished (worked around).
   Live: one demo turn in the browser, 8 calls, US$0.0019. 145 unit tests (4 for the API). Next:
   the architecture review (DESIGN §14 gate), then the E rounds.
+- 2026-10-10 — D36: the app rebuilt as a research agent's chat (Ewan): sidebar of conversations
+  (grouped by day, rename, delete), a fold under each reply leading to a side panel with that
+  turn's workflow, evidence and papers; migration 0007 records conversations and turns. Live check
+  in the browser: three turns, two conversations, US$0.0064; fixed recorded graphs drawn without
+  colours. 146 unit tests. Next: the architecture review (DESIGN §14 gate).

@@ -48,23 +48,38 @@ export interface Answer {
   context: string;
 }
 
-export interface Turn {
-  messages: Message[];
-  status: string;
-  problems: string[];
-  intent: string | null;
-  papers: Paper[];
-  read: Paper[];
-  answer: Answer | null;
-}
-
-export interface Thread extends Turn {
-  waiting: Waiting | null;
-}
-
 export interface Waiting {
   kind: string;
   question: string;
+}
+
+/** One recorded turn of a conversation: what was said, what came back, and how (D36). */
+export interface Turn {
+  turn_id: string;
+  message: string;
+  reply: string;
+  status: string;
+  intent: string | null;
+  answer: Answer | null;
+  papers: Paper[];
+  read: Paper[];
+  problems: string[];
+  trace: NodeEvent[];
+  waiting: Waiting | null;
+  calls: Call[];
+  started_at: string;
+  finished_at: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Conversation extends ConversationSummary {
+  turns: Turn[];
 }
 
 export type Phase = "start" | "end" | "failed" | "degraded";
@@ -90,7 +105,6 @@ export interface Call {
 export type StreamEvent =
   | { event: "node"; data: NodeEvent }
   | { event: "call"; data: Call }
-  | { event: "interrupt"; data: Waiting }
   | { event: "done"; data: Turn }
   | { event: "error"; data: { error: string } };
 
@@ -177,8 +191,16 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   graph: () => json<Graphs>("/api/graph"),
-  newThread: () => json<{ id: string }>("/api/threads", { method: "POST" }),
-  thread: (id: string) => json<Thread>(`/api/threads/${id}`),
+  conversations: () => json<ConversationSummary[]>("/api/conversations"),
+  newConversation: () => json<{ id: string }>("/api/conversations", { method: "POST" }),
+  conversation: (id: string) => json<Conversation>(`/api/conversations/${id}`),
+  rename: (id: string, title: string) =>
+    json<{ title: string }>(`/api/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }),
+  remove: (id: string) => json<{ deleted: string }>(`/api/conversations/${id}`, { method: "DELETE" }),
   document: (paperId: string) =>
     json<PaperDocument>(`/api/papers/${encodeURIComponent(paperId)}/document`),
   runs: () => json<Run[]>("/api/evals"),
@@ -190,11 +212,11 @@ export const api = {
 
 /** Send a message (or answer a waiting question) and yield the turn's events as they arrive. */
 export async function* stream(
-  thread: string,
+  conversation: string,
   kind: "messages" | "resume",
   body: Record<string, string>,
 ): AsyncGenerator<StreamEvent> {
-  const response = await fetch(`/api/threads/${thread}/${kind}`, {
+  const response = await fetch(`/api/conversations/${conversation}/${kind}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

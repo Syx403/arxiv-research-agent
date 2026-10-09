@@ -865,3 +865,32 @@ decision gets a new entry that names the one it replaces.
   answer → respond with the path coloured live; 8 model calls, US$0.00188; the answer's four lines
   verified, each citation opening its passage with the sentence marked; the memory page listed
   ReAct with its date. Evaluation, memory and graph pages checked against the real database.
+
+## D36 — The app as a research agent's chat: conversations, per-turn records, a side panel (2026-10-10, Ewan)
+- Context: Ewan asked for the UI to work like Claude's web chat, as a domain agent: many stored
+  conversations, each turn keeping its own evidence and workflow, easy to revisit and show.
+- Decisions (Ewan confirmed the proposal and its defaults): a collapsible sidebar with "New
+  conversation", conversations grouped by day (rename, delete) and the Evaluation and Memory pages
+  at its foot; a centred chat column where each reply is rendered from the agent's reply text
+  (citations as chips, listed papers as rows, notes in amber) with a fold underneath ("read 1
+  paper · 9 model calls · $0.0026 · 21 s", opening to the turn's steps, live while it runs); a side
+  panel per turn with its workflow (the graphs coloured by that turn's trace, and its model calls),
+  its evidence (the cited sentence marked in its passage) and its papers. Titles are the first
+  message cut at about 60 characters (no model call); deleting a conversation deletes its turns
+  and its checkpoints, not its ledger rows; earlier threads are not migrated.
+- Built: migration 0007 (`conversations`, `turns`: message, reply, status, intent, answer, papers,
+  read, problems, trace of node events, the question waited on, times; model calls joined from
+  `llm_calls` on `turn_id`), written by the API when a turn ends, so the graph is unchanged;
+  `ara/api/conversations.py`; routes `GET/POST /api/conversations`, `GET/PATCH/DELETE
+  /api/conversations/{id}`, `POST /api/conversations/{id}/messages` and `/resume` (SSE; the last
+  event is the recorded turn); the `/api/threads` routes are gone. A turn that stops at a clarifying
+  question is recorded as its own turn whose reply is the question; the answer to it starts the
+  next record. The UI was rewritten around this (sidebar, chat, side panel).
+- Found in the live check and fixed: a recorded turn's graph was drawn uncoloured, because the
+  colours were applied before mermaid finished drawing (during a live turn later events re-applied
+  them); the graph now colours itself once drawn.
+- Live check (≤ US$0.01, Saturday, off-peak): three turns in two conversations, 33 model calls,
+  US$0.0064: a read with a citation opened in the panel at its marked sentence, a follow-up in the
+  same conversation ("Which benchmarks does it evaluate on?" → HotPotQA, FEVER, ALFWorld,
+  WebShop), a new conversation, then back to the first, where the second turn's panel showed its
+  own path, two cited sentences and one paper.
