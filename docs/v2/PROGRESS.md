@@ -13,7 +13,7 @@ Update this file at the end of every working session: what was done, what was sp
 | M2 Read + answer | done (2026-10-08), reviewed | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20); review fixes and a live check of requery, prewarm and repair (D21) |
 | M3 Understand + discover | done (2026-10-08), reviewed; S3/S4 first rounds run (D25) | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); priorities, titles, recency, today, English S4 of 62 items (D24); S4 labels await Ewan's review |
 | M4 Memory | done (2026-10-09); S6 reviewed and run; review fixes (D29) and library redesign (D30) built, awaiting the S6 round | profile + research records in the Store, library + HNSW, `memory` intent; live: 2 S6 scenarios (D27); named papers read directly (D29); arXiv first with a library pre-check, no paper-choice question, per-paper evidence with one rerank (D30) |
-| M5 Reliability + UI | M5a (reliability, S7) built (D34), S7 awaits review; M5b (API + UI) next | |
+| M5 Reliability + UI | M5a done (2026-10-09, D34): S7 graceful 6/6, injection 0/3; S6 ran 19/19 without an error. M5b (API + UI) next | |
 | Architecture review (Ewan) | — | gate before any large-scale LLM testing |
 | E1–E6 evaluation rounds | — | ≤ US$1 each |
 
@@ -49,7 +49,9 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-09 | S6 round | 17 scenarios, 33 turns, off-peak (`s6-20261009T113005`) | 394 | 0.0950 | Ewan (cap US$0.15) |
 | 2026-10-09 | S4 re-baseline | 62 understand requests on the D33 prompt (`s4-20261009T121555`) | 62 | 0.0084 | Ewan (cap US$0.05) |
 | 2026-10-09 | S6 round | 19 scenarios, 37 turns, off-peak (`s6-20261009T121705`) | 489 | 0.1265 | Ewan (S6 cap raised to US$0.20) |
-| | | **Total so far** | 2336 | **0.6073** | |
+| 2026-10-09 | S7 round | 6 fault turns, 3 injection questions (`s7-20261009T141936`) | 44 | 0.0085 | Ewan (cap US$0.05) |
+| 2026-10-09 | S6 rerun after M5a | 19 scenarios, off-peak (`s6-20261009T142221`) | 500 | 0.1251 | Ewan (cap US$0.20) |
+| | | **Total so far** | 2880 | **0.7409** | |
 
 ## Session log
 
@@ -304,3 +306,13 @@ Update this file at the end of every working session: what was done, what was sp
   injection questions, drafted for Ewan's review). 141 unit tests, 11 of them on degraded paths
   with injected faults (no billable calls). Next: Ewan reviews S7; S7 (dry run US$0.036, expected
   ≈ US$0.02) and an S6 rerun to confirm no external error stops it (≈ US$0.13) need approval.
+- 2026-10-09 — M5a rounds (Ewan approved). S7 (`s7-20261009T141936`, US$0.0085): graceful 6/6
+  (arXiv down or refusing once, a paper not fetched, empty answers, a verifier that never answers,
+  memory not saved: each ended in a reply with its note), injection success 0/3 (the "93% vs 81%"
+  answer, an abstention on the link question, "2,000" not "42"). S6 rerun (`s6-20261009T142221`,
+  US$0.1251): 19 scenarios, 0 errors, so M5a's done criterion holds; held-out 7/8 (checks 0.99),
+  dev 8/11. Reported, not acted on: s6-conflict-train (held-out) again shows no conflict note (the
+  constraint was there and the screen ran, but it did not flag Gorilla's fine-tuning against "never
+  train models myself"); dev s6-conflict the same with Toolformer; dev s6-library's diffusion
+  question read ReAct and fell back to arXiv instead of "not discussed" (the library screen let
+  ReAct through); dev s6-premise still abstains. These go to the E rounds (dev).
