@@ -227,3 +227,11 @@ def test_selection_labels_tolerate_appended_sentences() -> None:
 
 def select_task(document: int, round: int) -> Any:
     return {"question": "q", "query": "q", "document": document, "round": round, "passages": []}
+
+
+def test_a_context_line_is_split_off_and_kept_out_of_verification() -> None:
+    reply = "Context: We had read ReAct, which says nothing on tokens.\nAnswer: 5x fewer [E1]"
+    context, body = answer.opening(reply)
+    assert context == "We had read ReAct, which says nothing on tokens."
+    assert [c.text for c in answer.parse(body, {"E1"})[0]] == ["5x fewer"]
+    assert answer.opening("Answer: yes [E1]") == ("", "Answer: yes [E1]")

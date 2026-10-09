@@ -704,3 +704,20 @@ decision gets a new entry that names the one it replaces.
   judgement and about 0.85 evidence recall per paper); a per-paper quota in one merged list (one
   rerank, still no relevance judgement); separate rerank calls per paper (same order, two more
   calls spaced 6 s on the Cohere trial).
+
+## D31 — The fallback's opening is the model's own wording, unverified (2026-10-09, Ewan)
+- Context: D30 had code assemble the opening of a history question that fell back to arXiv
+  ('We read "…" before, but it does not cover …, so I searched arXiv:'), because D19/D21 deliver
+  only verified sentences. Ewan wants the model to word it freely.
+- Decision (Ewan): D19's "only verified lines are delivered" is relaxed for this one line. When the
+  answer follows a fallback search, synthesize is told the facts (the papers read, the aspects
+  evidence selection found missing, that the evidence is new) and starts its reply with
+  "Context: …" in its own words; the line is split off before parsing, never verified, kept from
+  the first draft (repair does not change it), stored as `Answer.context` and shown first. The
+  facts' sentence is shown instead only when no answer was written (no arXiv paper found). The
+  prompt limits the line to what it was told and keeps the new papers out of it.
+- Consequence: one unverified model sentence can reach the user, about how the answer was found,
+  not about what papers say; the synthesize prompt has a new version. Every other delivered line
+  is still verified.
+- Replaces: D30's code-assembled opening (kept as the fallback text and as the facts given to the
+  model).

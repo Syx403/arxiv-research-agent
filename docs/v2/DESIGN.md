@@ -199,7 +199,8 @@ search per paper and missing aspect.
 answer — `synthesize` → `prewarm` → `verify` × claim (`Send`) → `assemble` (keep only sentences
 whose every citation passed) → at most one `repair` → `verify` again → `finalize`.
 
-Answer form (M2, D19, D21): the first line is `Answer: <direct answer> [E…]`, followed by
+Answer form (M2, D19, D21; D31 adds an unverified `Context:` line before it, only after a library
+question fell back to arXiv): the first line is `Answer: <direct answer> [E…]`, followed by
 explanation lines, each ending with its citations. Each cited line is one claim and is verified on
 its own; the direct answer is verified together with the question, so a true phrase that does not
 answer it fails. Uncited lines are dropped. If the direct answer fails verification or cites

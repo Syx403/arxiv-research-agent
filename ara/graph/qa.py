@@ -16,6 +16,7 @@ async def answer_question(question: str, papers: list[str], context: Context) ->
             "evidence": found.get("evidence", []),
             "missing": found.get("missing", []),
             "priorities": [],
+            "context": "",
         },
         context=context,
     )

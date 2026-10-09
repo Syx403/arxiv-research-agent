@@ -24,4 +24,8 @@ Rules:
 - If the evidence does not answer the question, the first line is exactly
   "Answer: Not stated in the provided papers." with no citation, and you may add one line saying
   what the evidence does cover, with its citation.
+- If you are told how the evidence was found, start the reply with one line
+  "Context: <one or two sentences to the user>" before the "Answer:" line, saying in your own words
+  which papers we had read before and what they did not cover, and that the evidence comes from a
+  new arXiv search. Use only what you were told there; do not describe the new papers in it.
 - Write in English, plain text, no lists or headings.

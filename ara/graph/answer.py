@@ -35,6 +35,7 @@ class AnswerInput(TypedDict):
     evidence: list[Evidence]
     missing: list[str]
     priorities: list[str]  # what the user cares about: the explanation's focus (D24)
+    context: str  # facts of this turn the reply opens with, in the model's words; "" for none (D31)
 
 
 class AnswerOutput(TypedDict):
@@ -43,6 +44,7 @@ class AnswerOutput(TypedDict):
 
 class AnswerState(AnswerInput, AnswerOutput):
     draft: str
+    opening: str  # the draft's "Context:" line, delivered unverified (D31)
     claims: list[Claim]  # lines that cite known evidence: these are verified
     uncited: list[Claim]  # lines citing nothing (or unknown labels): dropped unverified
     verdicts: Annotated[dict[str, Verdict], merge]  # by Claim.key, across both rounds
@@ -54,6 +56,15 @@ class VerifyTask(TypedDict):
     question: str
     claim: Claim
     evidence: list[Evidence]
+
+
+def opening(reply: str) -> tuple[str, str]:
+    """A leading "Context: ..." line, and the reply without it. It says how the answer was found,
+    not what the papers say, so it is delivered without verification (D31)."""
+    first, _, rest = reply.strip().partition("\n")
+    if first.startswith("Context:"):
+        return first.removeprefix("Context:").strip(), rest
+    return "", reply
 
 
 def parse(reply: str, known: set[str]) -> tuple[list[Claim], list[Claim]]:
@@ -86,6 +97,8 @@ def synthesis_prompt(state: AnswerInput) -> Prompt:
         question += "\nThe user cares about: " + "; ".join(state["priorities"])
     if state["missing"]:
         question += "\nThe evidence search found nothing on: " + "; ".join(state["missing"])
+    if state["context"]:
+        question += "\nHow this evidence was found: " + state["context"]
     return Prompt(SYNTHESIZE, shared=(pack(state["evidence"]),), item=(Block("user", question),))
 
 
@@ -101,8 +114,15 @@ def verify_prompt(evidence: list[Evidence], claim: Claim, question: str) -> Prom
 async def synthesize(state: AnswerState, runtime: Runtime[Context]) -> dict[str, object]:
     ctx = runtime.context
     draft = await ctx.gateway.text(STAGES["synthesize"], synthesis_prompt(state), scope=ctx.scope)
-    claims, uncited = parse(draft, {e.id for e in state["evidence"]})
-    return {"draft": draft, "claims": claims, "uncited": uncited, "repaired": False}
+    context, body = opening(draft) if state["context"] else ("", draft)
+    claims, uncited = parse(body, {e.id for e in state["evidence"]})
+    return {
+        "draft": draft,
+        "opening": context,
+        "claims": claims,
+        "uncited": uncited,
+        "repaired": False,
+    }
 
 
 async def prewarm(state: AnswerState, runtime: Runtime[Context]) -> dict[str, object]:
@@ -146,7 +166,7 @@ async def repair(state: AnswerState, runtime: Runtime[Context]) -> dict[str, obj
         follow_up=REPAIR,
     )
     draft = await ctx.gateway.text(STAGES["repair"], prompt, scope=ctx.scope)
-    claims, uncited = parse(draft, {e.id for e in state["evidence"]})
+    claims, uncited = parse(opening(draft)[1], {e.id for e in state["evidence"]})
     return {
         "draft": draft,
         "claims": claims,
@@ -179,6 +199,7 @@ def finalize(state: AnswerState) -> dict[str, Answer]:
         checked=len(verdicts),
         rejected=list({c.key: c for c in rejected}.values()),
         evidence=[e for e in state["evidence"] if e.id in cited],
+        context=state.get("opening", ""),
     )
     return {"answer": answer}
 

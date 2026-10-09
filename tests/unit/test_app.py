@@ -382,6 +382,11 @@ def test_library_papers_that_do_not_answer_lead_to_one_arxiv_search() -> None:
     assert (
         "From your library" not in text and "\n[E1] Paper 3 › Method (arXiv 2401.00003v1)" in text
     )
+    worded: Any = {
+        **searched,
+        "answer": answer_citing(card(3)).model_copy(update={"context": "Mine."}),
+    }
+    assert app.reply(worded).startswith("Mine."), "the model's opening replaces the facts (D31)"
     nothing: Any = {**moved, "answer": answer_citing(abstained=True)}
     assert "I found no arXiv papers that match this request." in app.reply(nothing)
 

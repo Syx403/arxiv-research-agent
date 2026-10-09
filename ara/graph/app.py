@@ -473,6 +473,9 @@ async def run_answer(state: ConversationState, runtime: Runtime[Context]) -> dic
             "evidence": state["evidence"],
             "missing": state["missing"],
             "priorities": [p.meaning for p in _request(state).priorities],
+            "context": searched_instead_note(state["earlier"], state["gaps"])
+            if state["earlier"]
+            else "",
         },
         context=runtime.context,
     )
@@ -584,8 +587,9 @@ def reply(state: ConversationState) -> str:
     if _by_meaning(state) and not state["papers"] and not state["earlier"]:
         return NOT_DISCUSSED  # no shared history on this: offer a search instead (D27, D30)
     parts = list(state["notes"])
-    if state["earlier"]:
-        parts.append(searched_instead_note(state["earlier"], state["gaps"]))
+    if state["earlier"]:  # the model's own words when it wrote an answer, else the facts (D31)
+        written = state["answer"].context if state["answer"] else ""
+        parts.append(written or searched_instead_note(state["earlier"], state["gaps"]))
     parts += [
         _identity(p) for p in state["read"] if p.named and not discover.titled(p.named, p.title)
     ]
@@ -608,7 +612,8 @@ def reply(state: ConversationState) -> str:
 
 def searched_instead_note(earlier: list[PaperCard], gaps: list[str]) -> str:
     """Why arXiv was searched: the papers we read, and what evidence selection (the model reading
-    their passages) found they leave uncovered; facts of this turn, so no claim goes unverified."""
+    their passages) found they leave uncovered. Synthesize rewords it as the reply's opening
+    (D31); it is shown as is when no answer was written."""
     titles = " and ".join(f'"{p.title}"' for p in earlier)
     subject = "it does" if len(earlier) == 1 else "they do"
     missing = "; ".join(gaps) or "what you asked"

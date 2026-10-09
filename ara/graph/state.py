@@ -131,6 +131,7 @@ class Answer(BaseModel):
     checked: int  # distinct lines the verifier judged, over both drafts
     rejected: list[Claim]  # lines the verifier judged unsupported, over both drafts
     evidence: list[Evidence]  # every evidence sentence the delivered lines cite
+    context: str = ""  # the model's opening on how the answer was found: not verified (D31)
 
     def render(self) -> str:
         lines = [self.short, *(f"{c.text} [{', '.join(c.citations)}]" for c in self.sentences)]
