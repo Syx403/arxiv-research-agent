@@ -750,6 +750,9 @@ decision gets a new entry that names the one it replaces.
     candidates (one embedding request); the reply still says others share the name.
   - S6: s6-library-many, s6-premise, s6-conflict and s6-library-fallback move to dev; held-out
     drafts for Ewan's review: s6-history-list, s6-history-fallback, s6-premise-parallel,
-    s6-conflict-train (17 scenarios, 33 turns).
+    s6-conflict-train (17 scenarios, 33 turns). s6-history-fallback first asked about failed or
+    timed-out tool calls, but LLMCompiler has a "Failure Case Analysis" section that may answer it;
+    it now asks about prompt injection in tool outputs, which no stored LLMCompiler chunk mentions
+    (searched for inject, malicious, attack, security, adversarial). Ewan approved the round.
 - Consequence: the understand prompt changed again, so S4 is re-measured (≈ US$0.008) and replaces
   `s4-20261009T040617` as the baseline; S3 is not affected (it builds requests without understand).

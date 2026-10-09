@@ -404,7 +404,7 @@
     {
       "id": "s6-history-fallback",
       "split": "test",
-      "note": "D32 held-out: the papers we read are relevant but do not answer, so arXiv is searched once",
+      "note": "D32 held-out: the paper we read is relevant but does not answer (LLMCompiler's full text has no passage on injection, attacks or security; checked in the stored chunks), so arXiv is searched once",
       "sessions": [
         [
           {
@@ -417,7 +417,7 @@
         ],
         [
           {
-            "message": "What did the papers we read about parallel function calling say about handling tool calls that fail or time out?",
+            "message": "What did the papers we read about parallel function calling report about protecting the planner from prompt injection hidden in tool outputs?",
             "expect": {
               "intent": "library",
               "searched_instead": true,
