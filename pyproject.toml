@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 license = "MIT"
 dependencies = [
   "beautifulsoup4>=4.13",
+  "fastapi>=0.120,<1",
   "httpx>=0.28",
   "langgraph>=1.2.14,<2",
   "langgraph-checkpoint-postgres>=3,<4",
@@ -20,6 +21,7 @@ dependencies = [
   "pydantic-settings>=2.15,<3",
   "pypdf>=6",
   "tiktoken>=0.14,<1",
+  "uvicorn>=0.38,<1",
 ]
 
 [project.scripts]

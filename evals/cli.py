@@ -47,7 +47,15 @@ def main() -> None:
         dest="command", required=True
     )
     database.add_parser("backfill", help="date papers stored before migration 0005 (free)")
+    commands.add_parser("serve", help="the local web app on http://127.0.0.1:8000")
     args = parser.parse_args()
+    if args.area == "serve":
+        import uvicorn
+
+        from ara.api.server import HOST, PORT
+
+        uvicorn.run("ara.api.server:api", host=HOST, port=PORT)
+        return
 
     match args.command:
         case "prepare":

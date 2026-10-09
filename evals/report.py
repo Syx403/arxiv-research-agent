@@ -6,6 +6,8 @@ The per-item results are also exported as JSONL, a portable copy outside Postgre
 import json
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from decimal import Decimal
+from typing import Any
 
 from psycopg.rows import DictRow
 
@@ -199,3 +201,69 @@ def _efficiency(usage: Sequence[DictRow]) -> list[str]:
             f" {u['p50_ms'] or 0:.0f} | {u['p95_ms'] or 0:.0f} |"
         )
     return lines
+
+
+RUNS = """
+SELECT r.id, r.suite, r.status, r.created_at, r.finished_at, r.langsmith_experiment,
+       count(DISTINCT e.item_id) AS items,
+       (SELECT coalesce(sum(cost_usd), 0) FROM llm_calls c WHERE c.run_id = r.id) AS cost_usd
+FROM eval_runs r LEFT JOIN eval_results e ON e.run_id = r.id
+GROUP BY r.id ORDER BY r.created_at DESC
+"""
+
+
+async def runs(pool: Pool) -> list[dict[str, Any]]:
+    """Every evaluation run, newest first, with its item count and spend (the UI's list)."""
+    async with pool.connection() as conn:
+        rows = await (await conn.execute(RUNS)).fetchall()
+    return [{**row, "cost_usd": float(row["cost_usd"])} for row in rows]
+
+
+async def summary(pool: Pool, run_id: str) -> dict[str, Any]:
+    """One run as data (the UI's run page): per split and arm, each metric's mean and 95%
+    bootstrap interval over the items that have it; every item; usage per stage."""
+    async with pool.connection() as conn:
+        run = await (
+            await conn.execute("SELECT * FROM eval_runs WHERE id = %s", (run_id,))
+        ).fetchone()
+        if run is None:
+            raise LookupError(f"no evaluation run {run_id}")
+        results = await (
+            await conn.execute(
+                "SELECT item_id, arm, metrics, output, error FROM eval_results WHERE run_id = %s"
+                " ORDER BY arm, item_id",
+                (run_id,),
+            )
+        ).fetchall()
+        usage = await (await conn.execute(EFFICIENCY, (run_id,))).fetchall()
+    split_of = SUITES[run["suite"]].splits()
+    metrics: list[dict[str, Any]] = []
+    for split, _ in SPLITS:
+        for arm in sorted({r["arm"] for r in results}):
+            scores = [
+                r["metrics"]
+                for r in results
+                if r["arm"] == arm and not r["error"] and split_of.get(r["item_id"]) == split
+            ]
+            for name in sorted({name for m in scores for name in m}):
+                values = [m[name] for m in scores if name in m]
+                mean, low, high = mean_ci(values)
+                metrics.append(
+                    {
+                        "split": split,
+                        "arm": arm,
+                        "metric": name,
+                        "n": len(values),
+                        "mean": mean,
+                        "low": low,
+                        "high": high,
+                    }
+                )
+    return {
+        "run": run,
+        "metrics": metrics,
+        "items": [{**r, "split": split_of.get(r["item_id"], "?")} for r in results],
+        "usage": [
+            {k: float(v) if isinstance(v, Decimal) else v for k, v in row.items()} for row in usage
+        ],
+    }
