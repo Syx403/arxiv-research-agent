@@ -41,7 +41,11 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-09 | M4 live check | S6 scenarios s6-carry and s6-library (`s6-20261008T162055`) | 42 | 0.0176 | Ewan (≈ 40 requests, ≤ US$0.03; 2 over in count) |
 | 2026-10-09 | S6 round | 6 scenarios, 14 turns, off-peak (`s6-20261008T164126`) | 108 | 0.0280 | Ewan (cap US$0.08) |
 | 2026-10-09 | S6 rerun | s6-episode after the D27 prompt fix and D28 (`s6-20261008T170341`) | 21 | 0.0026 | Ewan |
-| | | **Total so far** | 753 | **0.2125** | |
+| 2026-10-09 | S6 round, first attempt | 13 scenarios; 9 stopped by arXiv HTTP 429 / timeouts (`s6-20261009T040017`) | 88 | 0.0128 | Ewan (cap raised to US$0.15) |
+| 2026-10-09 | S4 re-baseline | 62 understand requests on the D30 code (`s4-20261009T040617`) | 62 | 0.0082 | Ewan (cap US$0.05) |
+| 2026-10-09 | S6 round | 13 scenarios, off-peak; 3 stopped by arXiv timeouts (`s6-20261009T044915`) | 239 | 0.0450 | Ewan (cap US$0.15) |
+| 2026-10-09 | S3 re-baseline | 30 PaSa queries, off-peak (`s3-20261009T045853`) | 187 | 0.0907 | Ewan (cap US$0.20) |
+| | | **Total so far** | 1329 | **0.3693** | |
 
 ## Session log
 
@@ -239,3 +243,20 @@ Update this file at the end of every working session: what was done, what was sp
   US$0.008 per scenario, over the US$0.10 cap; measured scenarios cost US$0.0004–0.0116 (mean
   about US$0.005), so the expected cost is about US$0.08. Next: Ewan reviews the S6 drafts and
   decides the cap or the unit cost; then S6, S4 and S3 rounds off-peak.
+- 2026-10-09 — D31 (Ewan): the fallback's opening is the model's own "Context:" line, unverified.
+  First S6 attempt hit arXiv HTTP 429 (the host was rate-limited for about 45 minutes; free probes
+  until it answered) and exposed a D30 gap: a history question whose paper id came from a research
+  record took the named path and never fell back to arXiv (fixed: any unanswered library question
+  falls back, names dropped). Re-baselines on the D30/D31 code: S4 held-out intent 1.00, all fields
+  0.72, false clarify 1/32; S3 held-out pool recall 0.58, hit@5 0.93, gold precision@5 ≥ 0.51,
+  dev pool recall 0.58, hit@5 0.53. Pool recall comes before screening, which is all D29-D30
+  changed in discovery, so the moves against M3 (held-out +0.14, dev -0.12) are the researcher's
+  run-to-run variance, not an effect. S6 (`s6-20261009T044915`): 7 of 10 completed scenarios
+  passed (dev 4/4, held-out 3/6); 3 stopped by arXiv timeouts (carry, forget, refer). Failures:
+  s6-library-many (understand took both ids from research records, so the named path ran and
+  nothing was listed), s6-premise (the model abstained instead of correcting the premise),
+  s6-conflict (understand did not apply the remembered "never fine-tune" to a named read, so no
+  conflict check ran). s6-library-fallback passed (opening: "We previously read the ReAct paper,
+  which did not cover the number of tokens consumed by each task, so this evidence comes from a
+  new arXiv search."), but its answer abstained: the question still asked what "the papers we
+  read" said. Proposals await Ewan; nothing tuned on these held-out results.
