@@ -261,6 +261,9 @@ def after_understand(s) -> Literal["clarify", "discover", "read", "answer", "res
   (timeouts 45 / 60 / 60 s); error handlers on plain nodes return `Command(goto=...)`; `Send` nodes
   use `degrade` (LangGraph runs no handler for them); failures become a "Note: … failed" line and
   `status="partial"`; `ARA_FAULTS` injects faults at the gateway and the arXiv client.
+  D38: problems are worded ("too many requests right now (HTTP 429)", "it took too long"), a
+  reply with nothing else says it could not finish; after a failed arXiv request the round's
+  other calls are skipped and two failed rounds end the search; Retry-After is honoured up to 20 s.
 - Durability: checkpoints after every step; completed `Send` branches are not re-run on resume.
 
 ---
@@ -520,9 +523,17 @@ Since D36 the UI is a chat (sidebar of conversations, a fold under each reply, a
 turn with its workflow, evidence and papers); turns are recorded in `conversations` / `turns`
 (0007) by the API, and the evidence viewer reads passages from `chunks` as before.
 
-API (FastAPI + SSE): `POST /threads`, `POST /threads/{id}/messages` (SSE run stream),
-`POST /threads/{id}/resume`, `GET /threads/{id}`, `GET /graph`, `GET /papers/{id}/document`,
-`GET /evals`, `GET /evals/{run}`, `GET /memory`, `DELETE /memory/{key}`.
+Since D38 a turn runs as a server task: leaving or reloading the page rejoins it, Stop undoes it
+(the thread returns to the checkpoint before it and the message to the composer), failures are
+streamed as they happen; the memory page holds long lists (search, a paper drawer) and the
+evaluation page explains each suite (`evals/catalog.py`).
+
+API (FastAPI + SSE, under `/api`, as built after D38): `GET/POST /conversations`, `GET/PATCH/DELETE
+/conversations/{id}`, `POST /conversations/{id}/messages` and `/resume` (start a turn and follow
+it), `GET /conversations/{id}/live` (follow the running turn), `POST /conversations/{id}/stop`,
+`GET /graph`, `GET /papers/{id}/document`, `GET /evals`, `GET /evals/suites`, `GET /evals/{run}`,
+`GET /memory/facts`, `GET /memory/library`, `GET /memory/library/{arxiv_id}`,
+`DELETE /memory/{key}`.
 Frontend: React + Vite + TypeScript + mermaid.js, served by FastAPI. A demo mode uses
 pre-ingested papers so a live demo turn stays short.
 

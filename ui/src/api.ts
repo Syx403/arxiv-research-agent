@@ -76,10 +76,19 @@ export interface ConversationSummary {
   title: string;
   created_at: string;
   updated_at: string;
+  running?: boolean;
 }
 
-export interface Conversation extends ConversationSummary {
+/** The turn a conversation is running on the server (D38). */
+export interface Running {
+  turn_id: string;
+  message: string;
+  kind: "messages" | "resume";
+}
+
+export interface Conversation extends Omit<ConversationSummary, "running"> {
   turns: Turn[];
+  running: Running | null;
 }
 
 export type Phase = "start" | "end" | "failed" | "degraded";
@@ -102,10 +111,18 @@ export interface Call {
   cost_usd: number | null;
 }
 
+export interface Stopped extends Running {
+  spent_usd: number;
+  conversation_removed: boolean;
+}
+
 export type StreamEvent =
+  | { event: "started"; data: Running & { started_at: string } }
   | { event: "node"; data: NodeEvent }
   | { event: "call"; data: Call }
+  | { event: "problem"; data: { text: string } }
   | { event: "done"; data: Turn }
+  | { event: "stopped"; data: Stopped }
   | { event: "error"; data: { error: string } };
 
 export interface Passage {
@@ -174,11 +191,44 @@ export interface Fact {
   thread: string;
   turn: number;
   day: string;
+  conversation: { id: string; title: string } | null;
 }
 
-export interface Memory {
-  facts: Fact[];
-  library: { arxiv_id: string; version: number; title: string; published: string }[];
+export interface Shelved {
+  arxiv_id: string;
+  version: number;
+  title: string;
+  published: string | null;
+  first_read_at: string;
+}
+
+export interface LibraryPaper extends Shelved {
+  abstract: string;
+  last_read_at: string;
+  read_in: { conversation_id: string; title: string; turn_id: string; message: string; finished_at: string }[];
+}
+
+export interface Page<T> {
+  items: T[];
+  total: number;
+}
+
+export interface SuiteInfo {
+  id: string;
+  name: string;
+  covers: string;
+  question: string;
+  data: string;
+  grading: string;
+  headline: string;
+  arm: string;
+  metrics: Record<string, string>;
+  items: { dev: number; test: number };
+}
+
+export interface Catalog {
+  suites: SuiteInfo[];
+  protocol: string[];
 }
 
 export type Graphs = Record<"main" | "discover" | "read" | "answer", string>;
@@ -203,25 +253,34 @@ export const api = {
   remove: (id: string) => json<{ deleted: string }>(`/api/conversations/${id}`, { method: "DELETE" }),
   document: (paperId: string) =>
     json<PaperDocument>(`/api/papers/${encodeURIComponent(paperId)}/document`),
+  stop: (id: string) => json<Stopped>(`/api/conversations/${id}/stop`, { method: "POST" }),
   runs: () => json<Run[]>("/api/evals"),
   run: (id: string) => json<RunSummary>(`/api/evals/${id}`),
-  memory: () => json<Memory>("/api/memory"),
+  suites: () => json<Catalog>("/api/evals/suites"),
+  facts: (offset: number) => json<Page<Fact>>(`/api/memory/facts?offset=${offset}`),
+  library: (query: string, offset: number) =>
+    json<Page<Shelved>>(`/api/memory/library?q=${encodeURIComponent(query)}&offset=${offset}`),
+  libraryPaper: (arxivId: string) =>
+    json<LibraryPaper>(`/api/memory/library/${encodeURIComponent(arxivId)}`),
   forget: (key: string) =>
     json<{ forgotten: string }>(`/api/memory/${encodeURIComponent(key)}`, { method: "DELETE" }),
 };
 
-/** Send a message (or answer a waiting question) and yield the turn's events as they arrive. */
+/** A turn's events as they arrive: sending a message, answering a question, or rejoining the
+ *  turn a conversation is running ("live"). The turn runs on the server either way (D38). */
 export async function* stream(
   conversation: string,
-  kind: "messages" | "resume",
-  body: Record<string, string>,
+  kind: "messages" | "resume" | "live",
+  text?: string,
 ): AsyncGenerator<StreamEvent> {
-  const response = await fetch(`/api/conversations/${conversation}/${kind}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok || !response.body) throw new Error(`${response.status} ${response.statusText}`);
+  const body = kind === "messages" ? { text } : { answer: text };
+  const response = await fetch(
+    `/api/conversations/${conversation}/${kind}`,
+    kind === "live"
+      ? undefined
+      : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+  );
+  if (!response.ok || !response.body) throw new Error(`${response.status} ${await response.text()}`);
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
   for (;;) {

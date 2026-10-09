@@ -53,7 +53,9 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-09 | S6 rerun after M5a | 19 scenarios, off-peak (`s6-20261009T142221`) | 500 | 0.1251 | Ewan (cap US$0.20) |
 | 2026-10-09 | M5b live check | one demo turn in the app (`ui:` turn ids, no run id) | 8 | 0.0019 | Ewan (≤ US$0.01) |
 | 2026-10-10 | Chat UI live check | three turns in two conversations (`ui:` turn ids) | 33 | 0.0064 | Ewan (≤ US$0.01) |
-| | | **Total so far** | 2921 | **0.7492** | |
+| 2026-10-10 | Ewan's own app turns | the "find" and "I" conversations, investigated in D38 | 25 | 0.0032 | Ewan (his own use) |
+| 2026-10-10 | D37/D38 live check | read, switch away and back, two stops, a follow-up, a reload mid-turn, an arXiv 429 turn (`ui:` turn ids) | 42 | 0.0114 | Ewan (≤ US$0.03) |
+| | | **Total so far** (from the ledger; it also counts free embedding and rerank rows not itemised above) | 3063 | **0.7618** | |
 
 ## Session log
 
@@ -330,3 +332,12 @@ Update this file at the end of every working session: what was done, what was sp
   turn's workflow, evidence and papers; migration 0007 records conversations and turns. Live check
   in the browser: three turns, two conversations, US$0.0064; fixed recorded graphs drawn without
   colours. 146 unit tests. Next: the architecture review (DESIGN §14 gate).
+- 2026-10-10 — D37 and D38 (Ewan's review of the chat app; read-only investigation first, then
+  all fixes approved). Answers explain in paragraphs (4–12 cited sentences). Turns run as server
+  tasks: switching away and back or reloading rejoins them; Stop (or Esc) undoes the turn and
+  returns its message to the composer. Enter no longer sends while an input method composes.
+  Failures are said in words, streamed live, and an arXiv that refuses ends the search after two
+  rounds (Retry-After capped at 20 s, a deviation from D34). New memory page (long lists, search,
+  a paper drawer with the conversations that read it) and evaluation page (protocol, a card per
+  suite, metrics explained, items). Live: 42 calls, US$0.0114. 152 unit tests. Next: the
+  architecture review (DESIGN §14 gate).

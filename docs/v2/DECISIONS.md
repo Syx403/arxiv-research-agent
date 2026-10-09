@@ -894,3 +894,84 @@ decision gets a new entry that names the one it replaces.
   same conversation ("Which benchmarks does it evaluate on?" → HotPotQA, FEVER, ALFWorld,
   WebShop), a new conversation, then back to the first, where the second turn's panel showed its
   own path, two cited sentences and one paper.
+
+## D37 — Longer answers, in paragraphs (2026-10-10, Ewan)
+- Context: Ewan found the answers too short. D19 fixed the form as a direct `Answer:` line plus
+  one to five cited explanation sentences, one per line, so that S2 could score the direct answer;
+  evidence selection usually kept only a few sentences, and the verifier drops what it cannot
+  confirm.
+- Decision (Ewan approved; changes D19's length, not its form): the `Answer:` line stays (S2's F1
+  is still on it). The explanation is "as many sentences as the evidence supports, usually four
+  to twelve", grouped into short paragraphs (one per aspect, or per paper), separated by an empty
+  line; every sentence still ends with its citations and is verified alone (D19, D21). An
+  abstaining answer may add up to three cited lines on what the evidence does cover (was one).
+  `select_evidence` is asked for what a full explanation needs (mechanisms, results, conditions),
+  not only the sentences that answer directly.
+- Built: `Claim.paragraph` (from empty lines in the draft; not part of a claim's identity, so a
+  line repeated after repair is not verified again); `Answer.render()` gives the direct answer,
+  then each paragraph as prose with its citation chips.
+- Cost: one verify call per line, so a reading turn has a few more calls (live: 12 calls,
+  US$0.0027, for a 7-sentence, 2-paragraph answer on ReWOO's planner). S2/S5 are not re-run now;
+  the E rounds measure the effect on F1 and on the verifier's rejection rate (dev first).
+- Seen: the model sometimes makes every sentence its own paragraph (the benchmarks follow-up);
+  left to the E rounds' prompt work.
+
+## D38 — Turns run on the server; stop; plain failures; memory and evaluation pages (2026-10-10, Ewan)
+- Context (Ewan's review of the D36 app, read-only investigation first): (1) Enter confirming a
+  Chinese input method's composition sent the message (two conversations were titled "find" and
+  "I"); (2) leaving a running conversation made it unreachable (the hook skipped reloading the id it
+  had created) and the finished turn was appended to whichever conversation was open; reloading
+  dropped the turn, which was never recorded, while its graph work went on for four minutes
+  (`_turn` did not close the LangGraph stream when the connection ended); (3) no way to stop a
+  turn; (4) arXiv answered every request with 429: the researcher re-planned five rounds and the
+  node timed out and was retried (155 s and 198 s turns), the reply said "could not find on arXiv:
+  Kimi" for a search that never ran, or was only a note ending "the rest of this reply is
+  unaffected", with exception names; (5) the evaluation page did not say what each suite tests;
+  (6) the memory lists were not built for many items and papers could not be opened; (7) answers
+  too short (D37).
+- Decisions (Ewan approved all, with the defaults below):
+  - A turn is an asyncio task owned by the server (`ara/api/runs.py`), not the request that
+    started it. Its events are kept in order; `POST …/messages|resume` start it and follow it,
+    `GET …/live` follows it from its start (after a reload or a switch), `GET /api/conversations`
+    marks running conversations. One turn per conversation (409 otherwise); the start is checked in
+    a dependency, before the stream begins.
+  - `POST …/stop` cancels the task. The turn is not recorded; the thread goes back to the
+    checkpoint before it (`aupdate_state(before, None, as_node="__copy__")`; a copied checkpoint
+    loses a pending interrupt, so a stopped answer to a question re-runs clarify, which calls no
+    model, and the question waits again); a conversation whose first turn was stopped is removed.
+    The message returns to the composer. A model call in flight is marked `cancelled` in the
+    ledger and stays charged (its outcome is unknown, as for any failure). Checked on scratch
+    graphs first: cancelling the task or closing the stream stops subgraph work.
+  - Failures in words: `reliability.why` ("too many requests right now (HTTP 429)", "HTTP 503",
+    "it took too long", "the service could not be reached", "the model returned nothing usable").
+    A reply with nothing else to show starts "I could not finish this request, so there is nothing
+    to show yet. Please try again." and claims nothing about a rest; a named paper not looked up
+    because arXiv failed is "I could not search arXiv for: …", not "could not find". Problems are
+    streamed as they happen, with the elapsed time.
+  - arXiv: after a failed request the round's other calls are not sent; two failed rounds in a
+    row end the search (one failed round is tried again, which keeps S7's f-arxiv-blip). Deviation
+    from D34: Retry-After is honoured up to 20 s, not 60 s, so a pause can no longer fill the 60 s
+    node timeout and turn one 429 into three timed-out attempts.
+  - UI: Enter is ignored while an input method composes (composition events, `isComposing`,
+    keyCode 229 for Safari); starters fill the composer instead of sending; the send button becomes
+    Stop (and Esc) while the turn runs; answered questions are shown as answered; the fold counts
+    problems. Memory: facts oldest first with a link to their conversation; both lists are plain
+    rows up to 8 items, then a framed list that scrolls and loads 50 more at its end; the library
+    is searchable by title or id; a paper opens a drawer (abstract, dates, the conversations that
+    read it, arXiv and PDF links). New endpoints `GET /api/memory/facts`, `/api/memory/library`,
+    `/api/memory/library/{arxiv_id}` replace `GET /api/memory`. Evaluation: `evals/catalog.py`
+    describes each suite (what it covers, its question, data, grading, every metric) and the
+    shared protocol, served at `GET /api/evals/suites`; the page shows the protocol, a card per
+    suite with its latest held-out headline and interval, then the chosen suite's rounds, metrics
+    with their meaning (held-out and dev), items with misses first, and cost by stage.
+- Live check (approved ≤ US$0.03): 42 calls, US$0.0114. A ReWOO read in a new conversation,
+  switched away and back while it ran (progress kept); a stopped first turn (conversation removed,
+  text restored, the embedding in flight marked cancelled, nothing ran after); a stopped follow-up
+  (thread back to one turn), then the same follow-up answered with "it" resolved to ReWOO; a page
+  reload mid-turn rejoined it; with `ARA_FAULTS=arxiv=429` a discover turn ended in 12 s with the
+  problem shown live at 6 s. Found and fixed in the check: a restored draft refilled the composer
+  on every remount (now used once); the paper drawer was clipped by the page's entrance
+  transform (now rendered into `body`).
+- Not changed (seen while investigating, for later): "Kimi" was taken as a paper title for "find
+  kimi latest paper"; two embedding calls made during app turns carry no turn id in the ledger
+  (probably the memory Store's search; not yet checked).

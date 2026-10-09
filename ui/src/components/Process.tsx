@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { Call, NodeEvent } from "../api";
 import { LABELS, doing } from "../chat";
@@ -9,25 +9,32 @@ const seconds = (from: string, to: string) =>
   Math.max(0, (new Date(to).getTime() - new Date(from).getTime()) / 1000);
 
 /** The fold under each reply: how the turn ran, in one line, opening to its steps; and the way
- *  into the side panel for this turn's workflow, evidence and papers. */
+ *  into the side panel for this turn's workflow, evidence and papers. While the turn runs it
+ *  shows the step, the time so far and anything that has failed, as it happens (D38). */
 export function Process({
   trace,
   calls,
+  problems,
   live,
+  since,
   timing,
   counts,
   open,
 }: {
   trace: NodeEvent[];
   calls: Call[];
+  problems: string[];
   live: boolean;
+  since?: number;
   timing?: { started_at: string; finished_at: string };
   counts?: { read: number; listed: number; evidence: number };
   open: (tab: Tab) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const elapsed = useElapsed(live ? since : undefined);
   const cost = calls.reduce((sum, c) => sum + (c.cost_usd ?? 0), 0);
   const degraded = trace.filter((t) => t.phase === "degraded" || t.phase === "failed").length;
+  const flagged = problems.length || degraded;
   const steps = ordered(trace);
   const facts = [
     counts?.read ? `read ${counts.read} paper${counts.read > 1 ? "s" : ""}` : "",
@@ -42,8 +49,12 @@ export function Process({
       <div className="process-bar">
         <button className="process-toggle" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded}>
           {live ? <span className="spinner" /> : <span className="caret">{expanded ? "▾" : "▸"}</span>}
-          <span>{live ? `${doing(trace)}…` : facts.join(" · ")}</span>
-          {degraded > 0 && <span className="pill amber">{degraded} degraded</span>}
+          <span>{live ? `${doing(trace)}… · ${elapsed} s` : facts.join(" · ")}</span>
+          {flagged > 0 && (
+            <span className="pill amber">
+              {flagged} {flagged === 1 ? "problem" : "problems"}
+            </span>
+          )}
         </button>
         <span className="process-links">
           <button onClick={() => open("workflow")}>Workflow</button>
@@ -51,6 +62,13 @@ export function Process({
           {!!(counts?.read || counts?.listed) && <button onClick={() => open("papers")}>Papers</button>}
         </span>
       </div>
+      {live && problems.length > 0 && (
+        <ul className="live-problems">
+          {problems.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+      )}
       {expanded && (
         <ol className="steps">
           {steps.map((s) => (
@@ -67,6 +85,17 @@ export function Process({
       )}
     </div>
   );
+}
+
+/** Whole seconds since `since`, ticking while it is set. */
+function useElapsed(since: number | undefined): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (since === undefined) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [since]);
+  return since === undefined ? 0 : Math.max(0, Math.round((now - since) / 1000));
 }
 
 /** Nodes in the order they first ran, each with its last phase. */

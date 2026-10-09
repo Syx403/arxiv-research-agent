@@ -38,8 +38,9 @@ export function App() {
   const refresh = useCallback(() => {
     api.conversations().then(setConversations).catch(() => undefined);
   }, []);
-  const go = useCallback((id: string) => {
-    history.replaceState(null, "", `#/c/${id}`);
+  // a new conversation takes its id without a history entry; a removed one goes back to new
+  const go = useCallback((id: string | null) => {
+    history.replaceState(null, "", id ? `#/c/${id}` : "#/");
     setAt({ page: "chat", id });
   }, []);
   const chat = useChat(at.page === "chat" ? at.id : null, go, refresh);
@@ -85,6 +86,7 @@ export function App() {
     <div className={`shell ${collapsed ? "narrow" : ""} ${panel && shown ? "with-panel" : ""}`}>
       <Sidebar
         conversations={conversations}
+        running={new Set(Object.keys(chat.runs))}
         current={at.page === "chat" ? chat.id : null}
         page={at.page}
         collapsed={collapsed}

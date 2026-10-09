@@ -17,6 +17,7 @@ function group(updated: string, now: Date): string {
 /** Conversations, newest first, grouped by day; rename and delete in place; the global pages. */
 export function Sidebar({
   conversations,
+  running,
   current,
   page,
   collapsed,
@@ -24,6 +25,7 @@ export function Sidebar({
   changed,
 }: {
   conversations: ConversationSummary[];
+  running: Set<string>; // turns this page follows; the list marks the server's own
   current: string | null;
   page: string;
   collapsed: boolean;
@@ -97,7 +99,8 @@ export function Sidebar({
                   />
                 ) : (
                   <a href={`#/c/${c.id}`} title={c.title}>
-                    {c.title}
+                    {(c.running || running.has(c.id)) && <span className="spinner" aria-label="Running" />}
+                    <span className="history-title">{c.title}</span>
                   </a>
                 )}
                 <span className="history-actions">

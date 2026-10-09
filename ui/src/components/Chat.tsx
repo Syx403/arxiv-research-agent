@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 
 import type { Paper, Turn } from "../api";
-import type { Pending, useChat } from "../chat";
+import type { Draft, Pending, useChat } from "../chat";
 import { Process } from "./Process";
 import type { Tab } from "./Process";
 import { Reply } from "./Reply";
@@ -22,10 +23,23 @@ export function ChatView({ chat, open }: { chat: Chat; open: Open }) {
   const end = useRef<HTMLDivElement>(null);
   const turns = chat.conversation?.turns ?? [];
   const empty = turns.length === 0 && !chat.pending;
+  const running = !!chat.pending && !chat.pending.error;
 
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns.length, chat.pending?.trace.length]);
+  }, [turns.length, chat.pending?.trace.length, chat.pending?.problems.length]);
+
+  const composer = (
+    <Composer
+      send={chat.send}
+      stop={chat.stop}
+      running={running}
+      waiting={!!chat.waiting}
+      draft={chat.draft}
+      taken={() => chat.setDraft(null)}
+      autoFocus
+    />
+  );
 
   if (chat.missing) {
     return (
@@ -49,10 +63,10 @@ export function ChatView({ chat, open }: { chat: Chat; open: Open }) {
           I find arXiv papers, read them, and answer with every line checked against the sentence
           it cites.
         </p>
-        <Composer send={chat.send} busy={false} waiting={false} autoFocus />
+        {composer}
         <div className="starters">
           {SUGGESTIONS.map((s) => (
-            <button key={s.title} className="starter" onClick={() => void chat.send(s.text)}>
+            <button key={s.title} className="starter" onClick={() => chat.setDraft({ text: s.text, n: Date.now() })}>
               <b>{s.title}</b>
               <span>{s.text}</span>
             </button>
@@ -65,24 +79,28 @@ export function ChatView({ chat, open }: { chat: Chat; open: Open }) {
   return (
     <div className="chat">
       <header className="chat-title">
-        <h2>{chat.conversation?.title ?? chat.pending?.message}</h2>
+        <h2>{chat.conversation?.title || chat.pending?.message}</h2>
       </header>
       <div className="thread">
-        {turns.map((turn) => (
-          <TurnView key={turn.turn_id} turn={turn} open={open} />
+        {turns.map((turn, i) => (
+          <TurnView key={turn.turn_id} turn={turn} answered={i < turns.length - 1 || !!chat.pending} open={open} />
         ))}
         {chat.pending && <PendingView pending={chat.pending} open={open} />}
         <div ref={end} />
       </div>
       <div className="dock">
-        <Composer send={chat.send} busy={!!chat.pending && !chat.pending.error} waiting={!!chat.waiting} />
-        <p className="dock-note">Answers cite arXiv text; each delivered line passed a verifier.</p>
+        {composer}
+        <p className="dock-note">
+          {running
+            ? "The turn runs on even if you leave this conversation. Esc or ■ stops it."
+            : "Answers cite arXiv text; each delivered line passed a verifier."}
+        </p>
       </div>
     </div>
   );
 }
 
-function TurnView({ turn, open }: { turn: Turn; open: Open }) {
+function TurnView({ turn, answered, open }: { turn: Turn; answered: boolean; open: Open }) {
   const key = turn.turn_id;
   const cite = (id: string) => open(key, "evidence", { cited: id });
   const paper = (p: Paper | undefined) => open(key, "papers", { paper: p?.arxiv_id });
@@ -91,8 +109,8 @@ function TurnView({ turn, open }: { turn: Turn; open: Open }) {
       <div className="msg user">{turn.message}</div>
       <div className="msg agent">
         {turn.waiting ? (
-          <div className="asking">
-            <span className="eyebrow">A question before I go on</span>
+          <div className={`asking ${answered ? "answered" : ""}`}>
+            <span className="eyebrow">{answered ? "I asked" : "A question before I go on"}</span>
             <p>{turn.waiting.question}</p>
           </div>
         ) : (
@@ -101,6 +119,7 @@ function TurnView({ turn, open }: { turn: Turn; open: Open }) {
         <Process
           trace={turn.trace}
           calls={turn.calls}
+          problems={[...new Set(turn.problems)]}
           live={false}
           timing={turn}
           counts={{
@@ -123,53 +142,97 @@ function PendingView({ pending, open }: { pending: Pending; open: Open }) {
         {pending.error ? (
           <div className="error-box">{pending.error}</div>
         ) : (
-          <Process trace={pending.trace} calls={pending.calls} live open={(tab) => open("pending", tab)} />
+          <Process
+            trace={pending.trace}
+            calls={pending.calls}
+            problems={pending.problems}
+            live
+            since={pending.since}
+            open={(tab) => open("pending", tab)}
+          />
         )}
       </div>
     </>
   );
 }
 
+/** The message box. Enter sends, Shift+Enter starts a line; Enter that confirms an input
+ *  method's composition (Chinese, Japanese, ...) only confirms it. While a turn runs the button
+ *  stops it (Esc too), and a stopped turn's message comes back here to be edited. */
 function Composer({
   send,
-  busy,
+  stop,
+  running,
   waiting,
+  draft,
+  taken,
   autoFocus,
 }: {
   send: (text: string) => Promise<void>;
-  busy: boolean;
+  stop: () => Promise<void>;
+  running: boolean;
   waiting: boolean;
+  draft: Draft | null;
+  taken: () => void;
   autoFocus?: boolean;
 }) {
-  const [draft, setDraft] = useState("");
+  const [text, setText] = useState("");
+  const composing = useRef(false);
+  const box = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!draft) return;
+    setText(draft.text);
+    box.current?.focus();
+    taken(); // used once: a later composer starts empty
+  }, [draft, taken]);
+
+  useEffect(() => {
+    const area = box.current;
+    if (!area) return;
+    area.style.height = "auto";
+    area.style.height = `${Math.min(area.scrollHeight, 200)}px`;
+  }, [text]);
+
   const submit = () => {
-    const text = draft.trim();
-    if (!text || busy) return;
-    setDraft("");
-    void send(text);
+    const message = text.trim();
+    if (!message || running) return;
+    setText("");
+    void send(message);
   };
+
+  const keyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // keyCode 229: Safari reports the Enter that ends a composition after compositionend
+    if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submit();
+    }
+    if (e.key === "Escape" && running) void stop();
+  };
+
   return (
     <div className="composer">
       <textarea
+        ref={box}
         autoFocus={autoFocus}
         rows={1}
-        value={draft}
+        value={text}
         placeholder={waiting ? "Answer the question…" : "Ask for papers, or about a paper…"}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          e.target.style.height = "auto";
-          e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            submit();
-          }
-        }}
+        onChange={(e) => setText(e.target.value)}
+        onCompositionStart={() => (composing.current = true)}
+        onCompositionEnd={() => (composing.current = false)}
+        onKeyDown={keyDown}
       />
-      <button className="send" onClick={submit} disabled={busy || !draft.trim()} aria-label="Send">
-        ↑
-      </button>
+      {running ? (
+        <button className="send stop" onClick={() => void stop()} aria-label="Stop" title="Stop (Esc)">
+          ■
+        </button>
+      ) : (
+        <button className="send" onClick={submit} disabled={!text.trim()} aria-label="Send" title="Send (Enter)">
+          ↑
+        </button>
+      )}
     </div>
   );
 }
