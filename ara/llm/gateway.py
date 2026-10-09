@@ -22,6 +22,7 @@ from openai.types.chat import ChatCompletionMessage, ChatCompletionToolParam
 from openai.types.responses import ParsedResponse, ResponseUsage
 from pydantic import BaseModel, ValidationError
 
+from ara import faults
 from ara.llm.ledger import Ledger, Scope
 from ara.llm.pricing import Rates, Usage, rates, upper_bound
 from ara.llm.prompt import Block, Prompt, ToolCall, deepseek_messages, openai_input
@@ -271,7 +272,9 @@ class Gateway:
         metadata: Mapping[str, Any] | None = None,
     ) -> AsyncIterator["Call"]:
         """Reserve before sending. A request the provider rejected (4xx) releases the reservation;
-        any other failure keeps it, because the request may have been billed."""
+        any other failure keeps it, because the request may have been billed. An injected fault
+        (ARA_FAULTS) fails before anything is reserved or sent."""
+        faults.trip(name)
         r = rates(model, datetime.now(UTC))
         call_id = await self.ledger.reserve(
             stage=name,

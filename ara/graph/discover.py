@@ -10,15 +10,24 @@ import operator
 import re
 from collections.abc import Mapping
 from datetime import date
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 
+import httpx
+from langgraph.errors import NodeError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
-from langgraph.types import Send
+from langgraph.types import Command, Send
 from pydantic import BaseModel, Field, ValidationError
 
 from ara.arxiv.client import Metadata, SearchError
+from ara.graph.reliability import (
+    ARXIV_TIMEOUT_S,
+    LLM_TIMEOUT_S,
+    RETRY,
+    degrade,
+    problem,
+)
 from ara.graph.state import MAX_LISTED, Context, PaperCard, ResearchRequest, plain
 from ara.llm.gateway import Tool, worth_prewarming
 from ara.llm.prompt import Block, Instructions, Prompt, ToolCall, data
@@ -78,6 +87,7 @@ class DiscoverOutput(TypedDict):
     candidates: list[str]  # the pool the researcher found, by arXiv id (S3: search recall)
     shortlisted: list[str]  # what prerank sent to screening
     unjudged: list[str]  # shortlisted papers the screen returned no judgement for
+    problems: Annotated[list[str], operator.add]  # parts that failed after retries (M5a)
 
 
 class ScreenTask(TypedDict):
@@ -159,6 +169,8 @@ async def run_tool(
         return f"Invalid arguments: {error.errors()[0]['msg']}"
     except SearchError as error:
         return str(error)
+    except httpx.HTTPError as error:  # arXiv busy or unreachable: the model may try again (M5a)
+        return f"arXiv did not answer ({problem('an arXiv request', error)}); try again later."
     papers = [m for m in papers if (not after or m.published >= after)]
     papers = [m for m in papers if m.published <= before]
     return describe(papers, found) or "No results."
@@ -257,7 +269,13 @@ async def prewarm(state: DiscoverState, runtime: Runtime[Context]) -> dict[str, 
     return {}
 
 
-async def screen(state: ScreenTask, runtime: Runtime[Context]) -> dict[str, list[Judgement]]:
+def _unscreened(state: ScreenTask, error: BaseException) -> dict[str, Any]:
+    """A batch the screen could not judge is reported unjudged, as before (D23, M5a)."""
+    return {"judged": [], "problems": [problem("screening a batch", error)]}
+
+
+@degrade(_unscreened)
+async def screen(state: ScreenTask, runtime: Runtime[Context]) -> dict[str, Any]:
     ctx = runtime.context
     prompt = screen_prompt(state["request"], state["batch"])
     result = await ctx.gateway.structured(STAGES["screen"], prompt, Screening, scope=ctx.scope)
@@ -348,6 +366,31 @@ async def judge(
     return [judged_card(request, p, j) if (j := judged.get(p.arxiv_id)) else p for p in papers]
 
 
+def search_stopped(state: DiscoverState, error: NodeError) -> Command[str]:
+    """The researcher or a tool turn failed after retries: rank what was found so far (M5a)."""
+    return Command(update={"problems": [problem("the arXiv search", error.error)]}, goto="prerank")
+
+
+def prerank_failed(state: DiscoverState, error: NodeError) -> Command[str]:
+    """Without embeddings, the first candidates found go to screening, in the order found."""
+    pool = list(state.get("found", {}).values())
+    shortlist = [*state["library"], *pool][:SHORTLIST]
+    return Command(
+        update={
+            "shortlist": shortlist,
+            "candidates": [p.arxiv_id for p in pool],
+            "shortlisted": [p.arxiv_id for p in shortlist],
+            "problems": [problem("ranking the candidates", error.error)],
+        },
+        goto="prewarm",
+    )
+
+
+def prewarm_failed(state: DiscoverState, error: NodeError) -> Command[Any]:
+    """The cache write is an optimisation: screening goes on without it."""
+    return Command(update={"problems": []}, goto=to_screen(state))
+
+
 def after_researcher(state: DiscoverState) -> str:
     calls = state["transcript"][-1].calls
     return "arxiv_tools" if calls and state.get("tool_calls", 0) < MAX_TOOL_CALLS else "prerank"
@@ -370,11 +413,29 @@ def build() -> CompiledStateGraph[DiscoverState, Context, DiscoverInput, Discove
         input_schema=DiscoverInput,
         output_schema=DiscoverOutput,
     )
-    graph.add_node("researcher", researcher)
-    graph.add_node("arxiv_tools", arxiv_tools)
-    graph.add_node("prerank", prerank)
-    graph.add_node("prewarm", prewarm)
-    graph.add_node("screen", screen, input_schema=ScreenTask)
+    graph.add_node(
+        "researcher",
+        researcher,
+        retry_policy=RETRY,
+        timeout=LLM_TIMEOUT_S,
+        error_handler=search_stopped,
+    )
+    graph.add_node(
+        "arxiv_tools",
+        arxiv_tools,
+        retry_policy=RETRY,
+        timeout=ARXIV_TIMEOUT_S,
+        error_handler=search_stopped,
+    )
+    graph.add_node(
+        "prerank", prerank, retry_policy=RETRY, timeout=LLM_TIMEOUT_S, error_handler=prerank_failed
+    )
+    graph.add_node(
+        "prewarm", prewarm, retry_policy=RETRY, timeout=LLM_TIMEOUT_S, error_handler=prewarm_failed
+    )
+    graph.add_node(
+        "screen", screen, input_schema=ScreenTask, retry_policy=RETRY, timeout=LLM_TIMEOUT_S
+    )
     graph.add_node("rank", rank)
     graph.add_edge(START, "researcher")
     graph.add_conditional_edges("researcher", after_researcher, ["arxiv_tools", "prerank"])

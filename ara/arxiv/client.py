@@ -11,10 +11,12 @@ from types import TracebackType
 
 import httpx
 
+from ara import faults
 from ara.rag.sources import ParsedPaper, arxiv_html_paper, arxiv_pdf_paper
 
 API_URL = "https://export.arxiv.org/api/query"
 INTERVAL_S = 3.0
+MAX_PAUSE_S = 60.0  # longest Retry-After honoured before the next request
 ATOM = {"atom": "http://www.w3.org/2005/Atom"}
 USER_AGENT = "ara-v2/0.1 (+https://github.com/Syx403/arxiv-research-agent)"
 ARXIV_ID = re.compile(r"^(\d{4}\.\d{4,5})(?:v(\d+))?$")
@@ -60,12 +62,19 @@ class ArxivClient:
         await self.http.aclose()
 
     async def get(self, url: str, params: dict[str, str] | None = None) -> httpx.Response:
+        """One request at a time, 3 s apart. After a 429 the next request also waits out arXiv's
+        Retry-After (at most a minute); the caller's node retry sends it again (M5a)."""
         async with self._turn:
             await asyncio.sleep(max(0.0, self._last + INTERVAL_S - time.monotonic()))
+            pause = 0.0
             try:
-                return await self.http.get(url, params=params)
+                faults.trip("arxiv")
+                response = await self.http.get(url, params=params)
+                if response.status_code == 429:
+                    pause = min(_seconds(response.headers.get("Retry-After")), MAX_PAUSE_S)
+                return response
             finally:
-                self._last = time.monotonic()
+                self._last = time.monotonic() + pause
 
     async def search(
         self,
@@ -118,6 +127,7 @@ class ArxivClient:
         if parsed is None:
             raise ValueError(f"not an arXiv id: {reference!r}")
         arxiv_id = parsed[1]
+        faults.trip("fetch")
         meta = await self.metadata(arxiv_id)
         version = int(parsed[2]) if parsed[2] else meta.version
         html = await self.get(f"https://arxiv.org/html/{arxiv_id}v{version}")
@@ -144,3 +154,8 @@ def _metadata(entry: ET.Element) -> Metadata | None:
         abstract=" ".join(entry.findtext("atom:summary", "", ATOM).split()),
         published=date.fromisoformat(entry.findtext("atom:published", "", ATOM)[:10]),
     )
+
+
+def _seconds(retry_after: str | None) -> float:
+    """Retry-After in seconds; arXiv sends seconds, and a date or nothing counts as the spacing."""
+    return float(retry_after) if retry_after and retry_after.isdigit() else INTERVAL_S

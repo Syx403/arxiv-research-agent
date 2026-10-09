@@ -26,7 +26,7 @@ the library.
 """
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Annotated, Any, Literal, TypedDict
@@ -37,6 +37,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.config import get_config
+from langgraph.errors import NodeError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
@@ -47,6 +48,7 @@ from langgraph.types import Command, interrupt
 from ara.arxiv.client import ARXIV_ID
 from ara.db.pool import Connection, Pool
 from ara.graph import answer, discover, read
+from ara.graph.reliability import ARXIV_TIMEOUT_S, LLM_TIMEOUT_S, RETRY, problem
 from ara.graph.state import (
     MAX_LISTED,
     MAX_READ,
@@ -127,6 +129,7 @@ class ConversationState(TypedDict):
     notes: list[str]  # what resolve learned that the reply must say
     earlier: list[PaperCard]  # library papers read that did not answer: arXiv was searched (D30)
     gaps: list[str]  # what evidence selection found those papers do not cover (D30)
+    problems: list[str]  # parts of the turn that failed after retries; the reply says so (M5a)
     papers: list[PaperCard]  # listed by discovery
     selected: list[str]  # paper references to read
     read: list[PaperCard]  # the papers read, in the order selected
@@ -150,6 +153,7 @@ def fresh_turn() -> dict[str, object]:
         "notes": [],
         "earlier": [],
         "gaps": [],
+        "problems": [],
         "papers": [],
         "selected": [],
         "read": [],
@@ -313,7 +317,10 @@ async def run_discover(state: ConversationState, runtime: Runtime[Context]) -> d
         {"recursion_limit": RECURSION_LIMIT},
         context=ctx,
     )
-    return {"papers": marked(found["papers"], owned)}
+    return {
+        "papers": marked(found["papers"], owned),
+        "problems": [*state["problems"], *found["problems"]],
+    }
 
 
 def marked(papers: list[PaperCard], owned: set[str]) -> list[PaperCard]:
@@ -449,7 +456,12 @@ async def run_read(state: ConversationState, runtime: Runtime[Context]) -> dict[
     cards = [screened.get(c.arxiv_id, c) for c in cards]
     order = [_bare(r) for r in papers]
     cards.sort(key=lambda c: order.index(c.arxiv_id) if c.arxiv_id in order else len(order))
-    return {"evidence": found["evidence"], "missing": found["missing"], "read": cards}
+    return {
+        "evidence": found["evidence"],
+        "missing": found["missing"],
+        "read": cards,
+        "problems": [*state["problems"], *found["problems"]],
+    }
 
 
 async def conflicts(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
@@ -497,7 +509,7 @@ async def run_answer(state: ConversationState, runtime: Runtime[Context]) -> dic
         },
         context=runtime.context,
     )
-    return {"answer": result["answer"]}
+    return {"answer": result["answer"], "problems": [*state["problems"], *result["problems"]]}
 
 
 async def find_in_library(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
@@ -601,7 +613,8 @@ def _entry(p: PaperCard) -> str:
 def respond(state: ConversationState) -> dict[str, object]:
     """The papers a follow-up can point at: those the reply lists, else those just read (D24)."""
     shown = state["papers"] or state["read"] or state.get("shown", [])
-    return {"messages": [AIMessage(reply(state))], "shown": shown, "status": "complete"}
+    status = "partial" if state["problems"] else "complete"
+    return {"messages": [AIMessage(reply(state))], "shown": shown, "status": status}
 
 
 def reply(state: ConversationState) -> str:
@@ -610,7 +623,7 @@ def reply(state: ConversationState) -> str:
         return OTHER
     if request.intent == "memory":
         return memory_reply(state)
-    if _by_meaning(state) and not state["papers"] and not state["earlier"]:
+    if _by_meaning(state) and not (state["papers"] or state["earlier"] or state["problems"]):
         return NOT_DISCUSSED  # no shared history on this: offer a search instead (D27, D30)
     parts = list(state["notes"])
     if state["earlier"]:  # the model's own words when it wrote an answer, else the facts (D31)
@@ -626,13 +639,17 @@ def reply(state: ConversationState) -> str:
     if state["papers"]:
         listing = "\n".join(_listing(n, p) for n, p in enumerate(state["papers"], 1))
         parts.append(("From your library:\n" if _from_library(state) else "") + listing)
-    elif request.intent in ("discover", "discover_read") or state["earlier"]:
+    elif (request.intent in ("discover", "discover_read") or state["earlier"]) and not state[
+        "problems"
+    ]:
         parts.append("I found no arXiv papers that match this request.")
     if (delivered := state["answer"]) is not None:
         parts.append("\n".join([delivered.render(), *map(_citation, delivered.evidence)]))
     if names(request):
         selected = {e.paper_id for e in state["evidence"]}
         parts += [_mismatch(p) for p in state["read"] if p.reference not in selected]
+    if problems := state["problems"]:  # M5a: say what failed instead of failing the turn
+        parts.append(f"Note: {'; '.join(problems)}. The rest of this reply is unaffected.")
     return "\n\n".join(parts)
 
 
@@ -729,6 +746,41 @@ def _question(state: ConversationState) -> str:
     return request.question or request.need
 
 
+def give_up(what: str, goto: str, **update: Any) -> Callable[..., Command[str]]:
+    """An error handler (M5a): record what failed, reset what it would have produced, go on."""
+
+    def handler(state: ConversationState, error: NodeError) -> Command[str]:
+        noted = [*state.get("problems", []), problem(what, error.error)]
+        return Command(update={**update, "problems": noted}, goto=goto)
+
+    return handler
+
+
+def not_understood(state: ConversationState, error: NodeError) -> Command[str]:
+    """Nothing can be done without understanding the message: say so and end the turn."""
+    text = f"I could not process that message just now ({problem('understanding', error.error)})."
+    return Command(
+        update={"messages": [AIMessage(f"{text} Please try again.")], "status": "failed"},
+        goto=END,
+    )
+
+
+def no_memory(state: ConversationState, error: NodeError) -> Command[str]:
+    """The turn goes on without the profile and earlier research."""
+    fresh = {**fresh_turn(), "turn_start": len(state["messages"]) - 1}
+    return Command(
+        update={**fresh, "problems": [problem("loading your memory", error.error)]},
+        goto="understand",
+    )
+
+
+def not_remembered(state: ConversationState, error: NodeError) -> Command[str]:
+    """A memory turn still replies; another turn has replied already (M5a)."""
+    noted = [*state["problems"], problem("saving to memory", error.error)]
+    goto = "respond" if _request(state).intent == "memory" else END
+    return Command(update={"problems": noted}, goto=goto)
+
+
 def after_understand(state: ConversationState) -> str:
     request = _request(state)
     # A library question is never clarified: the library search answers it or finds nothing (D27).
@@ -791,19 +843,59 @@ def build(
     memory: BaseStore | None = None,
 ) -> CompiledStateGraph[ConversationState, Context, ConversationState, ConversationState]:
     graph = StateGraph(ConversationState, context_schema=Context)
-    graph.add_node("load_context", load_context)
-    graph.add_node("understand", understand)
+    # Leaf nodes retry and time out; the subgraph nodes (discover, read, answer) retry inside, and
+    # every node that can fail has a handler that degrades the turn instead of raising (M5a).
+    graph.add_node(
+        "load_context",
+        load_context,
+        retry_policy=RETRY,
+        timeout=LLM_TIMEOUT_S,
+        error_handler=no_memory,
+    )
+    graph.add_node(
+        "understand",
+        understand,
+        retry_policy=RETRY,
+        timeout=LLM_TIMEOUT_S,
+        error_handler=not_understood,
+    )
     graph.add_node("clarify", clarify)
-    graph.add_node("discover", run_discover)
+    graph.add_node(
+        "discover", run_discover, error_handler=give_up("the arXiv search", "respond", papers=[])
+    )
     graph.add_node("choose_papers", choose_papers)
-    graph.add_node("resolve", resolve)
-    graph.add_node("read", run_read)
-    graph.add_node("conflicts", conflicts)
-    graph.add_node("answer", run_answer)
-    graph.add_node("library", find_in_library)
+    graph.add_node(
+        "resolve",
+        resolve,
+        retry_policy=RETRY,
+        timeout=ARXIV_TIMEOUT_S,
+        error_handler=give_up("finding the named papers", "respond", selected=[]),
+    )
+    graph.add_node("read", run_read, error_handler=give_up("reading the papers", "respond"))
+    graph.add_node(
+        "conflicts",
+        conflicts,
+        retry_policy=RETRY,
+        timeout=LLM_TIMEOUT_S,
+        error_handler=give_up("checking your requirements", "answer"),
+    )
+    graph.add_node("answer", run_answer, error_handler=give_up("writing the answer", "respond"))
+    graph.add_node(
+        "library",
+        find_in_library,
+        retry_policy=RETRY,
+        timeout=LLM_TIMEOUT_S,
+        error_handler=give_up("searching your library", "respond", papers=[], selected=[]),
+    )
     graph.add_node("search_instead", search_instead)
     graph.add_node("respond", respond)
-    graph.add_node("remember", remember)
+    graph.add_node(
+        "remember",
+        remember,
+        retry_policy=RETRY,
+        timeout=LLM_TIMEOUT_S,
+        error_handler=not_remembered,
+    )
     graph.add_edge(START, "load_context")
     graph.add_edge("load_context", "understand")
     graph.add_conditional_edges(

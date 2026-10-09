@@ -9,7 +9,7 @@ the aspects its evidence left uncovered.
 
 import operator
 import re
-from typing import Annotated, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -17,6 +17,7 @@ from langgraph.runtime import Runtime
 from langgraph.types import Send
 from pydantic import BaseModel, Field
 
+from ara.graph.reliability import INGEST_TIMEOUT_S, LLM_TIMEOUT_S, RETRY, degrade, problem
 from ara.graph.state import Context, Evidence
 from ara.llm.prompt import Block, Instructions, Prompt
 from ara.llm.stages import STAGES
@@ -51,6 +52,7 @@ class ReadOutput(TypedDict):
     evidence: list[Evidence]
     missing: list[str]
     documents: Annotated[list[int], operator.add]  # one per paper read
+    problems: Annotated[list[str], operator.add]  # papers or searches that failed (M5a)
 
 
 class IngestTask(TypedDict):
@@ -79,7 +81,13 @@ class ReadState(ReadInput, ReadOutput):
     requeried: bool
 
 
-async def ingest_paper(state: IngestTask, runtime: Runtime[Context]) -> dict[str, list[int]]:
+def _not_read(state: IngestTask, error: BaseException) -> dict[str, Any]:
+    """A paper that cannot be fetched or stored is skipped; the others are read (M5a)."""
+    return {"documents": [], "problems": [problem(f"reading {state['reference']}", error)]}
+
+
+@degrade(_not_read)
+async def ingest_paper(state: IngestTask, runtime: Runtime[Context]) -> dict[str, Any]:
     """A reference that is a stored paper id ("qasper:…", "arxiv:…v3") is not fetched again. A bare
     "arxiv:2210.03629" means the latest version, which one metadata request names."""
     ctx = runtime.context
@@ -99,24 +107,32 @@ def ready(state: ReadState) -> dict[str, object]:
     return {}
 
 
-async def search(state: SearchTask, runtime: Runtime[Context]) -> dict[str, list[SelectTask]]:
+def _no_passages(state: SearchTask, error: BaseException) -> dict[str, Any]:
+    """A failed search gives its papers no passages, so they add no evidence (M5a)."""
+    return {
+        "staged": [_task(state, d, []) for d in state["documents"]],
+        "problems": [problem("searching the papers", error)],
+    }
+
+
+def _task(state: SearchTask, document: int, passages: list[Passage]) -> SelectTask:
+    return SelectTask(
+        question=state["question"],
+        query=state["query"],
+        document=document,
+        round=state["round"],
+        passages=passages,
+    )
+
+
+@degrade(_no_passages)
+async def search(state: SearchTask, runtime: Runtime[Context]) -> dict[str, Any]:
     """The best passages of each paper for one query (one rerank call for all of them)."""
     ctx = runtime.context
     found = await retrieve(
         state["query"], state["documents"], pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope
     )
-    return {
-        "staged": [
-            SelectTask(
-                question=state["question"],
-                query=state["query"],
-                document=document,
-                round=state["round"],
-                passages=passages,
-            )
-            for document, passages in found.items()
-        ]
-    }
+    return {"staged": [_task(state, d, passages) for d, passages in found.items()]}
 
 
 def staged(state: ReadState) -> dict[str, object]:
@@ -124,7 +140,13 @@ def staged(state: ReadState) -> dict[str, object]:
     return {}
 
 
-async def select(state: SelectTask, runtime: Runtime[Context]) -> dict[str, list[Found]]:
+def _nothing_selected(state: SelectTask, error: BaseException) -> dict[str, Any]:
+    """Selection that failed chooses nothing from this paper's passages (M5a)."""
+    return {"found": [_found(state, [], [])], "problems": [problem("selecting evidence", error)]}
+
+
+@degrade(_nothing_selected)
+async def select(state: SelectTask, runtime: Runtime[Context]) -> dict[str, Any]:
     """Let the model pick the sentences of one paper's passages that matter for the question."""
     ctx = runtime.context
     passages = state["passages"]
@@ -195,15 +217,15 @@ def collect(state: ReadState) -> dict[str, object]:
     """Number the distinct sentences E1, E2, ... After the first round, search each paper once
     more for the aspects it reported missing; after the requery, report what is still uncovered."""
     seen: dict[tuple[int, str], Evidence] = {}
-    for found in state["found"]:
+    for found in state.get("found", []):  # none when no paper could be read
         for sentence in found.sentences:
             seen.setdefault((sentence.chunk_id, sentence.text), sentence)
     evidence = [e.model_copy(update={"id": f"E{n}"}) for n, e in enumerate(seen.values(), 1)]
     if state.get("requeried", False):
-        return {"evidence": evidence, "missing": uncovered(state["found"]), "requery": []}
+        return {"evidence": evidence, "missing": uncovered(state.get("found", [])), "requery": []}
     requery = [
         SearchTask(question=state["question"], query=aspect, documents=[f.document], round=1)
-        for f in state["found"]
+        for f in state.get("found", [])
         for aspect in list(dict.fromkeys(f.missing))[:MAX_REQUERIES]
     ]
     return {"evidence": evidence, "missing": [], "requery": requery, "requeried": True}
@@ -228,8 +250,11 @@ def to_ingest(state: ReadState) -> list[Send]:
     return [Send("ingest", IngestTask(reference=r)) for r in dict.fromkeys(state["papers"])]
 
 
-def to_search(state: ReadState) -> list[Send]:
-    """The question, once, over every paper read: one rerank call, each paper's own passages."""
+def to_search(state: ReadState) -> list[Send] | str:
+    """The question, once, over every paper read: one rerank call, each paper's own passages.
+    When no paper could be read, there is nothing to search."""
+    if not state["documents"]:
+        return "collect"
     task = SearchTask(
         question=state["question"],
         query=state["question"],
@@ -252,15 +277,25 @@ def build() -> CompiledStateGraph[ReadState, Context, ReadInput, ReadOutput]:
     graph = StateGraph(
         ReadState, context_schema=Context, input_schema=ReadInput, output_schema=ReadOutput
     )
-    graph.add_node("ingest", ingest_paper, input_schema=IngestTask)
+    graph.add_node(
+        "ingest",
+        ingest_paper,
+        input_schema=IngestTask,
+        retry_policy=RETRY,
+        timeout=INGEST_TIMEOUT_S,
+    )
     graph.add_node("ready", ready)
-    graph.add_node("search", search, input_schema=SearchTask)
+    graph.add_node(
+        "search", search, input_schema=SearchTask, retry_policy=RETRY, timeout=LLM_TIMEOUT_S
+    )
     graph.add_node("staged", staged)
-    graph.add_node("select", select, input_schema=SelectTask)
+    graph.add_node(
+        "select", select, input_schema=SelectTask, retry_policy=RETRY, timeout=LLM_TIMEOUT_S
+    )
     graph.add_node("collect", collect)
     graph.add_conditional_edges(START, to_ingest, ["ingest"])
     graph.add_edge("ingest", "ready")
-    graph.add_conditional_edges("ready", to_search, ["search"])
+    graph.add_conditional_edges("ready", to_search, ["search", "collect"])
     graph.add_edge("search", "staged")
     graph.add_conditional_edges("staged", to_select, ["select"])
     graph.add_edge("select", "collect")

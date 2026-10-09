@@ -76,7 +76,11 @@ def test_collect_numbers_sentences_and_requeries_each_document_for_its_own_gaps(
 
 def test_the_question_is_searched_once_over_all_papers_and_selected_per_paper() -> None:
     state: Any = {"question": "q", "documents": [7, 8, 7]}
-    [search] = read.to_search(state)
+    searches = read.to_search(state)
+    assert isinstance(searches, list)
+    [search] = searches
+    nothing: Any = {**state, "documents": []}
+    assert read.to_search(nothing) == "collect"
     assert search.arg["documents"] == [7, 8] and search.arg["round"] == 0
     first = [select_task(7, 0), select_task(8, 0)]
     staged: Any = {"staged": first}

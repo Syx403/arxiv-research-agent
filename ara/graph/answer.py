@@ -8,13 +8,15 @@ one repair → verify the changed lines → finalize. Only lines whose citations
 
 import operator
 import re
-from typing import Annotated, TypedDict
+from typing import Annotated, Any, TypedDict
 
+from langgraph.errors import NodeError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
-from langgraph.types import Send
+from langgraph.types import Command, Send
 
+from ara.graph.reliability import LLM_TIMEOUT_S, RETRY, degrade, problem
 from ara.graph.state import ABSTAIN, Answer, Claim, Context, Evidence, Verdict
 from ara.llm.gateway import worth_prewarming
 from ara.llm.prompt import Block, Instructions, Prompt
@@ -40,6 +42,7 @@ class AnswerInput(TypedDict):
 
 class AnswerOutput(TypedDict):
     answer: Answer
+    problems: Annotated[list[str], operator.add]  # parts that failed after retries (M5a)
 
 
 class AnswerState(AnswerInput, AnswerOutput):
@@ -138,7 +141,14 @@ async def prewarm(state: AnswerState, runtime: Runtime[Context]) -> dict[str, ob
     return {}
 
 
-async def verify(state: VerifyTask, runtime: Runtime[Context]) -> dict[str, dict[str, Verdict]]:
+def _unverified_line(state: VerifyTask, error: BaseException) -> dict[str, Any]:
+    """A line the verifier could not check is not delivered (M5a)."""
+    verdict = Verdict(supported=False, problem="could not be verified")
+    return {"verdicts": {state["claim"].key: verdict}, "problems": [problem("verification", error)]}
+
+
+@degrade(_unverified_line)
+async def verify(state: VerifyTask, runtime: Runtime[Context]) -> dict[str, Any]:
     ctx = runtime.context
     prompt = verify_prompt(state["evidence"], state["claim"], state["question"])
     verdict = await ctx.gateway.structured(STAGES["verify"], prompt, Verdict, scope=ctx.scope)
@@ -204,6 +214,22 @@ def finalize(state: AnswerState) -> dict[str, Answer]:
     return {"answer": answer}
 
 
+def synthesis_failed(state: AnswerState, error: NodeError) -> Command[str]:
+    """No draft: the answer abstains, and the reply says why (M5a)."""
+    update = {"claims": [], "uncited": [], "problems": [problem("writing the answer", error.error)]}
+    return Command(update=update, goto="finalize")
+
+
+def repair_failed(state: AnswerState, error: NodeError) -> Command[str]:
+    """The first draft's verified lines stand; its rejected lines stay undelivered (M5a)."""
+    return Command(update={"problems": [problem("repair", error.error)]}, goto="finalize")
+
+
+def prewarm_failed(state: AnswerState, error: NodeError) -> Command[Any]:
+    """The cache write is an optimisation: verification goes on without it."""
+    return Command(update={"problems": []}, goto=to_verify(state))
+
+
 def _unverified(state: AnswerState) -> list[Claim]:
     verdicts = state.get("verdicts", {})
     return [c for c in state["claims"] if c.key not in verdicts]
@@ -232,11 +258,27 @@ def build() -> CompiledStateGraph[AnswerState, Context, AnswerInput, AnswerOutpu
     graph = StateGraph(
         AnswerState, context_schema=Context, input_schema=AnswerInput, output_schema=AnswerOutput
     )
-    graph.add_node("synthesize", synthesize)
-    graph.add_node("prewarm", prewarm)
-    graph.add_node("verify", verify, input_schema=VerifyTask)
+    graph.add_node(
+        "synthesize",
+        synthesize,
+        retry_policy=RETRY,
+        timeout=LLM_TIMEOUT_S,
+        error_handler=synthesis_failed,
+    )
+    graph.add_node(
+        "prewarm", prewarm, retry_policy=RETRY, timeout=LLM_TIMEOUT_S, error_handler=prewarm_failed
+    )
+    graph.add_node(
+        "verify",
+        verify,
+        input_schema=VerifyTask,
+        retry_policy=RETRY,
+        timeout=LLM_TIMEOUT_S,
+    )
     graph.add_node("assemble", assemble)
-    graph.add_node("repair", repair)
+    graph.add_node(
+        "repair", repair, retry_policy=RETRY, timeout=LLM_TIMEOUT_S, error_handler=repair_failed
+    )
     graph.add_node("finalize", finalize)
     graph.add_conditional_edges(START, start, ["synthesize", "finalize"])
     graph.add_edge("synthesize", "prewarm")
