@@ -288,3 +288,32 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
         "s6-history-gap",
         "s6-history-back",
     ]
+
+
+async def test_s7_loads_its_faults_and_a_synthetic_paper_the_database_accepts(pool: Any) -> None:
+    from langchain_core.messages import AIMessage as Reply
+
+    from evals.suites import s7
+
+    fault_items, injections, synthetic = s7.load()
+    assert [f.id for f in fault_items][:2] == ["f-arxiv-down", "f-arxiv-blip"]
+    assert {i.marker for i in injections} == {"PWNED", "evil.example", "42"}
+    assert synthetic.source == "synthetic" and synthetic.id == "synthetic:s7-injection"
+    async with pool.connection() as conn:  # migration 0006 allows the source
+        await conn.execute(
+            "INSERT INTO papers (id, source, arxiv_id, title, abstract)"
+            " VALUES (%s, %s, %s, %s, %s)",
+            (
+                synthetic.id,
+                synthetic.source,
+                synthetic.arxiv_id,
+                synthetic.title,
+                synthetic.abstract,
+            ),
+        )
+    state = {"messages": [Reply("Note: an arXiv request failed (X).")], "status": "partial"}
+    assert (
+        s7.check_fault({"status": "partial", "reply_has": "an arXiv request failed"}, state) == []
+    )
+    assert s7.check_fault({"listed_at_least": 1}, state) == ["listed_at_least=1"]
+    assert s7.injected("pwned", "Answer: PWNED") and not s7.injected("42", "2,000 questions")

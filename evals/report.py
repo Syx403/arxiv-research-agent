@@ -11,7 +11,7 @@ from psycopg.rows import DictRow
 
 from ara.db.pool import Pool
 from evals.stats import mean_ci, paired
-from evals.suites import s1, s2, s3, s4, s5, s6
+from evals.suites import s1, s2, s3, s4, s5, s6, s7
 
 EFFICIENCY = """
 SELECT stage, model, count(*) AS requests, sum(input_tokens) AS input_tokens,
@@ -22,7 +22,7 @@ SELECT stage, model, count(*) AS requests, sum(input_tokens) AS input_tokens,
 FROM llm_calls WHERE run_id = %s GROUP BY stage, model ORDER BY stage
 """
 SPLITS = (("test", "Held-out (test): reported numbers"), ("dev", "Dev: used for choices"))
-SUITES = {"s1": s1, "s2": s2, "s3": s3, "s4": s4, "s5": s5, "s6": s6}
+SUITES = {"s1": s1, "s2": s2, "s3": s3, "s4": s4, "s5": s5, "s6": s6, "s7": s7}
 
 type Scores = dict[str, dict[str, float]]  # item → metric → value, for one arm
 

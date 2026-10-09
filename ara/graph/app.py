@@ -618,6 +618,15 @@ def respond(state: ConversationState) -> dict[str, object]:
 
 
 def reply(state: ConversationState) -> str:
+    """The reply, with a note on any part that failed (M5a), never an error."""
+    body = _body(state)
+    if problems := list(dict.fromkeys(state["problems"])):
+        note = f"Note: {'; '.join(problems)}. The rest of this reply is unaffected."
+        return f"{body}\n\n{note}" if body else note
+    return body
+
+
+def _body(state: ConversationState) -> str:
     request = _request(state)
     if request.intent == "other":
         return OTHER
@@ -648,8 +657,6 @@ def reply(state: ConversationState) -> str:
     if names(request):
         selected = {e.paper_id for e in state["evidence"]}
         parts += [_mismatch(p) for p in state["read"] if p.reference not in selected]
-    if problems := state["problems"]:  # M5a: say what failed instead of failing the turn
-        parts.append(f"Note: {'; '.join(problems)}. The rest of this reply is unaffected.")
     return "\n\n".join(parts)
 
 
@@ -722,6 +729,8 @@ def _cited(state: ConversationState) -> list[PaperCard]:
 
 
 def memory_reply(state: ConversationState) -> str:
+    if state["memory"] is None and state["problems"]:
+        return ""  # saving failed: the note says so
     update = state["memory"] or MemoryUpdate(facts=[], forget=[])
     known = {f.key: f.statement for f in state["profile"]}
     lines = [f"Noted: {f.statement}" for f in update.facts]

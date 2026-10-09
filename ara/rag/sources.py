@@ -26,7 +26,7 @@ class Paragraph:
 @dataclass(frozen=True)
 class ParsedPaper:
     id: str  # "arxiv:2210.03629v3" or "qasper:1912.01214"
-    source: Literal["arxiv", "qasper"]
+    source: Literal["arxiv", "qasper", "synthetic"]
     arxiv_id: str
     version: int | None
     title: str

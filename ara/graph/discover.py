@@ -131,21 +131,31 @@ async def arxiv_tools(state: DiscoverState, runtime: Runtime[Context]) -> dict[s
     """Run the last turn's tool calls within the budget; every call gets a tool message back."""
     found = dict(state.get("found", {}))
     used = state.get("tool_calls", 0)
-    results = []
+    results, problems = [], []
     for call in state["transcript"][-1].calls:
         if used < MAX_TOOL_CALLS:
             used += 1
-            text = await run_tool(call, state["request"], found, runtime.context)
+            try:
+                text = await run_tool(call, state["request"], found, runtime.context)
+            except httpx.HTTPError as error:  # arXiv busy or unreachable (M5a)
+                problems.append(problem("an arXiv request", error))
+                text = f"arXiv did not answer ({type(error).__name__}); try again later."
         else:
             text = "Not run: the tool-call budget is used up."
         results.append(Block("tool", text, call_id=call.id))
-    return {"transcript": [*state["transcript"], *results], "found": found, "tool_calls": used}
+    return {
+        "transcript": [*state["transcript"], *results],
+        "found": found,
+        "tool_calls": used,
+        "problems": problems,
+    }
 
 
 async def run_tool(
     call: ToolCall, request: ResearchRequest, found: dict[str, PaperCard], ctx: Context
 ) -> str:
-    """One tool call. Bad arguments and rejected queries go back to the model as text; results
+    """One tool call. Bad arguments and rejected queries go back to the model as text (an arXiv
+    that does not answer too, in `arxiv_tools`, which also records the problem); results
     outside the request's date window, which ends today at the latest, are dropped here, whatever
     the query said."""
     after = _date(request.published_after)
@@ -169,8 +179,6 @@ async def run_tool(
         return f"Invalid arguments: {error.errors()[0]['msg']}"
     except SearchError as error:
         return str(error)
-    except httpx.HTTPError as error:  # arXiv busy or unreachable: the model may try again (M5a)
-        return f"arXiv did not answer ({problem('an arXiv request', error)}); try again later."
     papers = [m for m in papers if (not after or m.published >= after)]
     papers = [m for m in papers if m.published <= before]
     return describe(papers, found) or "No results."

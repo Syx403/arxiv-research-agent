@@ -13,7 +13,7 @@ Update this file at the end of every working session: what was done, what was sp
 | M2 Read + answer | done (2026-10-08), reviewed | read + answer subgraphs, S2 suite; live check: 2 questions answered with verified citations; S5 data reviewed (58 claims) and S5 run: Luna and DeepSeek both F1 1.00 held-out, Luna stays (D20); review fixes and a live check of requery, prewarm and repair (D21) |
 | M3 Understand + discover | done (2026-10-08), reviewed; S3/S4 first rounds run (D25) | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); priorities, titles, recency, today, English S4 of 62 items (D24); S4 labels await Ewan's review |
 | M4 Memory | done (2026-10-09); S6 reviewed and run; review fixes (D29) and library redesign (D30) built, awaiting the S6 round | profile + research records in the Store, library + HNSW, `memory` intent; live: 2 S6 scenarios (D27); named papers read directly (D29); arXiv first with a library pre-check, no paper-choice question, per-paper evidence with one rerank (D30) |
-| M5 Reliability + UI | not started | |
+| M5 Reliability + UI | M5a (reliability, S7) built (D34), S7 awaits review; M5b (API + UI) next | |
 | Architecture review (Ewan) | — | gate before any large-scale LLM testing |
 | E1–E6 evaluation rounds | — | ≤ US$1 each |
 
@@ -295,3 +295,12 @@ Update this file at the end of every working session: what was done, what was sp
   where the opening writes the full title (check fixed to the title); s6-library stopped with
   `InvalidOutput('synthesize: empty answer')` (DeepSeek returned no text; error handling is M5);
   s6-premise still abstains. Unit tests 130.
+- 2026-10-09 — M5a (D34; Ewan approved the plan and the split into M5a / M5b). Checked LangGraph
+  1.2.14's retry and error-handler behaviour on scratch graphs first (429 not retried by default,
+  OpenAI 400 retried, handlers need `Command(goto)`, none for `Send` tasks). Built
+  `ara/graph/reliability.py` (transient, RETRY, timeouts, `degrade`), `ara/faults.py`
+  (ARA_FAULTS), handlers on every failing node, a "Note:" line and `status="partial"`, arXiv
+  Retry-After spacing, migration 0006 (`synthetic` source), S7 suite and data (6 fault turns, 3
+  injection questions, drafted for Ewan's review). 141 unit tests, 11 of them on degraded paths
+  with injected faults (no billable calls). Next: Ewan reviews S7; S7 (dry run US$0.036, expected
+  ≈ US$0.02) and an S6 rerun to confirm no external error stops it (≈ US$0.13) need approval.

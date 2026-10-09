@@ -22,7 +22,7 @@ from ara.graph import answer, app, discover, read, reliability
 from ara.graph.state import Claim, Evidence
 from ara.llm.gateway import InvalidOutput
 from ara.llm.ledger import BudgetExceeded
-from ara.llm.prompt import ToolCall
+from ara.llm.prompt import Block, ToolCall
 from ara.rag.retrieve import Passage
 from tests.unit.test_app import base_state, card, context, request
 from tests.unit.test_search import setup
@@ -131,12 +131,14 @@ async def test_failed_searches_and_selections_add_no_evidence(pool: Pool, fault:
 
 async def test_an_arxiv_tool_failure_goes_back_to_the_researcher(pool: Pool, fault: Any) -> None:
     fault("arxiv=429")
-    call = ToolCall("c1", "search_arxiv", '{"query": "ti:ReWOO"}')
+    turn = Block("assistant", "", calls=(ToolCall("c1", "search_arxiv", '{"query": "ti:ReWOO"}'),))
+    state: Any = {"request": request(), "transcript": [turn]}
     async with ArxivClient() as arxiv:
         ctx = context(pool, arxiv)
-        text = await discover.run_tool(call, request(), {}, ctx)
+        result: Any = await discover.arxiv_tools(state, Runtime(context=ctx))
         await ctx.gateway.aclose()
-    assert text.startswith("arXiv did not answer (an arXiv request failed (HTTPStatusError))")
+    assert result["transcript"][-1].text.startswith("arXiv did not answer (HTTPStatusError)")
+    assert result["problems"] == ["an arXiv request failed (HTTPStatusError)"]
 
 
 async def test_a_failed_screen_batch_leaves_its_papers_unjudged(pool: Pool, fault: Any) -> None:
@@ -170,6 +172,14 @@ def test_a_failed_part_becomes_a_note_and_the_turn_is_partial() -> None:
         "problems": ["searching your library failed (X)"],
     }
     assert app.reply(library) != app.NOT_DISCUSSED, "a failure is not a missing history"
+    memory: Any = {
+        **base_state(request(intent="memory")),
+        "problems": ["saving to memory failed (X)"],
+    }
+    assert (
+        app.reply(memory)
+        == "Note: saving to memory failed (X). The rest of this reply is unaffected."
+    )
 
 
 async def test_a_synthesis_that_keeps_failing_ends_in_an_abstention(pool: Pool, fault: Any) -> None:

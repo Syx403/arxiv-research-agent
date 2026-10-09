@@ -257,6 +257,10 @@ def after_understand(s) -> Literal["clarify", "discover", "read", "answer", "res
   `stop_reason`), never into an exception the user sees.
 - Budget: the gateway raises `BudgetExceeded` before sending; the error handler finishes the turn
   with what is already verified.
+- As built (M5a, D34): `reliability.transient` + `RETRY` on every model, ingest and arXiv node
+  (timeouts 45 / 60 / 60 s); error handlers on plain nodes return `Command(goto=...)`; `Send` nodes
+  use `degrade` (LangGraph runs no handler for them); failures become a "Note: … failed" line and
+  `status="partial"`; `ARA_FAULTS` injects faults at the gateway and the arXiv client.
 - Durability: checkpoints after every step; completed `Send` branches are not re-run on resume.
 
 ---
@@ -470,7 +474,7 @@ pinned (verified at M0). One database (`ara`; unit tests use `ara_test` on the s
 
 | Table | Purpose / key points |
 |---|---|
-| `papers` | arXiv id, version, metadata; `source` ∈ {arxiv, qasper} |
+| `papers` | arXiv id, version, metadata, first-submission date (0005); `source` ∈ {arxiv, qasper, synthetic} (0006, S7) |
 | `documents` | one parsed edition per (paper version, `PIPELINE_VERSION`); unique; written with its chunks in one transaction, so a row means complete (D16) |
 | `chunks` | `document_id`, `ord`, `heading_path`, `text`, `search_text`, sentence offsets, `embedding vector(1536)`, `tsv` (generated) |
 | `embedding_cache` | content hash → vector |
@@ -549,7 +553,7 @@ pre-ingested papers so a live demo turn stays short.
 | S4 understand/clarify | 12 of v1's questions (translated; 2 rewritten) + 50 drafted cases, each with the day it is asked; labels proposed by Claude and reviewed by Ewan (D22, D24) | 62 | intent accuracy, false-clarify, missed-clarify, per-field accuracy over every field (ids, positions, titles, count, constraints, priorities, dates, prefer_recent) | code | $0.0084 measured (D25) |
 | S5 verifier | QASPER evidence (one sentence per S1 item); 30 DeepSeek paraphrases, 30 perturbed: number 8 and negation 7 by code, entity 8 and over-generalisation 7 by DeepSeek; reviewed by Ewan; 58 after review (D19, D20) | 58 | P/R/F1 on "unsupported", recall per kind; Luna vs DeepSeek | code | $0.0093 measured (D20) |
 | S6 multi-turn + memory | scripted scenarios, drafted by Claude for Ewan's review (D27, D29, D30, D32, D33; held-out frozen) | 19 scenarios, 37 turns | scenarios passed, checks passed (reference resolution, constraint retention, update, forget, history answer, "not discussed" and arXiv fallback, named papers: mismatch, premise, conflict, no paper-choice question) | code | ≈ $0.08 |
-| S7 robustness | fault hooks + one prompt-injection document | 6 + 3 turns | graceful-degradation rate, injection success (must be 0) | code | ≈ $0.02 |
+| S7 robustness | fault hooks (`ARA_FAULTS`) + one synthetic prompt-injection paper, stored locally (D34) | 6 + 3 turns | graceful-degradation rate, injection success (must be 0) | code | ≈ $0.02 |
 
 Efficiency is reported for every suite: requests, tokens, cache-hit rate, $/task, latency p50/p95.
 Costs are estimates from v1 unit costs and §6.1 prices; they are re-measured after the M2 smoke

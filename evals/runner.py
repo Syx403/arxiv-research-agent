@@ -2,6 +2,7 @@
 LangSmith `aevaluate`, under a run cap in the ledger, and stores every result in Postgres."""
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -12,6 +13,7 @@ from langsmith import Client
 from langsmith.evaluation import aevaluate
 from langsmith.schemas import Example
 
+from ara import faults
 from ara.arxiv.client import ArxivClient
 from ara.db.migrate import migrate
 from ara.db.pool import Connection, Pool, make_pool
@@ -25,13 +27,13 @@ from ara.llm.pricing import EMBEDDING, MILLION
 from ara.memory import store
 from ara.rag.chunking import chunk
 from ara.rag.embed import cache_key
-from ara.rag.ingest import PIPELINE_VERSION
+from ara.rag.ingest import PIPELINE_VERSION, ingest
 from ara.rag.sources import ParsedPaper
 from ara.settings import Settings, configure_tracing, get_settings
 from ara.tokens import count_tokens
 from evals.graders import discovery
 from evals.graders.retrieval import score
-from evals.suites import s1, s2, s3, s4, s5, s5_data, s6
+from evals.suites import s1, s2, s3, s4, s5, s5_data, s6, s7
 from evals.suites.s1 import S1, Item
 
 
@@ -711,6 +713,93 @@ async def run_s6(
                         conn, run_id, scenario.id, "product", metrics, {"failures": failures}
                     )
             status = "partial" if failed else "complete"
+        finally:
+            await gateway.aclose()
+            await _finish(pool, run_id, status)
+        return run_id
+
+
+async def run_s7(*, limit: int | None, execute: bool, max_usd: Decimal) -> str | None:
+    """Print the plan; with `execute`, run S7 (M5a): each fault turn through the conversation
+    graph with its fault set in ARA_FAULTS, then the injection questions over the synthetic paper
+    (stored locally first). A fault turn that raises counts as not graceful; it does not stop the
+    round."""
+    fault_items, injections, synthetic = s7.load()
+    count = len(fault_items) + len(injections)
+    usd = Decimal(str(s7.UNIT_COST_USD)) * count
+    print(
+        f"S7 plan: {len(fault_items)} fault turns, {len(injections)} injection questions;"
+        f" estimated ${usd:.4f}"
+    )
+    if not execute:
+        print("Dry run: nothing was sent. Add --execute to run.")
+        return None
+    if usd > max_usd:
+        raise SystemExit(f"estimated ${usd:.4f} exceeds --max-usd {max_usd}")
+    settings = get_settings()
+    configure_tracing(settings)
+    migrate(settings.database_url)
+    async with make_pool(settings.database_url) as pool, ArxivClient() as arxiv:
+        run_id = f"s7-{datetime.now(UTC):%Y%m%dT%H%M%S}"
+        await _start(
+            pool,
+            run_id,
+            {"suite": "s7", "data": s7.data_hash(), "items": count, "max_usd": str(max_usd)},
+        )
+        ledger = Ledger(
+            pool, global_cap_usd=settings.global_cap_usd, turn_cap_usd=settings.turn_cap_usd
+        )
+        gateway = Gateway(settings, ledger)
+        memory = await store.open_store(pool, gateway)
+        graph = app.build(await app.checkpointer(pool), memory)
+
+        async def fetch(reference: str) -> ParsedPaper:
+            return await arxiv.paper(reference.removeprefix("arxiv:"))
+
+        def context(item_id: str, user: str) -> Context:
+            scope = Scope(run_id=run_id, turn_id=f"{run_id}:{item_id}", run_cap_usd=max_usd)
+            return Context(pool, gateway, scope, fetch, arxiv, user_id=user)
+
+        status = "failed"
+        try:
+            for item in fault_items:
+                user = f"{run_id}:{item.id}"
+                os.environ["ARA_FAULTS"] = item.faults
+                faults.reset()
+                try:
+                    done = await app.send(graph, user, context(item.id, user), message=item.message)
+                    failures, error = s7.check_fault(item.expect, done.state), None
+                    reply = done.state["messages"][-1].text
+                except Exception as raised:  # an exception the user would see: not graceful
+                    failures, error, reply = ["raised"], f"not graceful: {raised!r}", ""
+                finally:
+                    os.environ.pop("ARA_FAULTS", None)
+                async with pool.connection() as conn:
+                    await _store(
+                        conn,
+                        run_id,
+                        item.id,
+                        "product",
+                        {"graceful": float(not failures)},
+                        {"failures": failures, "reply": reply},
+                        error,
+                    )
+            await ingest(synthetic, pool=pool, gateway=gateway, scope=context("paper", "s7").scope)
+            for injection in injections:
+                found = await answer_question(
+                    injection.question, [synthetic.id], context(injection.id, "s7")
+                )
+                delivered = "\n".join([found.context, found.render()])
+                async with pool.connection() as conn:
+                    await _store(
+                        conn,
+                        run_id,
+                        injection.id,
+                        "product",
+                        {"injected": float(s7.injected(injection.marker, delivered))},
+                        {"delivered": delivered},
+                    )
+            status = "complete"
         finally:
             await gateway.aclose()
             await _finish(pool, run_id, status)
