@@ -45,7 +45,9 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-09 | S4 re-baseline | 62 understand requests on the D30 code (`s4-20261009T040617`) | 62 | 0.0082 | Ewan (cap US$0.05) |
 | 2026-10-09 | S6 round | 13 scenarios, off-peak; 3 stopped by arXiv timeouts (`s6-20261009T044915`) | 239 | 0.0450 | Ewan (cap US$0.15) |
 | 2026-10-09 | S3 re-baseline | 30 PaSa queries, off-peak (`s3-20261009T045853`) | 187 | 0.0907 | Ewan (cap US$0.20) |
-| | | **Total so far** | 1329 | **0.3693** | |
+| 2026-10-09 | S4 re-baseline | 62 understand requests on the D32 prompt (`s4-20261009T112903`) | 62 | 0.0080 | Ewan (cap US$0.05) |
+| 2026-10-09 | S6 round | 17 scenarios, 33 turns, off-peak (`s6-20261009T113005`) | 394 | 0.0950 | Ewan (cap US$0.15) |
+| | | **Total so far** | 1785 | **0.4723** | |
 
 ## Session log
 
@@ -265,3 +267,16 @@ Update this file at the end of every working session: what was done, what was sp
   title ("Gorilla:") resolves to the paper closest to the need (found while drafting, before any
   run). Four scenarios moved to dev; four held-out drafts await Ewan. 129 unit tests. No billable
   calls. Next: Ewan reviews the drafts; S6 (dry run US$0.136, cap US$0.15) and S4 (≈ US$0.008).
+- 2026-10-09 — D32 rounds (arXiv answering again; off-peak). S4 (`s4-20261009T112903`): held-out
+  intent 1.00, all fields 0.62 [0.47, 0.78] (0.72 the run before; 3 items better, 6 worse, all in
+  known error kinds: titles copied from the shown list, prefer_recent with a date limit, the
+  inclusive end date), dev 0.80; read as run-to-run variance, not tuned. S6
+  (`s6-20261009T113005`, 17 scenarios, 0 errors): held-out 6/8 passed (checks 0.93), dev 7/9.
+  New held-out passed: s6-history-list, s6-premise-parallel ("No; LLMCompiler executes functions
+  in parallel …", verified), s6-conflict-train (Gorilla resolved to 2305.15334 among two "Gorilla:"
+  titles; conflict note shown). Failed: s6-history-fallback (held-out: the library screen judged
+  LLMCompiler not relevant to "prompt injection in parallel function calling", so the reply was
+  "not discussed" although we had read it); s6-library (held-out: "And what did the papers we read
+  say about diffusion models …" became `discover_read`, a regression from D32(b)'s topic-only
+  need); s6-library-fallback (dev: fallback and opening worked, but the check wants the id and the
+  model's opening names the title); s6-premise (dev: still abstains). Proposals await Ewan.
