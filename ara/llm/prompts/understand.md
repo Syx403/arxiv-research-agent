@@ -21,6 +21,8 @@ Intent:
   this or earlier sessions ("which papers did we read about MoE routing?", "in the paper we just
   discussed, how is the planner trained?"). A question about a named paper without that reference
   ("what mechanism does the ReAct paper use?") is "read"; a question about a topic is a search.
+  A message that refers back to what we read stays "library" even though its need states only the
+  topic ("and what did the papers we read say about diffusion models?" is "library").
 - "memory": the user only tells something about themselves to remember ("I only use hosted
   APIs", "latency matters most to me") or asks to forget something ("forget that I use hosted
   APIs"), and asks for nothing else. A message that also asks for papers takes that intent.
@@ -30,9 +32,9 @@ Intent:
 Fields:
 - need: the research need as one self-contained sentence, with references resolved ("the second
   one" becomes the paper's title). For discovery it should read as a search brief. State the topic
-  itself, never our history: for "what did the papers we read say about X?" the need is about X
-  ("how many tokens ReAct-style agents consume per task"), since the answer may come from new
-  papers too.
+  itself, never what we read before: for "what did the papers we read say about X?" the need is
+  about X ("how many tokens ReAct-style agents consume per task"), since the answer may come from
+  new papers too.
 - question: for "read" and "discover_read", the question to answer from the papers; otherwise
   null.
 - paper_ids: arXiv ids written in the latest message, with the version if one is given; and, when
@@ -42,6 +44,10 @@ Fields:
 - listed: numbers of the papers shown last that the latest message refers to.
 - titles: papers the user names by title, short name or acronym ("ReWOO", "Attention Is All You
   Need"), when no arXiv id is given for them.
+- history: for "library" only, what the papers the user refers back to are about, in a few
+  words, as the user describes them ("the papers we read about parallel function calling" gives
+  "parallel function calling"); otherwise null. It picks which of the user's papers are meant, so
+  it describes those papers, not the question asked about them.
 - count: how many papers the user asks for, only if stated ("two papers", "pick one").
 - constraints: hard requirements a paper must meet, stated by the user now, earlier in the
   conversation, or in what the user told us before (for example "no fine-tuning", "only hosted

@@ -23,7 +23,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "translated from Chinese (D24)",
       "reviewed": true
@@ -51,7 +52,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "Rewritten (Ewan): v1 asked which was submitted in 2024, a question built from its answer. Judging the technique needs the full text; intent read since D29: papers the user names are read, so code makes a named request read",
       "reviewed": true
@@ -85,7 +87,8 @@
         ],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "translated from Chinese (D24); no ids, so find then read; intent read since D29: papers the user names are read, so code makes a named request read",
       "reviewed": true
@@ -119,7 +122,8 @@
         ],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "translated from Chinese (D24); ids given, so no titles",
       "reviewed": true
@@ -188,7 +192,8 @@
         ],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "translated from Chinese (D24); the abstract is enough, so discover",
       "reviewed": true
@@ -215,7 +220,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "translated from Chinese (D24); 'newest first' orders two named papers, it is not a request for recent work",
       "reviewed": true
@@ -263,7 +269,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "translated from Chinese (D24)",
       "reviewed": true
@@ -287,7 +294,8 @@
         "priorities": [],
         "published_after": "2023-01-01",
         "published_before": "2023-12-31",
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "Rewritten: v1 asked for LLMCompiler, whose date (2023-12-07) sits at the edge of the window, a trap built from the answer. The year is a date limit, not a constraint.",
       "reviewed": true
@@ -329,7 +337,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "translated from Chinese (D24); the 2023 limit is lifted",
       "reviewed": true
@@ -361,7 +370,8 @@
         ],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "translated from Chinese (D24) (Ewan): the two costs are priorities, the two papers are ids, the API-only build is a constraint",
       "reviewed": true
@@ -385,7 +395,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "'Recent' sorts newest first; it is not a date limit (Ewan)",
       "reviewed": true
@@ -409,7 +420,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -433,7 +445,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -457,7 +470,8 @@
         "priorities": [],
         "published_after": "2024-01-01",
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -481,7 +495,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "translated from Chinese (D24)",
       "reviewed": true
@@ -508,7 +523,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "cutting API cost is the topic (need), not a priority",
       "reviewed": true
@@ -532,7 +548,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -558,7 +575,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "search the GQA paper itself; the user asks a follow-up if they need one (Ewan)",
       "reviewed": true
@@ -582,7 +600,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "broad topic: no clarification, newest first by default (Ewan)",
       "reviewed": true
@@ -608,7 +627,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -632,7 +652,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "a count without reading",
       "reviewed": true
@@ -656,7 +677,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -680,7 +702,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -706,7 +729,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "a title, not an id: find first; intent read since D29: papers the user names are read, so code makes a named request read",
       "reviewed": true
@@ -732,7 +756,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "intent read since D29: papers the user names are read, so code makes a named request read",
       "reviewed": true
@@ -756,7 +781,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "translated from Chinese (D24)",
       "reviewed": true
@@ -782,7 +808,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -809,7 +836,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -835,7 +863,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "an id inside a URL",
       "reviewed": true
@@ -889,7 +918,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -944,7 +974,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -998,7 +1029,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "translated from Chinese (D24)",
       "reviewed": true
@@ -1042,7 +1074,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -1091,7 +1124,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "a follow-up on the two papers just read: they are the papers shown (D24); compare c-which, the same words with no context",
       "reviewed": true
@@ -1133,7 +1167,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -1182,7 +1217,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -1234,7 +1270,8 @@
         "priorities": [],
         "published_after": "2024-01-01",
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "narrows the last search by date: a new search, not a read of the shown papers",
       "reviewed": true
@@ -1280,7 +1317,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "the earlier constraint is lifted",
       "reviewed": true
@@ -1329,7 +1367,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -1355,7 +1394,8 @@
         ],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "'ideally' is a wish: a priority, never a filter",
       "reviewed": true
@@ -1381,7 +1421,8 @@
         ],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -1409,7 +1450,8 @@
         ],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -1433,7 +1475,8 @@
         "priorities": [],
         "published_after": "2024-10-08",
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "two years before asked_at",
       "reviewed": true
@@ -1457,7 +1500,8 @@
         "priorities": [],
         "published_after": "2024-01-01",
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -1481,7 +1525,8 @@
         "priorities": [],
         "published_after": "2026-01-01",
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -1505,7 +1550,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": "2022-12-31",
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -1529,7 +1575,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": true
+        "prefer_recent": true,
+        "history": null
       },
       "note": "'latest' is not a date limit",
       "reviewed": true
@@ -1693,9 +1740,10 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": "MoE routing"
       },
-      "note": "",
+      "note": "history labelled in D33",
       "reviewed": true
     },
     {
@@ -1717,9 +1765,10 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": "tool calling"
       },
-      "note": "translated from Chinese (D24)",
+      "note": "translated from Chinese (D24); history labelled in D33",
       "reviewed": true
     },
     {
@@ -1741,7 +1790,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -1765,7 +1815,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "",
       "reviewed": true
@@ -1789,7 +1840,8 @@
         "priorities": [],
         "published_after": null,
         "published_before": null,
-        "prefer_recent": false
+        "prefer_recent": false,
+        "history": null
       },
       "note": "no topic and no earlier papers: other, not a clarification (Ewan); f-which is the same words after a read",
       "reviewed": true

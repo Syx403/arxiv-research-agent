@@ -756,3 +756,29 @@ decision gets a new entry that names the one it replaces.
     (searched for inject, malicious, attack, security, adversarial). Ewan approved the round.
 - Consequence: the understand prompt changed again, so S4 is re-measured (≈ US$0.008) and replaces
   `s4-20261009T040617` as the baseline; S3 is not affected (it builds requests without understand).
+
+## D33 — A history question says which papers it means; held-out S6 frozen (2026-10-09, Ewan)
+- Context: in `s6-20261009T113005`, "What did the papers we read about parallel function calling
+  report about … prompt injection …?" got "not discussed" although LLMCompiler had been read: the
+  library screen judged LLMCompiler against the topic-only need (D32), so whether a paper is one
+  the user means was mixed with whether it answers the question (D28's lesson again). And
+  "And what did the papers we read say about diffusion models …?" became `discover_read`, a
+  regression from D32's topic-only need.
+- Decisions (Ewan: option A):
+  - `ResearchRequest.history`: for `library` only, what the papers the user refers back to are
+    about, as the user describes them ("parallel function calling"); code keeps it only for that
+    intent. The library route ranks, picks passages for and screens the user's papers against
+    `history` (the screen's need is replaced by it), so the screen decides which papers are meant;
+    reading decides whether they answer, and an unanswered question falls back to arXiv (D30).
+    Alternative B (count relevance ≥ 1 as meant) was not chosen: tangential papers would be listed.
+  - understand's prompt states that a message referring back to what we read stays `library` even
+    though its need is the topic.
+  - S4 grades `history` (absent when none is expected; else it must contain the labelled phrase):
+    l-moe "MoE routing", l-tools "tool calling"; every other item expects null.
+  - S6 checks that wanted an id in the fallback's opening now want the paper's name (the model
+    words the opening with the title, D31): s6-library-fallback "ReAct", s6-history-fallback
+    "LLMCompiler". s6-history-fallback and s6-library move to dev; two held-out scenarios are added
+    (s6-history-gap: Gorilla read, then carbon emissions, which its stored text never mentions;
+    s6-history-back: ReAct read, then its HotpotQA results). After that the held-out set is frozen
+    until the E rounds: later fixes are tuned on dev only, and held-out results are reported, not
+    acted on.

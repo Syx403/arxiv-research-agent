@@ -63,6 +63,9 @@ class ResearchRequest(BaseModel):
     constraints: list[Constraint] = Field(description="Hard constraints the user states.")
     priorities: list[Priority] = Field(description="What the user cares about, not a filter.")
     titles: list[str] = Field(description="Titles or names of papers the user names, not ids.")
+    history: str | None = Field(
+        description='For "library": what the papers the user refers back to are about.'
+    )
     prefer_recent: bool = Field(description="Newer papers first among equally relevant ones.")
     published_after: str | None = Field(description="YYYY-MM-DD, only if the user limits dates.")
     published_before: str | None = Field(description="YYYY-MM-DD, only if the user limits dates.")

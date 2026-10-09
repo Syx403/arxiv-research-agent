@@ -182,6 +182,7 @@ def test_s4_grades_every_field_so_an_added_value_is_an_error() -> None:
         "prefer_recent": False,
         "published_after": None,
         "published_before": None,
+        "history": None,
     }
     good = s4.score(ResearchRequest(**base), item)
     assert good["clarify_correct"] == good["intent_correct"] == good["fields_correct"] == 1.0
@@ -231,6 +232,7 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
             "prefer_recent": False,
             "published_after": None,
             "published_before": None,
+            "history": None,
         }
     )
     shown = [
@@ -283,4 +285,6 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
         "s6-history-fallback",
         "s6-premise-parallel",
         "s6-conflict-train",
+        "s6-history-gap",
+        "s6-history-back",
     ]

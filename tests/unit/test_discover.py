@@ -34,6 +34,7 @@ def request(**fields: Any) -> ResearchRequest:
         "prefer_recent": False,
         "published_after": None,
         "published_before": None,
+        "history": None,
     }
     return ResearchRequest(**(base | fields))
 

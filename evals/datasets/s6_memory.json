@@ -1,6 +1,6 @@
 {
   "suite": "s6",
-  "labels": "drafted by Claude, reviewed by Ewan on 2026-10-09 (D27); s6-episode moved to dev and five scenarios added for Ewan's review (D29); s6-library-many changed and two scenarios added for Ewan's review (D30); four scenarios moved to dev and four held-out ones drafted for Ewan's review (D32)",
+  "labels": "drafted by Claude, reviewed by Ewan on 2026-10-09 (D27); s6-episode moved to dev and five scenarios added for Ewan's review (D29); s6-library-many changed and two scenarios added for Ewan's review (D30); four scenarios moved to dev and four held-out ones drafted for Ewan's review (D32); two more to dev, two held-out added, then the held-out set is frozen until the E rounds (D33)",
   "checks": {
     "intent": "the request's intent",
     "constraint": "a constraint quote covers this phrase",
@@ -44,8 +44,8 @@
     },
     {
       "id": "s6-library",
-      "split": "test",
-      "note": "a later session answers from the library, and abstains on a topic never read",
+      "split": "dev",
+      "note": "a later session answers from the library, and abstains on a topic never read; dev since D33: the library-intent wording was fixed after its held-out result",
       "sessions": [
         [
           {
@@ -340,7 +340,7 @@
             "expect": {
               "intent": "library",
               "searched_instead": true,
-              "reply_has": "2210.03629"
+              "reply_has": "ReAct"
             }
           }
         ]
@@ -403,8 +403,8 @@
     },
     {
       "id": "s6-history-fallback",
-      "split": "test",
-      "note": "D32 held-out: the paper we read is relevant but does not answer (LLMCompiler's full text has no passage on injection, attacks or security; checked in the stored chunks), so arXiv is searched once",
+      "split": "dev",
+      "note": "D32 held-out: the paper we read is relevant but does not answer (LLMCompiler's full text has no passage on injection, attacks or security; checked in the stored chunks), so arXiv is searched once; dev since D33: the history field was added after its held-out result",
       "sessions": [
         [
           {
@@ -421,7 +421,7 @@
             "expect": {
               "intent": "library",
               "searched_instead": true,
-              "reply_has": "2312.04511"
+              "reply_has": "LLMCompiler"
             }
           }
         ]
@@ -471,6 +471,63 @@
               "answered": true,
               "constraint": "never train models",
               "reply_has": "I read it because you named it"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-history-gap",
+      "split": "test",
+      "note": "D33 held-out: the paper we read is the one meant but does not answer (Gorilla's stored text has no passage on carbon, emissions or energy), so arXiv is searched once",
+      "sessions": [
+        [
+          {
+            "message": "Read 2305.15334 and explain how Gorilla is trained.",
+            "expect": {
+              "intent": "read",
+              "answered": true
+            }
+          }
+        ],
+        [
+          {
+            "message": "What did the papers we read about LLMs that call APIs say about the carbon emissions of training them?",
+            "expect": {
+              "intent": "library",
+              "searched_instead": true,
+              "reply_has": "Gorilla"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "id": "s6-history-back",
+      "split": "test",
+      "note": "D33 held-out: a question back about a paper we read is answered from it and lists it (ReAct reports HotpotQA results)",
+      "sessions": [
+        [
+          {
+            "message": "Read 2210.03629 and explain how it interleaves reasoning and actions.",
+            "expect": {
+              "intent": "read",
+              "answered": true
+            }
+          }
+        ],
+        [
+          {
+            "message": "Remind me what the papers we read about reasoning and acting found on HotpotQA.",
+            "expect": {
+              "intent": "library",
+              "answered": true,
+              "listed": [
+                "2210.03629"
+              ],
+              "cited": [
+                "2210.03629"
+              ]
             }
           }
         ]

@@ -164,6 +164,8 @@ A library question that names no paper screens the user's closest papers (abstra
 passages nearest the question); nothing relevant gives "not discussed"; otherwise every relevant
 paper is listed (≤ 5) and the most relevant (≤ 3) read; if they do not answer, `search_instead`
 searches arXiv for the same question, once, and the reply says so.
+After D33: a library question carries `history` (what the papers the user means are about); the
+library screen judges the user's papers against it, not against the question.
 After D32: a library question names a paper only by an id the user wrote; `need` is always the
 topic, never our history; a name several arXiv titles share goes to the paper closest to the need.
 After D29: papers the user names (ids, numbers shown, titles) are the papers read, whatever else
@@ -546,7 +548,7 @@ pre-ingested papers so a live demo turn stays short.
 | S3 discovery | PaSa: AutoScholarQuery (dev 15), RealScholarQuery (test 15), seed 20261009; manifest holds ids only, no LangSmith dataset (D22); 30 per round, confirmed by Ewan (D23); each query runs with today = its PaSa date (D24) | 30 | candidate-pool and shortlist recall, gold precision@5 (lower bound), hit@5; adjudication and constraint violations with the judge in E1 | code (M3); + DeepSeek judge + Ewan from E1 | $0.089 measured (D25) |
 | S4 understand/clarify | 12 of v1's questions (translated; 2 rewritten) + 50 drafted cases, each with the day it is asked; labels proposed by Claude and reviewed by Ewan (D22, D24) | 62 | intent accuracy, false-clarify, missed-clarify, per-field accuracy over every field (ids, positions, titles, count, constraints, priorities, dates, prefer_recent) | code | $0.0084 measured (D25) |
 | S5 verifier | QASPER evidence (one sentence per S1 item); 30 DeepSeek paraphrases, 30 perturbed: number 8 and negation 7 by code, entity 8 and over-generalisation 7 by DeepSeek; reviewed by Ewan; 58 after review (D19, D20) | 58 | P/R/F1 on "unsupported", recall per kind; Luna vs DeepSeek | code | $0.0093 measured (D20) |
-| S6 multi-turn + memory | scripted scenarios, drafted by Claude for Ewan's review (D27, D29, D30, D32) | 17 scenarios, 33 turns | scenarios passed, checks passed (reference resolution, constraint retention, update, forget, history answer, "not discussed" and arXiv fallback, named papers: mismatch, premise, conflict, no paper-choice question) | code | ≈ $0.08 |
+| S6 multi-turn + memory | scripted scenarios, drafted by Claude for Ewan's review (D27, D29, D30, D32, D33; held-out frozen) | 19 scenarios, 37 turns | scenarios passed, checks passed (reference resolution, constraint retention, update, forget, history answer, "not discussed" and arXiv fallback, named papers: mismatch, premise, conflict, no paper-choice question) | code | ≈ $0.08 |
 | S7 robustness | fault hooks + one prompt-injection document | 6 + 3 turns | graceful-degradation rate, injection success (must be 0) | code | ≈ $0.02 |
 
 Efficiency is reported for every suite: requests, tokens, cache-hit rate, $/task, latency p50/p95.

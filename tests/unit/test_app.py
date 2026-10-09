@@ -47,6 +47,7 @@ def request(**fields: Any) -> ResearchRequest:
         "prefer_recent": False,
         "published_after": None,
         "published_before": None,
+        "history": None,
     }
     return ResearchRequest(**(base | fields))
 
@@ -444,3 +445,15 @@ def test_every_type_a_checkpoint_holds_is_registered() -> None:
     serde = JsonPlusSerializer(allowed_msgpack_modules=app.CHECKPOINTED)
     sample = read.Found(round=0, document=1, query="q", sentences=[], missing=[])
     assert serde.loads_typed(serde.dumps_typed(sample)) == sample
+
+
+def test_history_is_kept_only_for_a_question_about_our_history() -> None:
+    """D33: `history` says which of the user's papers are meant; other intents drop it."""
+    messages: Any = [HumanMessage("What did the papers we read about tool calling say?")]
+    asked = request(intent="library", history=" tool calling ")
+    assert app.checked(asked, messages, []).history == "tool calling"
+    assert (
+        app.checked(asked.model_copy(update={"intent": "discover"}), messages, []).history is None
+    )
+    blank = request(intent="library", history="  ")
+    assert app.checked(blank, messages, []).history is None

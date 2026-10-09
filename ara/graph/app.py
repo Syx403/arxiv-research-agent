@@ -256,6 +256,9 @@ def checked(
             "constraints": [c for c in request.constraints if quoted(c.quote, said)],
             "priorities": [p for p in request.priorities if quoted(p.quote, said)],
             "titles": titles,
+            "history": (request.history or "").strip() or None
+            if request.intent == "library"
+            else None,
             "count": request.count if request.count and request.count > 0 else None,
             "published_after": _iso(request.published_after),
             "published_before": _iso(request.published_before),
@@ -499,18 +502,22 @@ async def run_answer(state: ConversationState, runtime: Runtime[Context]) -> dic
 
 async def find_in_library(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
     """A question that refers back to papers read before and names none (D27, D30): the user's
-    papers closest to it are screened, each with its abstract and the passages nearest the
-    question (one call); the relevant ones are listed, by relevance, and the most relevant read."""
-    ctx, question = runtime.context, _question(state)
-    candidates, _ = await library_candidates(ctx, question, state["episodes"], LIBRARY_SCREENED)
+    papers closest to what the user refers to (`history`, D33) are screened against it, each with
+    its abstract and nearest passages (one call): whether a paper is one the user means, not
+    whether it answers the question, which reading decides. The ones meant are listed, by
+    relevance, and the most relevant read."""
+    ctx, request = runtime.context, _request(state)
+    about = request.history or _question(state)  # the papers the user means, not the question
+    candidates, _ = await library_candidates(ctx, about, state["episodes"], LIBRARY_SCREENED)
     if not candidates:
         return {"papers": [], "selected": []}
-    [vector] = await embed([question], pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope)
+    [vector] = await embed([about], pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope)
     async with ctx.pool.connection() as conn:
         nearest = await library.passages_near(
             conn, [p.reference for p in candidates], vector, PASSAGES_SHOWN
         )
-    relevant = relevant_first(await discover.judge(_request(state), candidates, ctx, nearest))
+    referred = request.model_copy(update={"need": about})
+    relevant = relevant_first(await discover.judge(referred, candidates, ctx, nearest))
     return {
         "papers": relevant[:MAX_LISTED],
         "selected": [p.reference for p in relevant[:MAX_READ]],

@@ -126,4 +126,7 @@ GRADERS: dict[str, Callable[[ResearchRequest, Any], bool]] = {
     "published_after": lambda r, e: r.published_after == e,
     "published_before": lambda r, e: r.published_before == e,
     "prefer_recent": lambda r, e: r.prefer_recent == e,
+    # what a library question refers back to: absent when none is expected, else it covers the
+    # labelled key phrase (D33)
+    "history": lambda r, e: r.history is None if e is None else plain(e) in plain(r.history or ""),
 }
