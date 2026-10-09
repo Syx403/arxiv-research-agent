@@ -20,6 +20,8 @@ from tests.unit.test_search import setup
 async def client(
     pool: Pool, test_database: str, monkeypatch: pytest.MonkeyPatch
 ) -> AsyncIterator[httpx.AsyncClient]:
+    for key in ("OPENAI_API_KEY", "DEEPSEEK_API_KEY", "COHERE_API_KEY"):  # never used: faults
+        monkeypatch.setenv(key, "unused")
     monkeypatch.setenv("ARA_DATABASE_URL", test_database)
     monkeypatch.setenv("LANGSMITH_TRACING", "false")
     monkeypatch.setenv("ARA_FAULTS", "embed=refused,understand=refused")
