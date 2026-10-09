@@ -672,8 +672,11 @@ decision gets a new entry that names the one it replaces.
     confirmed by Ewan). None relevant (≥ 2): NOT_DISCUSSED, now only for this case (narrows D27).
     Otherwise every relevant paper is listed (≤ 5, by relevance, "From your library") and the most
     relevant three read. If the answer abstains, `search_instead` keeps those papers as `earlier`
-    and the same question goes to discovery (as find-then-read, once per turn); the reply opens
-    "The papers we read before (…) do not say this; the following comes from a new arXiv search."
+    and the same question goes to discovery (as find-then-read, once per turn). The reply opens by
+    naming the papers read and what they lack, taken from evidence selection's missing aspects
+    (Ewan asked for a specific opening, not a fixed phrase): 'We read "ReAct: …" before, but it does
+    not cover <aspects>, so I searched arXiv:'. It is assembled by code from this turn's facts, so
+    no unverified model sentence is delivered (D19); without aspects it says "what you asked".
     Papers just tried are not offered again as library candidates in that search (Claude's
     choice). A library question that names a paper keeps D29(d).
   - Evidence, on every reading path (replaces D29's `merged`): each paper's own BM25 + dense
@@ -690,8 +693,9 @@ decision gets a new entry that names the one it replaces.
     2305.18323; its question was reworded so both papers are relevant ("… LLM agents that reason and
     call tools, and how does each one order its reasoning and tool calls?"), since the D29 wording
     asked about planning before any observation, which ReAct does not do (Claude's change, for
-    Ewan's review). Two drafts: s6-library-fallback (held-out) and s6-no-ask (dev); checks `listed`
-    and `read_at_most`.
+    Ewan's review). Two drafts: s6-library-fallback (held-out; checks that arXiv was searched and
+    the reply names 2210.03629, not a fixed phrase, per Ewan) and s6-no-ask (dev); checks `listed`,
+    `read_at_most` and `searched_instead`. Ewan raised the S6 cap so the round runs in full.
 - Replaced: D22's paper-choice question; D27's use of NOT_DISCUSSED (narrowed to an absent shared
   history); D29's merged library search and D29's "reply lists only cited papers" for library
   questions (it now lists every paper the screen judged relevant; the research record still links

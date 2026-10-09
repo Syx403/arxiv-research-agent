@@ -13,7 +13,8 @@
     "reply_has": "the reply contains this text",
     "cited": "the delivered answer cites these bare arXiv ids",
     "listed": "the reply lists these bare arXiv ids",
-    "read_at_most": "between one and this many papers were read"
+    "read_at_most": "between one and this many papers were read",
+    "searched_instead": "true: the library papers read did not answer, so arXiv was searched (the reply names them and what they lack)"
   },
   "scenarios": [
     {
@@ -338,7 +339,8 @@
             "message": "What did the papers we read about reasoning-and-acting agents say about how many tokens each task consumes?",
             "expect": {
               "intent": "library",
-              "reply_has": "do not say this; the following comes from a new arXiv search"
+              "searched_instead": true,
+              "reply_has": "2210.03629"
             }
           }
         ]

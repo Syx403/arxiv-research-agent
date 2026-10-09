@@ -357,10 +357,17 @@ def test_library_papers_that_do_not_answer_lead_to_one_arxiv_search() -> None:
         papers=read_first,
         read=read_first,
         answer=answer_citing(abstained=True),
+        missing=["token use per task"],
     )
     assert app.after_answer(unanswered) == "search_instead"
     moved: Any = {**unanswered, **app.search_instead(unanswered)}
     assert moved["earlier"] == read_first and moved["read"] == [] and moved["answer"] is None
+    assert moved["gaps"] == ["token use per task"] and moved["missing"] == []
+    two = app.searched_instead_note([card(1), card(2)], [])
+    assert (
+        two == 'We read "Paper 1" and "Paper 2" before, but they do not cover what you asked,'
+        " so I searched arXiv:"
+    )
     found: Any = {**moved, "papers": [card(3)]}
     assert app.after_discover(found) == "choose_papers"
     searched: Any = {
@@ -371,7 +378,7 @@ def test_library_papers_that_do_not_answer_lead_to_one_arxiv_search() -> None:
     }
     assert app.after_answer(searched) == "respond", "only once"
     text = app.reply(searched)
-    assert text.startswith('The papers we read before ("Paper 1") do not say this')
+    assert text.startswith('We read "Paper 1" before, but it does not cover token use per task,')
     assert (
         "From your library" not in text and "\n[E1] Paper 3 › Method (arXiv 2401.00003v1)" in text
     )

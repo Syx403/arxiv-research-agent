@@ -251,6 +251,7 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
         == []
     )
     assert s6.check({"read_at_most": 1}, {**state, "selected": []}, [], shown) == ["read_at_most=1"]
+    assert s6.check({"searched_instead": True}, {**state, "earlier": shown}, [], shown) == []
     profile = [Fact(key="k", quote="I never fine-tune models", statement="s")]
     passing = {
         "intent": "read",

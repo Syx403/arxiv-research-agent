@@ -66,6 +66,7 @@ def check(
         "cited": lambda v: set(v) <= cited,
         "listed": lambda v: set(v) <= {p.arxiv_id for p in state["papers"]},
         "read_at_most": lambda v: 1 <= len(read) <= v,
+        "searched_instead": lambda v: bool(state.get("earlier")) == v,
         "reply_has": lambda v: v in reply,
     }
     return [f"{name}={value!r}" for name, value in expect.items() if not tests[name](value)]

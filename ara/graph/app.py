@@ -126,6 +126,7 @@ class ConversationState(TypedDict):
     identified: list[str]  # titles resolve found (library or arXiv title search)
     notes: list[str]  # what resolve learned that the reply must say
     earlier: list[PaperCard]  # library papers read that did not answer: arXiv was searched (D30)
+    gaps: list[str]  # what evidence selection found those papers do not cover (D30)
     papers: list[PaperCard]  # listed by discovery
     selected: list[str]  # paper references to read
     read: list[PaperCard]  # the papers read, in the order selected
@@ -148,6 +149,7 @@ def fresh_turn() -> dict[str, object]:
         "identified": [],
         "notes": [],
         "earlier": [],
+        "gaps": [],
         "papers": [],
         "selected": [],
         "read": [],
@@ -506,6 +508,7 @@ def search_instead(state: ConversationState) -> dict[str, object]:
     """The library papers read did not answer: search arXiv for the same question, once (D30)."""
     return {
         "earlier": state["read"],
+        "gaps": state["missing"],
         "papers": [],
         "selected": [],
         "read": [],
@@ -581,12 +584,8 @@ def reply(state: ConversationState) -> str:
     if _by_meaning(state) and not state["papers"] and not state["earlier"]:
         return NOT_DISCUSSED  # no shared history on this: offer a search instead (D27, D30)
     parts = list(state["notes"])
-    if earlier := state["earlier"]:
-        titles = "; ".join(f'"{p.title}"' for p in earlier)
-        parts.append(
-            f"The papers we read before ({titles}) do not say this; the following comes from a new"
-            " arXiv search."
-        )
+    if state["earlier"]:
+        parts.append(searched_instead_note(state["earlier"], state["gaps"]))
     parts += [
         _identity(p) for p in state["read"] if p.named and not discover.titled(p.named, p.title)
     ]
@@ -605,6 +604,15 @@ def reply(state: ConversationState) -> str:
         selected = {e.paper_id for e in state["evidence"]}
         parts += [_mismatch(p) for p in state["read"] if p.reference not in selected]
     return "\n\n".join(parts)
+
+
+def searched_instead_note(earlier: list[PaperCard], gaps: list[str]) -> str:
+    """Why arXiv was searched: the papers we read, and what evidence selection (the model reading
+    their passages) found they leave uncovered; facts of this turn, so no claim goes unverified."""
+    titles = " and ".join(f'"{p.title}"' for p in earlier)
+    subject = "it does" if len(earlier) == 1 else "they do"
+    missing = "; ".join(gaps) or "what you asked"
+    return f"We read {titles} before, but {subject} not cover {missing}, so I searched arXiv:"
 
 
 def _citation(e: Evidence) -> str:
