@@ -47,7 +47,9 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-09 | S3 re-baseline | 30 PaSa queries, off-peak (`s3-20261009T045853`) | 187 | 0.0907 | Ewan (cap US$0.20) |
 | 2026-10-09 | S4 re-baseline | 62 understand requests on the D32 prompt (`s4-20261009T112903`) | 62 | 0.0080 | Ewan (cap US$0.05) |
 | 2026-10-09 | S6 round | 17 scenarios, 33 turns, off-peak (`s6-20261009T113005`) | 394 | 0.0950 | Ewan (cap US$0.15) |
-| | | **Total so far** | 1785 | **0.4723** | |
+| 2026-10-09 | S4 re-baseline | 62 understand requests on the D33 prompt (`s4-20261009T121555`) | 62 | 0.0084 | Ewan (cap US$0.05) |
+| 2026-10-09 | S6 round | 19 scenarios, 37 turns, off-peak (`s6-20261009T121705`) | 489 | 0.1265 | Ewan (S6 cap raised to US$0.20) |
+| | | **Total so far** | 2336 | **0.6073** | |
 
 ## Session log
 
@@ -280,3 +282,16 @@ Update this file at the end of every working session: what was done, what was sp
   say about diffusion models …" became `discover_read`, a regression from D32(b)'s topic-only
   need); s6-library-fallback (dev: fallback and opening worked, but the check wants the id and the
   model's opening names the title); s6-premise (dev: still abstains). Proposals await Ewan.
+- 2026-10-09 — D33 (Ewan: option A): `history` says which papers a library question means; the
+  library screen judges against it; held-out S6 frozen until the E rounds. S4
+  (`s4-20261009T121555`): held-out intent 1.00, all fields 0.69, history 1.00; dev intent 0.95
+  (f-limits: a follow-up on the paper just read became `library`). S6 (`s6-20261009T121705`):
+  held-out 6/8 (checks 0.96), dev 8 of 10 completed plus 1 error. Held-out, reported and not
+  acted on: s6-history-gap and s6-history-back passed; s6-history-list fell back to arXiv although
+  LLMCompiler answers it (the answer from our papers abstained, and the model's opening then said
+  they "did not cover this question"); s6-conflict-train showed no conflict note this time (the
+  screen did not flag Gorilla's fine-tuning against "never train models myself"; it did in the
+  previous run). Dev: s6-history-fallback did everything right but its check wanted "LLMCompiler"
+  where the opening writes the full title (check fixed to the title); s6-library stopped with
+  `InvalidOutput('synthesize: empty answer')` (DeepSeek returned no text; error handling is M5);
+  s6-premise still abstains. Unit tests 130.

@@ -421,7 +421,7 @@
             "expect": {
               "intent": "library",
               "searched_instead": true,
-              "reply_has": "LLMCompiler"
+              "reply_has": "An LLM Compiler for Parallel Function Calling"
             }
           }
         ]
