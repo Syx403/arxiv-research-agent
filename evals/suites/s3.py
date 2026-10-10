@@ -64,6 +64,7 @@ def request(query: Query) -> ResearchRequest:
     """The request understand would make of the query; S3 measures discovery alone."""
     return ResearchRequest(
         intent="discover",
+        language="English",
         clarification=None,
         need=query.text,
         question=None,

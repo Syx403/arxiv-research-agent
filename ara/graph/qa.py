@@ -17,7 +17,9 @@ async def answer_question(question: str, papers: list[str], context: Context) ->
             "missing": found.get("missing", []),
             "priorities": [],
             "context": "",
+            "language": "English",
         },
+        answer.CONFIG,
         context=context,
     )
     delivered: Answer = result["answer"]

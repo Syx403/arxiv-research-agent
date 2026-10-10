@@ -1,6 +1,6 @@
 """The product's retrieval (D17, D18, D30): per document, stemmed BM25 and dense search fused by
-RRF, its top RERANK_POOL; one Cohere rerank of every document's candidates; each document keeps
-its best TOP_K passages, with their sentence offsets."""
+RRF, its top RERANK_POOL; one Cohere rerank of every document's candidates (a requery skips it,
+D40); each document keeps its best TOP_K passages, with their sentence offsets."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -39,12 +39,19 @@ class Passage:
 
 
 async def retrieve(
-    query: str, documents: Sequence[int], *, pool: Pool, gateway: Gateway, scope: Scope
+    query: str,
+    documents: Sequence[int],
+    *,
+    pool: Pool,
+    gateway: Gateway,
+    scope: Scope,
+    rerank: bool = True,
 ) -> dict[int, list[Passage]]:
     """The best passages of each document for `query`, best first. Each document is searched on
     its own, so no paper crowds out another; one rerank call scores all candidates. A reranker
     scores each (query, passage) pair on its own, so one call orders each document's passages as
-    separate calls would (inferred from how cross-encoders score; not measured on Cohere, D30)."""
+    separate calls would (inferred from how cross-encoders score; not measured on Cohere, D30).
+    Without `rerank`, each document's passages keep their RRF order (D40)."""
     [vector] = await embed([query], pool=pool, gateway=gateway, scope=scope)
     async with pool.connection() as conn:
         found = await candidates(conn, query, vector, documents)
@@ -64,6 +71,8 @@ async def retrieve(
         )
         for row in rows
     }
+    if not rerank:
+        return best_of_each([by_id[c] for c in found], documents)
     ranked = await gateway.rerank(
         query, [by_id[c].search_text for c in found], top_n=len(found), scope=scope
     )

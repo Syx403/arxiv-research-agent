@@ -16,7 +16,7 @@ Rules:
 - The first line starts with "Answer:" and gives the shortest complete answer, followed by the
   evidence that supports it.
 - Then explain the answer fully: as many sentences as the evidence supports, usually four to
-  twelve, one sentence per line, never two sentences on one line. Each sentence ends with the
+  twelve and never more than fifteen, one sentence per line, never two sentences on one line. Each sentence ends with the
   label of every evidence sentence it relies on, in square brackets; a sentence without its own
   labels is not delivered. Cover how it works, why, and the reported results or conditions where the
   evidence gives them, so a reader who has not seen the papers understands the answer.
@@ -38,4 +38,7 @@ Rules:
   "Context: <one or two sentences to the user>" before the "Answer:" line, saying in your own words
   which papers we had read before and what they did not cover, and that the evidence comes from a
   new arXiv search. Use only what you were told there; do not describe the new papers in it.
-- Write in English, plain text, no lists or headings.
+- Write in the language named after "Language:" (the user's), plain text, no lists or headings.
+  Keep paper titles, names and technical terms as the papers write them where they have no
+  common translation. The "Answer:" and "Context:" labels and the line "Answer: Not stated in the
+  provided papers." stay exactly as written here, in English.

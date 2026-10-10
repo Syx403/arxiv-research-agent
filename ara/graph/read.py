@@ -1,6 +1,6 @@
 """The read subgraph (DESIGN §4.2, D30): ingest per paper → search (each paper on its own, one
 rerank for all) → select evidence per paper → collect, with at most one requery, per paper, for
-the aspects its evidence left uncovered.
+the aspects its evidence left uncovered (hybrid search only, no rerank: D40).
 
     START ─(Send ingest per paper)→ ingest → ready ─(Send search)→ search → staged
     staged ─(Send select per paper)→ select → collect
@@ -25,7 +25,7 @@ from ara.llm.stages import STAGES
 from ara.rag.ingest import document_id, ingest
 from ara.rag.retrieve import Passage, retrieve
 
-MAX_REQUERIES = 3  # missing aspects searched again, per turn over all papers (D21, D39)
+MAX_REQUERIES = 3  # missing aspects searched again, per turn over all papers (D21, D39, D40)
 LABEL = re.compile(r"S\d+")
 BARE_ARXIV = re.compile(r"^arxiv:(\d{4}\.\d{4,5})$")
 SELECT = Instructions.load("select_evidence")
@@ -128,10 +128,17 @@ def _task(state: SearchTask, document: int, passages: list[Passage]) -> SelectTa
 
 @degrade(_no_passages)
 async def search(state: SearchTask, runtime: Runtime[Context]) -> dict[str, Any]:
-    """The best passages of each paper for one query (one rerank call for all of them)."""
+    """The best passages of each paper for one query: one rerank call for all of them for the
+    question; a requery, a narrow aspect, keeps the hybrid search's order (D40), so it does not
+    queue behind the rerank rate limit."""
     ctx = runtime.context
     found = await retrieve(
-        state["query"], state["documents"], pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope
+        state["query"],
+        state["documents"],
+        pool=ctx.pool,
+        gateway=ctx.gateway,
+        scope=ctx.scope,
+        rerank=state["round"] == 0,
     )
     return {"staged": [_task(state, d, passages) for d, passages in found.items()]}
 
@@ -233,8 +240,8 @@ def collect(state: ReadState) -> dict[str, object]:
 
 def requeries(found: list[Found]) -> list[tuple[int, str]]:
     """The aspects to search again, MAX_REQUERIES in all, taken from the papers in turn (each
-    paper's first missing aspect, then each one's second, ...): each requery is one rerank call,
-    and rerank calls queue one per 6 s across every running turn (D39)."""
+    paper's first missing aspect, then each one's second, ...): each requery is one evidence
+    selection call (D39; no rerank since D40)."""
     per_paper = [[(f.document, a) for a in dict.fromkeys(f.missing)] for f in found]
     rounds = zip_longest(*per_paper)
     return [pair for row in rounds for pair in row if pair is not None][:MAX_REQUERIES]

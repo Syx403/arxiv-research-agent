@@ -114,6 +114,7 @@ def request_block(request: ResearchRequest) -> Block:
             "constraints": [c.model_dump() for c in request.constraints],
             "priorities": [p.model_dump() for p in request.priorities],
             "titles": request.titles,
+            "language": request.language,
             "prefer_recent": request.prefer_recent,
             "published_after": request.published_after,
             "published_before": request.published_before,

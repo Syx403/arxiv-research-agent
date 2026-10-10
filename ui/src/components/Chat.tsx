@@ -128,6 +128,8 @@ function TurnView({ turn, answered, open }: { turn: Turn; answered: boolean; ope
             read: turn.read.length,
             listed: turn.papers.length,
             evidence: turn.answer?.evidence.length ?? 0,
+            verified: turn.answer ? turn.answer.sentences.length + (turn.answer.abstained ? 0 : 1) : 0,
+            withheld: turn.answer?.dropped.length ?? 0,
           }}
           open={(tab) => open(key, tab)}
         />

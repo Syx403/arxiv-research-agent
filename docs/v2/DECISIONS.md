@@ -1051,3 +1051,60 @@ decision gets a new entry that names the one it replaces.
   read stopped while searching the papers left the library at 3 papers and gave the message back.
   "find kimi latest paper" listed five Kimi papers (Kimi K3 among them) as a topic search. Memory
   turns: after the second fix every embedding call carries its turn id (none untagged since).
+
+## D40 — Open questions answered, profile as background, faster reads, the user's language (2026-10-10, Ewan)
+- Context: Ewan's own conversation "找kimi k3相关论文" → "详细介绍一下kimi k3的架构" ended in "Not
+  stated in the provided papers." although the draft explained the architecture in 19 lines and,
+  after repair, every explanation line passed. The direct answer (a one-line summary) was rejected
+  for "omitting the detail requested": verify read it as the full answer to an open question
+  (D21), and a failed direct answer withheld the whole answer (D19/D21, Ewan's choice then). Two
+  profile facts the D39 live check had typed into the app's own user ("latency matters most",
+  "hosted model APIs") were applied to both turns as priorities and a constraint (understand was
+  told to apply a remembered fact to every request it bears on), so the search brief, the ranking
+  and the reasons were bent and the answer gained an unsupported "this serves latency" line. Four
+  requeries each waited for the rerank rate limit (about 20 s). E1 was stopped part-way (S3
+  running, S6 not started; US$0.1535): Ewan decided no evaluation before end-to-end turns work.
+- Decision (Ewan approved all, and "answer in the user's language"):
+  1. Verify checks a direct answer for support only: a short answer to a broad question need not
+     cover every detail (`verify.md`). Changes D21's reading of the direct answer.
+  2. A direct answer that fails no longer withholds the answer (changes D19/D21): its verified
+     explanation is delivered after a sentence saying no one-line answer could be verified
+     (`Answer.withheld`); with no verified line, the reply says no answer could be verified. A
+     model abstention keeps all its verified lines (was up to three). For S2 nothing changes: a
+     withheld direct answer still counts as an abstention (`abstained`). A library question whose
+     answer was withheld but explained counts as answered (no fallback search).
+  3. A remembered fact is background: understand uses it only when the message asks for papers or
+     methods the user would choose for their own work, never for a named paper, model, product or
+     company, and never in need or question (changes D27's "every request it bears on"). The two
+     test facts were deleted from the app's user; live checks now run as the simulated user
+     `live-check` (pruned by `ara db prune`), never as `local`.
+  4. Requeries rank by hybrid search alone (no rerank, so no rate-limit queue); the first search
+     still reranks. Not measured on S1 (inferred: a requery is a narrow aspect query and the
+     selector filters its passages).
+  5. Repair rewrites only the failed lines, by number ("3: <line> [E2]" or "3: DROP"); the other
+     lines stay with their verdicts (was: the whole reply rewritten, about 3K output tokens). A
+     direct answer that cites nothing is sent to repair too.
+  6. The reply is in the language of the message: understand names it (`ResearchRequest.language`,
+     normalised by code: any Chinese is "Chinese"); synthesize, repair, screen reasons and the
+     clarification question are written in it; verify compares meaning across languages; the
+     fixed sentences of a reply come from `ara/graph/wording.py` (English and Chinese; other
+     languages get English). Search briefs and questions stay English. A problem's own words
+     ("HTTP 503") stay English.
+  7. Shown in the UI: "N lines verified · M withheld" in the turn's process line.
+- Found in the live check and fixed in D40:
+  8. A 53-line Chinese draft fanned out about 80 verify calls at once; each reserves its worst
+     case, so the US$0.05 turn cap refused about 29 (reported as "an unexpected error"). Now: at
+     most 8 verify calls in flight (`max_concurrency`), at most 24 explanation pieces verified per
+     draft (the rest dropped unverified), "never more than fifteen" sentences in the prompt, and a
+     refused call is worded as the spending cap.
+  9. The cut at citations knew only ASCII punctuation, so a Chinese "。" after a citation became a
+     piece of its own (uncited) and the next sentence started with it; Chinese punctuation now
+     closes a piece.
+- Live check (approved with the plan, ≤ US$0.06; `tests/live/test_open_questions.py`, user
+  `live-check`): 126 calls, US$0.0319 over two runs. After the fixes: the Kimi K3 architecture
+  question answered in Chinese with a verified explanation (28 calls, 57 s, was 44 calls, 77 s
+  and withheld); ReWOO's planner/workers/solver explained in English with one rerank (15 calls,
+  13 s); with "I only use hosted model APIs" remembered, "找kimi k3相关论文" got no constraint or
+  priority, listed the K3 report in the first two, with reasons in Chinese.
+- Open: evidence selection keeps figure-caption sentences; the fifth K3 search result (a clinical
+  diagnosis benchmark) is weakly related. Investigated next.

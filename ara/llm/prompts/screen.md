@@ -7,7 +7,8 @@ paper in the batch, by its id:
 - relevance 2: closely related; it addresses part of the need or a near variant of it.
 - relevance 1: shares the area or some terms, but would not serve the need.
 - relevance 0: unrelated.
-- reason: one sentence, from the abstract (or passages), saying what the paper does for the need.
+- reason: one sentence, from the abstract (or passages), saying what the paper does for the need,
+  written in the request's language.
 - named: if the request names papers (titles) and this paper is one of them, the same paper and
   not merely a related one, that entry of titles exactly as written; otherwise null. Naming is
   about which paper it is, not about relevance.

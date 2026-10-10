@@ -216,6 +216,7 @@ async def test_a_synthesis_that_keeps_failing_ends_in_an_abstention(pool: Pool, 
         "missing": [],
         "priorities": [],
         "context": "",
+        "language": "English",
     }
     async with ArxivClient() as arxiv:
         ctx = context(pool, arxiv)
@@ -265,4 +266,7 @@ def test_a_failure_is_described_in_words() -> None:
     timed_out = openai.APITimeoutError(request=httpx2.Request("POST", "https://api.invalid"))
     assert reliability.why(timed_out) == "it took too long"
     assert reliability.why(InvalidOutput("empty")) == "the model returned nothing usable"
+    assert reliability.why(BudgetExceeded("turn cap")) == (
+        "the spending cap was reached, so it was not sent"
+    )
     assert reliability.why(ValueError("x")) == "an unexpected error"

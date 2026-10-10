@@ -41,6 +41,7 @@ export interface Answer {
   question: string;
   short: string;
   abstained: boolean;
+  withheld?: boolean; // a direct answer failed verification; its verified lines stand (D40)
   sentences: Claim[];
   dropped: Claim[];
   checked: number;

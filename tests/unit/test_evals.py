@@ -170,6 +170,7 @@ def test_s4_grades_every_field_so_an_added_value_is_an_error() -> None:
     [item] = [i for i in s4.load(reviewed=False) if i.id == "ref-first-third"]
     base: dict[str, Any] = {
         "intent": "read",
+        "language": "English",
         "clarification": None,
         "need": "n",
         "question": "q",
@@ -220,6 +221,7 @@ def test_s6_checks_each_expectation_of_a_turn() -> None:
     request = ResearchRequest(
         **{
             "intent": "read",
+            "language": "English",
             "clarification": None,
             "need": "n",
             "question": "q",

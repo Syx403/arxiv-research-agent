@@ -1,7 +1,12 @@
-A checker compared each line of your reply with the evidence it cites. The lines below are not
-supported by their citations; the reason follows each one.
+A checker compared each line of your reply with the evidence it cites. The numbered lines below
+are not supported by their citations (or cite nothing); the reason follows each one.
 
-Rewrite the whole reply in the same form. Correct each listed line so that it says only what its
-evidence states, cite different evidence if that evidence supports it, or remove the line. Keep
-every other line exactly as it was. If no supported direct answer remains, the first line is
-"Answer: Not stated in the provided papers."
+Rewrite only these lines; every other line of your reply stays as it is. For each listed line,
+write one line that starts with its number and a colon, then either:
+- the corrected line, saying only what its evidence states, with its citations at the end (cite
+  different evidence if that evidence supports it), in the same language as your reply; or
+- DROP, when no evidence supports it.
+
+Line 0 is the direct answer: correct it to what its cited evidence supports, or write
+"0: Not stated in the provided papers." when no supported direct answer remains. Write nothing
+but these numbered lines.

@@ -56,7 +56,10 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-10 | Ewan's own app turns | the "find" and "I" conversations, investigated in D38 | 25 | 0.0032 | Ewan (his own use) |
 | 2026-10-10 | D37/D38 live check | read, switch away and back, two stops, a follow-up, a reload mid-turn, an arXiv 429 turn (`ui:` turn ids) | 42 | 0.0114 | Ewan (≤ US$0.03) |
 | 2026-10-10 | D39 live check | two-paper comparison (before and after the claim fix), a stopped read, a Kimi topic search, two memory turns (`ui:` turn ids) | 57 | 0.0137 | Ewan (≤ US$0.03) |
-| | | **Total so far** (from the ledger; it also counts free embedding and rerank rows not itemised above) | 3120 | **0.7755** | |
+| 2026-10-10 | Ewan's own app turns | "找kimi k3相关论文" and the architecture question, one stopped send (`ui:e86ad5b5…`), investigated in D40 | 55 | 0.0153 | Ewan (his own use) |
+| 2026-10-10 | E1 baseline (stopped) | S1, S4, S5, S7, S2 complete; S3 stopped part-way, S6 not run (`s1/s4/s5/s7/s2/s3-20261010T09…`); Ewan: no evaluation before end-to-end turns work | 845 | 0.1535 | Ewan (round cap US$1) |
+| 2026-10-10 | D40 live check | open questions in Chinese and English, a remembered fact and a K3 search, user `live-check` (`d40-live-20261010T100611`, `…T101059`) | 126 | 0.0319 | Ewan (≤ US$0.06) |
+| | | **Total so far** (from the ledger; it also counts free embedding and rerank rows not itemised above) | 4146 | **0.9743** | |
 
 ## Session log
 
@@ -353,3 +356,9 @@ Update this file at the end of every working session: what was done, what was sp
   as one claim (now cut at citations). 165 unit tests. Next: Ewan's pass of the architecture
   review, then the E rounds.
 - 2026-10-10 — Ewan passed the architecture review (DESIGN §14 gate). Next: E1.
+- 2026-10-10 — E1 started (S1, S4, S5, S7, S2 done; S3 stopped part-way, US$0.1535) and stopped:
+  Ewan's own conversation about Kimi K3 showed open questions withheld and the profile bending
+  unrelated requests; Ewan decided no evaluation until end-to-end turns work. D40 built (open
+  questions, profile as background, requeries without rerank, line-only repair, replies in the
+  user's language, verify fan-out bounded) and checked live (126 calls, US$0.0319). 169 unit
+  tests. Next: why retrieval is imprecise (figure captions in evidence, weak discovery results).

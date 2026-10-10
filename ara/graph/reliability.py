@@ -25,6 +25,7 @@ from langgraph.runtime import Runtime
 from langgraph.types import RetryPolicy
 
 from ara.llm.gateway import InvalidOutput
+from ara.llm.ledger import BudgetExceeded
 
 LLM_TIMEOUT_S = 45.0  # one model call per node attempt (DESIGN §4.4)
 # Writing an answer thinks longest (35.6 s seen, one draft at its 8K-token cap), and D37 asks for
@@ -92,6 +93,8 @@ def why(error: BaseException) -> str:
         return "the service could not be reached"
     if isinstance(error, InvalidOutput):
         return "the model returned nothing usable"
+    if isinstance(error, BudgetExceeded):
+        return "the spending cap was reached, so it was not sent"
     return "an unexpected error"
 
 

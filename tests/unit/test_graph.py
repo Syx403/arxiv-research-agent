@@ -8,6 +8,7 @@ from langgraph.graph import END
 from ara.graph import answer, read
 from ara.graph.read import Found
 from ara.graph.state import ABSTAIN, Answer, Claim, Evidence, Verdict
+from ara.graph.wording import WORDING, language_name, say
 
 
 def evidence(n: int, paragraph: int = 0, text: str = "") -> Evidence:
@@ -141,6 +142,7 @@ def test_only_unverified_claims_are_sent_and_one_repair_is_allowed() -> None:
     ok, bad = claim(0, "BLEU"), claim(1, "It always wins.")
     state: Any = {
         "claims": [ok, bad],
+        "uncited": [],
         "evidence": [evidence(1)],
         "verdicts": {ok.key: Verdict(supported=True, problem="")},
         "repaired": False,
@@ -154,6 +156,36 @@ def test_only_unverified_claims_are_sent_and_one_repair_is_allowed() -> None:
     assert answer.after_assemble(state) == "repair"
     repaired: Any = {**state, "repaired": True}
     assert answer.after_assemble(repaired) == "finalize"
+    # a direct answer that cites nothing is repaired too: it is the one uncited line that matters
+    uncited: Any = {**state, "claims": [ok], "uncited": [Claim(index=0, text="BLEU", citations=[])]}
+    assert answer.after_assemble(uncited) == "repair"
+
+
+def test_a_repair_rewrites_only_the_failed_lines_in_their_place() -> None:
+    """D40: the repair answers by line number; the other lines stay as they were (and keep their
+    verdicts, which are keyed by text), a rewrite cut at its citations takes the failed line's
+    place and paragraph, DROP or silence removes a line, and an abstaining direct answer removes
+    the direct answer."""
+    lines = [
+        claim(0, "ROUGE"),
+        Claim(index=1, text="Kept.", citations=["E1"], paragraph=0),
+        Claim(index=2, text="Too broad.", citations=["E1"], paragraph=1),
+        Claim(index=3, text="Gone.", citations=["E2"], paragraph=1),
+        Claim(index=4, text="Silent.", citations=["E2"], paragraph=2),
+    ]
+    reply = "0: Answer: BLEU [E1]\n2: First part [E1]. Second part [E2].\n3: DROP\nnoise"
+    claims, uncited = answer.amend(lines, {0, 2, 3, 4}, reply, {"E1", "E2"})
+    assert [(c.index, c.text, c.citations, c.paragraph) for c in claims] == [
+        (0, "BLEU", ["E1"], 0),
+        (2, "Kept.", ["E1"], 0),
+        (3, "First part.", ["E1"], 1),
+        (4, "Second part.", ["E2"], 1),
+    ]
+    assert uncited == [] and claims[1].key == lines[1].key
+    abstains = answer.amend(lines[:2], {0}, f"0: {ABSTAIN}\n", {"E1"})[0]
+    assert [c.text for c in abstains] == ["Kept."] and not abstains[0].direct
+    unknown = answer.amend(lines[:2], {1}, "1: Kept again. [E7]", {"E1"})
+    assert [c.text for c in unknown[1]] == ["Kept again."], "a rewrite citing nothing known"
 
 
 def test_finalize_delivers_only_verified_lines() -> None:
@@ -197,10 +229,13 @@ def test_rejections_of_the_first_draft_are_kept_after_repair() -> None:
     assert (delivered.checked, [c.text for c in delivered.rejected]) == (3, ["It always wins."])
 
 
-def test_an_unverified_direct_answer_withholds_the_whole_answer() -> None:
+def test_an_unverified_direct_answer_keeps_its_verified_explanation() -> None:
+    """D40 (was D21: the whole answer withheld): the direct answer is not delivered, the reply
+    says why, and the verified lines stand; with none, it says no answer could be verified."""
     direct, good = claim(0, "ROUGE"), claim(1, "They report ROUGE-L.")
     state: Any = {
         "question": "q",
+        "language": "English",
         "evidence": [evidence(1)],
         "claims": [direct, good],
         "uncited": [],
@@ -210,36 +245,65 @@ def test_an_unverified_direct_answer_withholds_the_whole_answer() -> None:
         },
     }
     delivered = answer.finalize(state)["answer"]
-    assert (delivered.short, delivered.abstained, delivered.sentences) == (ABSTAIN, True, [])
-    assert [c.text for c in delivered.dropped] == ["ROUGE", "They report ROUGE-L."]
-    assert delivered.evidence == []
+    assert (delivered.abstained, delivered.withheld) == (True, True)
+    assert (delivered.short, delivered.sentences) == (say("withheld", "English"), [good])
+    assert [c.text for c in delivered.dropped] == ["ROUGE"]
+    assert [e.id for e in delivered.evidence] == ["E1"]
 
     uncited: Any = {
         **state,
+        "language": "Chinese",
         "claims": [good],
         "uncited": [Claim(index=0, text="ROUGE", citations=[])],
     }
-    assert answer.finalize(uncited)["answer"].sentences == []
+    kept = answer.finalize(uncited)["answer"]
+    assert (kept.short, kept.sentences) == (WORDING["withheld"]["Chinese"], [good])
+    rejected = {good.key: Verdict(supported=False, problem="no")}
+    nothing: Any = {**state, "verdicts": {**state["verdicts"], **rejected}}
+    none = answer.finalize(nothing)["answer"]
+    assert (none.short, none.sentences, none.withheld) == (say("unverified", "English"), [], True)
 
 
 def test_a_model_abstention_keeps_its_verified_note() -> None:
     note = claim(1, "The evidence covers BLEU only.")
     state: Any = {
         "question": "q",
+        "language": "English",
         "evidence": [evidence(1)],
         "claims": [note],
         "uncited": [],
         "verdicts": {note.key: Verdict(supported=True, problem="")},
     }
     delivered = answer.finalize(state)["answer"]
-    assert (delivered.abstained, delivered.sentences) == (True, [note])
+    assert (delivered.abstained, delivered.withheld, delivered.sentences) == (True, False, [note])
+    assert delivered.short == ABSTAIN
 
 
 def test_no_evidence_goes_straight_to_an_abstention() -> None:
-    empty: Any = {"question": "q", "evidence": []}
+    empty: Any = {"question": "q", "evidence": [], "language": "Chinese"}
     assert answer.start(empty) == "finalize"
     delivered = answer.finalize(empty)["answer"]
-    assert delivered.abstained
+    assert delivered.abstained and delivered.short == WORDING["abstain"]["Chinese"]
+
+
+def test_every_fixed_sentence_has_english_and_chinese_with_the_same_slots() -> None:
+    """D40: the reply's fixed sentences follow the user's language; any other language gets
+    English, and understand's name for the language is normalised."""
+    import string
+
+    def slots(text: str) -> set[str]:
+        return {f for _, f, _, _ in string.Formatter().parse(text) if f}
+
+    for key, wording in WORDING.items():
+        assert set(wording) == {"English", "Chinese"}, key
+        assert slots(wording["Chinese"]) <= slots(wording["English"]), key  # English fills all
+    assert say("max_read", "French", n=3) == "I read at most 3 papers per turn: the first 3 named."
+    assert [language_name(n) for n in ("Simplified Chinese", "中文", " English ", "")] == [
+        "Chinese",
+        "Chinese",
+        "English",
+        "English",
+    ]
 
 
 def test_the_subgraphs_compile() -> None:
@@ -287,3 +351,18 @@ def test_a_paragraph_on_one_line_is_cut_into_its_cited_sentences() -> None:
         (3, "and the Solver combines them.", ["E4"], 0),
     ]
     assert [c.text for c in uncited] == ["It saves tokens."]
+
+
+def test_chinese_punctuation_closes_a_cited_piece_and_long_drafts_are_capped() -> None:
+    """D40: "…token [E1]。其…" is cut after the full stop, with no piece made of punctuation."""
+    semi, comma = "\uff1b", "\uff0c"  # full-width
+    reply = f"Answer: 一个模型 [E1]\n它有 2.8 万亿参数 [E1]。其架构 [E2]{semi}第二句 [E1]{comma}"
+    reply += "第三句。"
+    claims, uncited = answer.parse(reply, {"E1", "E2"})
+    texts = ["一个模型", "它有 2.8 万亿参数。", f"其架构{semi}", f"第二句{comma}"]
+    assert [c.text for c in claims] == texts
+    assert [c.text for c in uncited] == ["第三句。"]
+    many = [claim(0, "a")] + [claim(n, f"line {n}") for n in range(1, 31)]
+    kept, dropped = answer.capped(many, [])
+    assert len(kept) == answer.MAX_CLAIMS + 1 and kept[0].direct
+    assert [c.text for c in dropped] == [f"line {n}" for n in range(25, 31)]

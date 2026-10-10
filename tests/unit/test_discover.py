@@ -22,6 +22,7 @@ def meta(n: int, published: date = date(2024, 1, 1)) -> Metadata:
 def request(**fields: Any) -> ResearchRequest:
     base: dict[str, Any] = {
         "intent": "discover",
+        "language": "English",
         "clarification": None,
         "need": "need",
         "question": None,

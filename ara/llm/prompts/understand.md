@@ -3,8 +3,15 @@ the user's latest message asks for. You receive what the user told us about them
 sessions (when anything), the earlier conversation, today's date, the user's earlier research
 closest to the message (when any; each record lists the papers read and the papers only listed),
 the papers shown to the user last (numbered: the papers listed by the last search, or the papers
-read last), and then the latest message. Write every field you produce in English; quotes copy
-the user's words exactly.
+read last), and then the latest message. Write every field you produce in English, except the
+clarification, which is in the user's language; quotes copy the user's words exactly.
+
+What the user told us about themselves is background, not part of every request. Use a
+remembered fact only when the latest message asks for something the fact decides: papers or
+methods the user would choose for their own work. It does not apply to a message about a named
+paper, model, product or company, or about a topic the fact does not concern: for "find papers on
+Kimi K3" or "explain Kimi K3's architecture", "I only use hosted model APIs" and "latency matters
+most to me" apply to neither. A remembered fact never enters need or question.
 
 Intent:
 - "discover": find papers; titles, dates and abstracts are enough (for example "find recent papers
@@ -30,6 +37,8 @@ Intent:
   question that names no topic and has no earlier papers to refer to).
 
 Fields:
+- language: the language the latest message is written in, named in English ("English",
+  "Chinese"); the reply is written in it.
 - need: the research need as one self-contained sentence, with references resolved ("the second
   one" becomes the paper's title). For discovery it should read as a search brief. State the topic
   itself, never what we read before: for "what did the papers we read say about X?" the need is
@@ -53,14 +62,13 @@ Fields:
   it describes those papers, not the question asked about them.
 - count: how many papers the user asks for, only if stated ("two papers", "pick one").
 - constraints: hard requirements a paper must meet, stated by the user now, earlier in the
-  conversation, or in what the user told us before (for example "no fine-tuning", "only hosted
-  APIs"); apply a remembered fact to every request it bears on, reading named papers included. A
-  paper that breaks one is removed, so a wish, a preference or a goal is not a constraint, and a
-  date limit goes in the date fields, not here.
-- priorities: what the user cares about or wants optimised (now, earlier, or remembered), which
-  should steer the choice of papers and the focus of the answer without removing any paper (for
-  example "latency matters most", "I care about API cost", "ideally with released code"). The
-  topic itself belongs in need.
+  conversation, or in a remembered fact that applies (see above; for example "no fine-tuning",
+  "only hosted APIs"). A paper that breaks one is removed, so a wish, a preference or a goal is
+  not a constraint, and a date limit goes in the date fields, not here.
+- priorities: what the user cares about or wants optimised (now, earlier, or in a remembered
+  fact that applies), which should steer the choice of papers and the focus of the answer
+  without removing any paper (for example "latency matters most", "I care about API cost",
+  "ideally with released code"). The topic itself belongs in need.
 - For constraints and priorities, the quote copies the user's own words exactly; the meaning says
   what a paper or the answer must address.
 - published_after / published_before: dates (YYYY-MM-DD) only when the user limits publication
@@ -72,8 +80,8 @@ Fields:
   the user names the papers (by title or id), refers to papers shown, or limits the dates, and for
   "library", "memory" and "other".
 
-Clarification: ask one short question, and fill the other fields as well as you can, only when
-the request cannot be acted on as it stands:
+Clarification: ask one short question, in the user's language, and fill the other fields as well as
+you can, only when the request cannot be acted on as it stands:
 - the goal is too open to search well and the answer depends on facts about the user that are
   not in the conversation (for example "find the best paper to cut my agent's cost": which cost,
   what kind of agent?);

@@ -1,5 +1,6 @@
 """The answer subgraph (DESIGN §4.2): synthesize → prewarm → verify per claim → assemble → at most
-one repair → verify the changed lines → finalize. Only lines whose citations passed are delivered.
+one repair of the failed lines → verify the rewrites → finalize. Only lines whose citations passed
+are delivered; a direct answer that failed no longer withholds the verified explanation (D40).
 
     START → synthesize → prewarm ─(Send verify per unverified claim)→ verify → assemble
     assemble → repair ─(Send verify per new claim)→ verify …  or → finalize → END
@@ -10,6 +11,7 @@ import operator
 import re
 from typing import Annotated, Any, TypedDict
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.errors import NodeError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -18,6 +20,7 @@ from langgraph.types import Command, Send
 
 from ara.graph.reliability import LLM_TIMEOUT_S, RETRY, SYNTHESIS_TIMEOUT_S, degrade, problem
 from ara.graph.state import ABSTAIN, Answer, Claim, Context, Evidence, Verdict
+from ara.graph.wording import say
 from ara.llm.gateway import worth_prewarming
 from ara.llm.prompt import Block, Instructions, Prompt
 from ara.llm.stages import STAGES
@@ -26,6 +29,12 @@ SYNTHESIZE = Instructions.load("synthesize")
 REPAIR = Instructions.load("repair")
 VERIFY = Instructions.load("verify")
 CITATION = re.compile(r"\[\s*(E\d+(?:\s*,\s*E\d+)*)\s*\]")
+CLOSING = ".,;:!?。，；：！？、"  # noqa: RUF001  ends a cited piece, Chinese included (D40)
+MAX_CLAIMS = 24  # explanation pieces verified per draft; the rest are dropped unverified (D40)
+VERIFY_CONCURRENCY = 8  # verify calls in flight: each reserves its worst case under the turn cap
+CONFIG: RunnableConfig = {"max_concurrency": VERIFY_CONCURRENCY}  # for whoever invokes the graph
+REWRITE = re.compile(r"^\s*(\d+)\s*:\s*(.+?)\s*$", re.MULTILINE)  # "3: <line> [E2]" (D40)
+DROP = "DROP"
 
 
 def merge(a: dict[str, Verdict], b: dict[str, Verdict]) -> dict[str, Verdict]:
@@ -38,6 +47,7 @@ class AnswerInput(TypedDict):
     missing: list[str]
     priorities: list[str]  # what the user cares about: the explanation's focus (D24)
     context: str  # facts of this turn the reply opens with, in the model's words; "" for none (D31)
+    language: str  # the user's: the reply is written in it (D40)
 
 
 class AnswerOutput(TypedDict):
@@ -49,7 +59,8 @@ class AnswerState(AnswerInput, AnswerOutput):
     draft: str
     opening: str  # the draft's "Context:" line, delivered unverified (D31)
     claims: list[Claim]  # lines that cite known evidence: these are verified
-    uncited: list[Claim]  # lines citing nothing (or unknown labels): dropped unverified
+    uncited: list[Claim]  # lines citing nothing (or unknown labels), or past MAX_CLAIMS: dropped
+    # unverified, except a direct answer that cites nothing, which the repair is asked to cite
     verdicts: Annotated[dict[str, Verdict], merge]  # by Claim.key, across both rounds
     rejected: Annotated[list[Claim], operator.add]  # first-draft lines the verifier rejected
     repaired: bool
@@ -73,18 +84,50 @@ def opening(reply: str) -> tuple[str, str]:
 def parse(reply: str, known: set[str]) -> tuple[list[Claim], list[Claim]]:
     """Split a reply into claims (lines citing known evidence) and uncited lines. Line 0 is the
     direct answer, written "Answer: ..."; an abstaining answer is neither."""
-    claims: list[Claim] = []
-    uncited: list[Claim] = []
-    for index, paragraph, line in _claims(_lines(reply)):
-        if index == 0:
-            line = line.removeprefix("Answer:").strip()
-        ids = list(dict.fromkeys(i.strip() for g in CITATION.findall(line) for i in g.split(",")))
-        text = re.sub(r"\s+([.,;:!?])", r"\1", " ".join(CITATION.sub(" ", line).split()))
-        claim = Claim(index=index, text=text, citations=ids, paragraph=paragraph)
-        if index == 0 and text.startswith(ABSTAIN.rstrip(".")):
-            continue  # the model abstained, with or without a citation
-        (claims if ids and set(ids) <= known else uncited).append(claim)
-    return claims, uncited
+    found = [_claim(i, paragraph, line) for i, paragraph, line in _claims(_lines(reply))]
+    return _sorted([c for c in found if c is not None], known)
+
+
+def _claim(index: int, paragraph: int, line: str) -> Claim | None:
+    """One line as a claim; None for a direct answer that abstains (cited or not)."""
+    if index == 0:
+        line = line.removeprefix("Answer:").strip()
+    ids = list(dict.fromkeys(i.strip() for g in CITATION.findall(line) for i in g.split(",")))
+    text = re.sub(rf"\s+([{CLOSING}])", r"\1", " ".join(CITATION.sub(" ", line).split()))
+    if index == 0 and text.startswith(ABSTAIN.rstrip(".")):
+        return None
+    return Claim(index=index, text=text, citations=ids, paragraph=paragraph)
+
+
+def _sorted(found: list[Claim], known: set[str]) -> tuple[list[Claim], list[Claim]]:
+    """Claims citing only known evidence, and the rest."""
+    claims = [c for c in found if c.citations and set(c.citations) <= known]
+    return claims, [c for c in found if c not in claims]
+
+
+def amend(
+    lines: list[Claim], failed: set[int], reply: str, known: set[str]
+) -> tuple[list[Claim], list[Claim]]:
+    """The draft's lines with the failed ones (by index) replaced by the repair's rewrites
+    ("3: <line> [E2]") in their place and paragraph, or removed ("3: DROP", or not mentioned).
+    A rewrite is cut at its citations like any explanation line; the direct answer's rewrite stays
+    the direct answer, and one that abstains removes it (D40)."""
+    rewrites = {int(m[1]): m[2] for m in REWRITE.finditer(reply)}
+    amended: list[Claim] = []
+    for line in lines:
+        if line.index not in failed:
+            amended.append(line)
+            continue
+        rewrite = rewrites.get(line.index, DROP)
+        if rewrite.strip(" .") == DROP:
+            continue
+        pieces = [rewrite] if line.direct else _cut(rewrite)
+        index = 0 if line.direct else 1
+        amended += [c for p in pieces if (c := _claim(index, line.paragraph, p)) is not None]
+    numbered = [
+        c.model_copy(update={"index": 0 if c.direct else n}) for n, c in enumerate(amended, 1)
+    ]
+    return _sorted(numbered, known)
 
 
 def _lines(reply: str) -> list[tuple[int, int, str]]:
@@ -121,12 +164,19 @@ def _cut(line: str) -> list[str]:
     pieces, start = [], 0
     for match in CITATION.finditer(line):
         end = match.end()
-        while end < len(line) and line[end] in ".,;:!?":
+        while end < len(line) and line[end] in CLOSING:
             end += 1
         pieces.append(line[start:end])
         start = end
     pieces.append(line[start:])
     return [p.strip() for p in pieces if p.strip()]
+
+
+def capped(claims: list[Claim], uncited: list[Claim]) -> tuple[list[Claim], list[Claim]]:
+    """At most MAX_CLAIMS explanation pieces are verified; the rest join the lines dropped
+    unverified, so a long draft cannot fan out past the turn's cap (D40)."""
+    kept = [c for c in claims if c.direct] + [c for c in claims if not c.direct][:MAX_CLAIMS]
+    return kept, [*uncited, *(c for c in claims if c not in kept)]
 
 
 def pack(evidence: list[Evidence]) -> Block:
@@ -143,6 +193,7 @@ def synthesis_prompt(state: AnswerInput) -> Prompt:
         question += "\nThe evidence search found nothing on: " + "; ".join(state["missing"])
     if state["context"]:
         question += "\nHow this evidence was found: " + state["context"]
+    question += f"\nLanguage: {state['language']}"
     return Prompt(SYNTHESIZE, shared=(pack(state["evidence"]),), item=(Block("user", question),))
 
 
@@ -159,7 +210,7 @@ async def synthesize(state: AnswerState, runtime: Runtime[Context]) -> dict[str,
     ctx = runtime.context
     draft = await ctx.gateway.text(STAGES["synthesize"], synthesis_prompt(state), scope=ctx.scope)
     context, body = opening(draft) if state["context"] else ("", draft)
-    claims, uncited = parse(body, {e.id for e in state["evidence"]})
+    claims, uncited = capped(*parse(body, {e.id for e in state["evidence"]}))
     return {
         "draft": draft,
         "opening": context,
@@ -202,13 +253,14 @@ def assemble(state: AnswerState) -> dict[str, object]:
 
 
 async def repair(state: AnswerState, runtime: Runtime[Context]) -> dict[str, object]:
-    """One rewrite of the failed lines. It continues the synthesize conversation (append-only), so
-    DeepSeek serves the evidence pack and question from its cache."""
+    """One rewrite of the failed lines only, each by its number (D40); the lines that passed stay
+    as they are. It continues the synthesize conversation (append-only), so DeepSeek serves the
+    evidence pack and question from its cache."""
     ctx = runtime.context
     first = synthesis_prompt(state)
-    failed = [c for c in state["claims"] if not state["verdicts"][c.key].supported]
+    failed = _failing(state)
     failures = "\n".join(
-        f"- {c.text} [{', '.join(c.citations)}]: {state['verdicts'][c.key].problem}" for c in failed
+        f"{c.index}: {c.text} [{', '.join(c.citations)}] — {why}" for c, why in failed
     )
     prompt = Prompt(
         SYNTHESIZE,
@@ -216,35 +268,49 @@ async def repair(state: AnswerState, runtime: Runtime[Context]) -> dict[str, obj
         item=(Block("user", f"{REPAIR.text}\n{failures}"),),
         follow_up=REPAIR,
     )
-    draft = await ctx.gateway.text(STAGES["repair"], prompt, scope=ctx.scope)
-    claims, uncited = parse(opening(draft)[1], {e.id for e in state["evidence"]})
+    reply = await ctx.gateway.text(STAGES["repair"], prompt, scope=ctx.scope)
+    lines = [*state["claims"], *(c for c in state["uncited"] if c.direct)]
+    known = {e.id for e in state["evidence"]}
+    claims, uncited = amend(lines, {c.index for c, _ in failed}, reply, known)
     return {
-        "draft": draft,
         "claims": claims,
-        "uncited": uncited,
-        "rejected": failed,
+        "uncited": [*(c for c in state["uncited"] if not c.direct), *uncited],
+        "rejected": [c for c, _ in failed if c in state["claims"]],
         "repaired": True,
     }
 
 
+def _failing(state: AnswerState) -> list[tuple[Claim, str]]:
+    """The lines a repair rewrites, with why: those the verifier rejected, and a direct answer
+    that cites no known evidence (an uncited explanation line is only dropped, D19)."""
+    verdicts = state.get("verdicts", {})
+    rejected = [
+        (c, verdicts[c.key].problem) for c in state["claims"] if not verdicts[c.key].supported
+    ]
+    return rejected + [(c, "it cites no evidence") for c in state["uncited"] if c.direct]
+
+
 def finalize(state: AnswerState) -> dict[str, Answer]:
-    """Deliver the verified lines. A direct answer that failed (unsupported or uncited) withholds
-    the whole answer (D19, D21); a model that abstained keeps its verified note on what the
-    evidence does cover."""
+    """Deliver the verified lines. A direct answer that failed (unsupported or uncited) is not
+    delivered, and the reply says so before the verified explanation; with no verified line, it
+    says no answer could be verified (D40, was: the whole answer withheld, D21). A model that
+    abstained keeps its verified lines on what the evidence does cover."""
     verdicts = state.get("verdicts", {})
     claims = state.get("claims", [])
     uncited = state.get("uncited", [])
     supported = [c for c in claims if verdicts[c.key].supported]
     direct = next((c for c in supported if c.direct), None)
-    failed = direct is None and any(c.direct for c in claims + uncited)
-    sentences = [] if failed else [c for c in supported if not c.direct]
+    withheld = direct is None and any(c.direct for c in claims + uncited)
+    sentences = [c for c in supported if not c.direct]
     delivered = ([direct] if direct else []) + sentences
     rejected = state.get("rejected", []) + [c for c in claims if c not in supported]
     cited = {i for c in delivered for i in c.citations}
+    instead = ("withheld" if sentences else "unverified") if withheld else "abstain"
     answer = Answer(
         question=state["question"],
-        short=direct.text if direct else ABSTAIN,
+        short=direct.text if direct else say(instead, state["language"]),
         abstained=direct is None,
+        withheld=withheld,
         sentences=sentences,
         dropped=[c for c in claims if c not in delivered] + uncited,
         checked=len(verdicts),
@@ -291,8 +357,7 @@ def to_verify(state: AnswerState) -> list[Send] | str:
 
 
 def after_assemble(state: AnswerState) -> str:
-    failed = any(not state["verdicts"][c.key].supported for c in state["claims"])
-    return "repair" if failed and not state["repaired"] else "finalize"
+    return "repair" if _failing(state) and not state["repaired"] else "finalize"
 
 
 def build() -> CompiledStateGraph[AnswerState, Context, AnswerInput, AnswerOutput]:

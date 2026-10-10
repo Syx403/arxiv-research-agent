@@ -18,6 +18,7 @@ from ara.db.pool import Pool
 from ara.graph import answer, app, discover, read
 from ara.graph.state import (
     Answer,
+    Claim,
     Constraint,
     Context,
     Evidence,
@@ -25,6 +26,7 @@ from ara.graph.state import (
     Priority,
     ResearchRequest,
 )
+from ara.graph.wording import say
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
 from ara.memory import library
@@ -35,6 +37,7 @@ from tests.unit.test_search import setup
 def request(**fields: Any) -> ResearchRequest:
     base: dict[str, Any] = {
         "intent": "discover",
+        "language": "English",
         "clarification": None,
         "need": "KV-cache eviction",
         "question": None,
@@ -503,3 +506,25 @@ def test_a_reply_is_built_in_parts_the_ui_shows_from_the_turn_data() -> None:
     assert parts[1]["source"] == "arxiv" and parts[1]["text"].startswith("1. Paper 1")
     assert app.reply(state) == "\n\n".join(p["text"] for p in parts)
     assert app.respond(state)["parts"] == parts
+
+
+def test_the_reply_is_in_the_users_language() -> None:
+    """D40: understand names the language (normalised by code); the fixed sentences follow it,
+    and a library question whose answer was withheld but explained counts as answered."""
+    named = app.checked(request(language="Simplified Chinese"), [HumanMessage("找论文")], [])
+    assert named.language == "Chinese"
+    state = base_state(
+        request(intent="discover_read", language="Chinese", titles=["LLMCompiler"]),
+        papers=[card(1, relevance=3).model_copy(update={"read_before": True})],
+        problems=["screening a batch failed: HTTP 503"],
+    )
+    text = app.reply(state)
+    assert text.startswith(say("not_found", "Chinese", titles="LLMCompiler"))
+    assert "(arXiv 2401.00001v1, 2024-01-01, 读过)" in text
+    note = say("note", "Chinese", problems="screening a batch failed: HTTP 503")
+    assert text.endswith(f"{note} {say('unaffected', 'Chinese')}")
+    explained = answer_citing(card(1), abstained=True).model_copy(
+        update={"withheld": True, "sentences": [Claim(index=1, text="s", citations=["E1"])]}
+    )
+    asked = base_state(request(intent="library"), read=[card(1)], answer=explained)
+    assert app.after_answer(asked) == "respond"

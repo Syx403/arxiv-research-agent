@@ -50,6 +50,10 @@ class ResearchRequest(BaseModel):
     """What understand makes of the latest message. Code checks it before use (trust boundary)."""
 
     intent: Intent
+    language: str = Field(
+        description='The language the latest message is written in, named in English ("English",'
+        ' "Chinese"): the reply is written in it (D40).'
+    )
     clarification: str | None = Field(
         description="One question to ask first, when the request cannot be acted on as it stands."
     )
@@ -128,8 +132,9 @@ class Verdict(BaseModel):
 
 class Answer(BaseModel):
     question: str
-    short: str  # the direct answer, or ABSTAIN
-    abstained: bool
+    short: str  # the direct answer; else the abstention, or why it was withheld, in words (D40)
+    abstained: bool  # no direct answer delivered
+    withheld: bool = False  # a direct answer failed verification; its verified lines stand (D40)
     sentences: list[Claim]  # verified explanation lines
     dropped: list[Claim]  # final-draft lines not delivered: unsupported, uncited, or withheld
     checked: int  # distinct lines the verifier judged, over both drafts

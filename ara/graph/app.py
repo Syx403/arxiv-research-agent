@@ -60,6 +60,7 @@ from ara.graph.state import (
     plain,
     quoted,
 )
+from ara.graph.wording import ENGLISH, WORDING, language_name, say
 from ara.llm.prompt import Block, Instructions, Prompt, data
 from ara.llm.stages import STAGES
 from ara.memory import extract, library, store
@@ -80,15 +81,10 @@ OPENING = 300  # characters of an abstract quoted when a named paper does not fi
 HISTORY = 12  # messages understand sees before the latest, a block at a time (D39)
 SOURCE_LINE = re.compile(r"^\[E\d+\] .*$", re.MULTILINE)  # "[E1] Section (arXiv …)" in a reply
 READ, ANSWER, DISCOVER = read.build(), answer.build(), discover.build()
-OTHER = (
-    "I find arXiv papers and answer questions from their full text. Ask me for papers on a topic,"
-    " or to read a paper by its arXiv id."
+# the English wording of three fixed replies (the user's language: ara.graph.wording, D40)
+OTHER, NOT_DISCUSSED, UNFINISHED = (
+    WORDING[k][ENGLISH] for k in ("other", "not_discussed", "unfinished")
 )
-NOT_DISCUSSED = (
-    "We have not discussed this in any paper we have read."
-    " Would you like me to search arXiv for papers on it?"
-)
-UNFINISHED = "I could not finish this request, so there is nothing to show yet. Please try again."
 RESEARCH = ("discover", "discover_read", "read", "library")
 # Our types kept in checkpoints, subgraph states included: the serializer loads any other type as
 # a plain dict. A unit test walks every state schema to keep this list complete (D29).
@@ -289,6 +285,7 @@ def checked(
     return request.model_copy(
         update={
             "intent": intent,
+            "language": language_name(request.language),
             "paper_ids": paper_ids,
             "listed": listed,
             "constraints": [c for c in request.constraints if quoted(c.quote, said)],
@@ -411,6 +408,7 @@ async def resolve(state: ConversationState, runtime: Runtime[Context]) -> dict[s
     finds are left to discovery. For a library question, a named paper the user has not read is
     read from arXiv, and the reply says so."""
     ctx, request, shown = runtime.context, _request(state), state.get("shown", [])
+    language = request.language
     async with ctx.pool.connection() as conn:
         owned = await library.papers(conn, ctx.user_id)
     ids = [
@@ -432,16 +430,22 @@ async def resolve(state: ConversationState, runtime: Runtime[Context]) -> dict[s
         titled[paper.arxiv_id] = paper.title
         if len(found) > 1:
             notes.append(
-                f'I took "{name}" to be "{paper.title}" (arXiv {paper.arxiv_id}v{paper.version});'
-                f" {len(found) - 1} other paper(s) have a title starting with it."
+                say(
+                    "several",
+                    language,
+                    named=name,
+                    title=paper.title,
+                    paper=f"{paper.arxiv_id}v{paper.version}",
+                    others=len(found) - 1,
+                )
             )
     selected = _distinct([f"arxiv:{i}" for i in ids])
     if len(selected) > MAX_READ:
-        notes.append(f"I read at most {MAX_READ} papers per turn: the first {MAX_READ} named.")
+        notes.append(say("max_read", language, n=MAX_READ))
     if request.intent == "library":
         have = {p.arxiv_id for p in owned}
         notes += [
-            f"We had not read {titled.get(b, f'arXiv {b}')} before; I read it from arXiv now."
+            say("not_read_before", language, paper=titled.get(b, f"arXiv {b}"))
             for b in map(_bare, selected[:MAX_READ])
             if b not in have
         ]
@@ -540,7 +544,9 @@ async def run_answer(state: ConversationState, runtime: Runtime[Context]) -> dic
             "context": searched_instead_note(state["earlier"], state["gaps"])
             if state["earlier"]
             else "",
+            "language": _request(state).language,
         },
+        answer.CONFIG,
         context=runtime.context,
     )
     return {"answer": result["answer"], "problems": [*state["problems"], *result["problems"]]}
@@ -679,12 +685,19 @@ def reply_parts(state: ConversationState) -> list[Part]:
     left nothing to show says so first, rather than a note about a reply that is not there
     (D38)."""
     parts = _parts(state)
+    language = _language(state)
     if problems := list(dict.fromkeys(state["problems"])):
-        note = f"Note: {'; '.join(problems)}."
+        note = say("note", language, problems="; ".join(problems))
         if parts:
-            return [*parts, _part("note", f"{note} The rest of this reply is unaffected.")]
-        return [_part("text", UNFINISHED), _part("note", note)]
+            return [*parts, _part("note", f"{note} {say('unaffected', language)}")]
+        return [_part("text", say("unfinished", language)), _part("note", note)]
     return parts
+
+
+def _language(state: ConversationState) -> str:
+    """The user's language, once understand has named it (D40)."""
+    request = state["request"]
+    return request.language if request else ENGLISH
 
 
 def _part(kind: str, text: str, **more: str) -> Part:
@@ -692,57 +705,63 @@ def _part(kind: str, text: str, **more: str) -> Part:
 
 
 def _parts(state: ConversationState) -> list[Part]:
-    request = _request(state)
+    request, language = _request(state), _language(state)
     if request.intent == "other":
-        return [_part("text", OTHER)]
+        return [_part("text", say("other", language))]
     if request.intent == "memory":
         said = memory_reply(state)
         return [_part("text", said)] if said else []
     if _by_meaning(state) and not (state["papers"] or state["earlier"] or state["problems"]):
-        return [_part("text", NOT_DISCUSSED)]  # no shared history: offer a search (D27, D30)
+        # no shared history: offer a search (D27, D30)
+        return [_part("text", say("not_discussed", language))]
     parts = [_part("text", n) for n in state["notes"]]
     if state["earlier"]:  # the model's own words when it wrote an answer, else the facts (D31)
         written = state["answer"].context if state["answer"] else ""
-        parts.append(
-            _part("context", written or searched_instead_note(state["earlier"], state["gaps"]))
-        )
+        shown = searched_instead_note(state["earlier"], state["gaps"], language)
+        parts.append(_part("context", written or shown))
     parts += [
-        _part("text", _identity(p))
+        _part("text", _identity(p, language))
         for p in state["read"]
         if p.named and not discover.titled(p.named, p.title)
     ]
-    parts += [_part("warning", _conflict(p)) for p in state["read"] if p.violated]
+    parts += [_part("warning", _conflict(p, language)) for p in state["read"] if p.violated]
     found = {*state["identified"], *(p.named for p in state["papers"])}
     if missing := [t for t in request.titles if t not in found]:
         unchecked = any("arXiv" in p for p in state["problems"])  # not found, or not searched
-        lead = "I could not search arXiv for" if unchecked else "I could not find on arXiv"
-        parts.append(_part("text", f"{lead}: {'; '.join(missing)}."))
+        lead = "not_searched" if unchecked else "not_found"
+        parts.append(_part("text", say(lead, language, titles="; ".join(missing))))
     if state["papers"]:
-        listing = "\n".join(_listing(n, p) for n, p in enumerate(state["papers"], 1))
+        listing = "\n".join(_listing(n, p, language) for n, p in enumerate(state["papers"], 1))
         source = "library" if _from_library(state) else "arxiv"
-        header = "From your library:\n" if source == "library" else ""
+        header = say("from_library", language) + "\n" if source == "library" else ""
         parts.append(_part("listing", header + listing, source=source))
     elif (request.intent in ("discover", "discover_read") or state["earlier"]) and not state[
         "problems"
     ]:
-        parts.append(_part("text", "I found no arXiv papers that match this request."))
+        parts.append(_part("text", say("no_papers", language)))
     if (delivered := state["answer"]) is not None:
         text = "\n".join([delivered.render(), *map(_citation, delivered.evidence)])
         parts.append(_part("answer", text))
     if names(request):
         selected = {e.paper_id for e in state["evidence"]}
-        parts += [_part("text", _mismatch(p)) for p in state["read"] if p.reference not in selected]
+        parts += [
+            _part("text", _mismatch(p, language))
+            for p in state["read"]
+            if p.reference not in selected
+        ]
     return parts
 
 
-def searched_instead_note(earlier: list[PaperCard], gaps: list[str]) -> str:
+def searched_instead_note(
+    earlier: list[PaperCard], gaps: list[str], language: str = ENGLISH
+) -> str:
     """Why arXiv was searched: the papers we read, and what evidence selection (the model reading
-    their passages) found they leave uncovered. Synthesize rewords it as the reply's opening
-    (D31); it is shown as is when no answer was written."""
+    their passages) found they leave uncovered. Synthesize rewords it as the reply's opening, in
+    the user's language (D31, D40); it is shown as is when no answer was written."""
     titles = " and ".join(f'"{p.title}"' for p in earlier)
     subject = "it does" if len(earlier) == 1 else "they do"
-    missing = "; ".join(gaps) or "what you asked"
-    return f"We read {titles} before, but {subject} not cover {missing}, so I searched arXiv:"
+    missing = "; ".join(gaps) or say("what_you_asked", language)
+    return say("searched_instead", language, titles=titles, subject=subject, missing=missing)
 
 
 def _citation(e: Evidence) -> str:
@@ -755,34 +774,32 @@ def _citation(e: Evidence) -> str:
     return f"[{e.id}] {e.heading_path} ({source})"
 
 
-def _identity(p: PaperCard) -> str:
+def _identity(p: PaperCard, language: str) -> str:
     """The screen, not the title, decided that this is the paper the user named (D28)."""
-    return f'I took "{p.named}" to be "{p.title}" (arXiv {p.arxiv_id}v{p.version}).'
+    paper = f"{p.arxiv_id}v{p.version}"
+    return say("identity", language, named=p.named, title=p.title, paper=paper)
 
 
-def _conflict(p: PaperCard) -> str:
+def _conflict(p: PaperCard, language: str) -> str:
     quotes = ", ".join(f'"{q}"' for q in p.violated)
-    return (
-        f'Note: "{p.title}" may break what you asked for ({quotes}), judging from its abstract;'
-        " I read it because you named it."
-    )
+    return say("conflict", language, title=p.title, quotes=quotes)
 
 
-def _mismatch(p: PaperCard) -> str:
+def _mismatch(p: PaperCard, language: str) -> str:
     """A named paper with no sentence on the question: say so, with the paper's own opening
     sentence from arXiv (stored text, not model text), so the user can see what it is about."""
     starts = sentence_starts(p.abstract)
     opening = p.abstract[: starts[1] if len(starts) > 1 else len(p.abstract)].strip()[:OPENING]
-    return (
-        f'"{p.title}" (arXiv {p.arxiv_id}v{p.version}) does not seem to discuss this: nothing in'
-        f' its full text was found for the question. Its abstract begins: "{opening}" Check the'
-        " title or id, or ask me to search arXiv for papers on it."
-    )
+    paper = f"{p.arxiv_id}v{p.version}"
+    return say("mismatch", language, title=p.title, paper=paper, opening=opening)
 
 
 def _answered(state: ConversationState) -> bool:
+    """A direct answer, or the verified explanation of one that was withheld (D40)."""
     delivered = state["answer"]
-    return delivered is not None and not delivered.abstained
+    if delivered is None:
+        return False
+    return not delivered.abstained or (delivered.withheld and bool(delivered.sentences))
 
 
 def _by_meaning(state: ConversationState) -> bool:
@@ -808,13 +825,15 @@ def memory_reply(state: ConversationState) -> str:
         return ""  # saving failed: the note says so
     update = state["memory"] or MemoryUpdate(facts=[], forget=[])
     known = {f.key: f.statement for f in state["profile"]}
-    lines = [f"Noted: {f.statement}" for f in update.facts]
-    lines += [f"Forgotten: {known[k]}" for k in update.forget]
-    return "\n".join(lines) or "There was nothing to remember or forget in that message."
+    language = _language(state)
+    lines = [say("noted", language, fact=f.statement) for f in update.facts]
+    lines += [say("forgotten", language, fact=known[k]) for k in update.forget]
+    return "\n".join(lines) or say("nothing_to_remember", language)
 
 
-def _listing(n: int, p: PaperCard) -> str:
-    facts = [f"arXiv {p.arxiv_id}v{p.version}", p.published, "read before" if p.read_before else ""]
+def _listing(n: int, p: PaperCard, language: str = ENGLISH) -> str:
+    before = say("read_before", language) if p.read_before else ""
+    facts = [f"arXiv {p.arxiv_id}v{p.version}", p.published, before]
     return f"{n}. {p.title} ({', '.join(f for f in facts if f)}) — {p.reason}"
 
 

@@ -8,7 +8,8 @@ export type Tab = "workflow" | "evidence" | "papers";
 const seconds = (from: string, to: string) =>
   Math.max(0, (new Date(to).getTime() - new Date(from).getTime()) / 1000);
 
-/** The fold under each reply: how the turn ran, in one line, opening to its steps; and the way
+/** The fold under each reply: how the turn ran, in one line (with how many answer lines were
+ *  verified and withheld, D40), opening to its steps; and the way
  *  into the side panel for this turn's workflow, evidence and papers. While the turn runs it
  *  shows the step, the time so far and anything that has failed, as it happens (D38). */
 export function Process({
@@ -27,7 +28,7 @@ export function Process({
   live: boolean;
   since?: number;
   timing?: { started_at: string; finished_at: string };
-  counts?: { read: number; listed: number; evidence: number };
+  counts?: { read: number; listed: number; evidence: number; verified?: number; withheld?: number };
   open: (tab: Tab) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -39,6 +40,9 @@ export function Process({
   const facts = [
     counts?.read ? `read ${counts.read} paper${counts.read > 1 ? "s" : ""}` : "",
     counts?.listed ? `listed ${counts.listed}` : "",
+    // how many answer lines passed verification, and how many were not delivered (D40)
+    counts?.verified ? `${counts.verified} line${counts.verified > 1 ? "s" : ""} verified` : "",
+    counts?.withheld ? `${counts.withheld} withheld` : "",
     `${calls.length} model call${calls.length === 1 ? "" : "s"}`,
     `$${cost.toFixed(4)}`,
     timing ? `${seconds(timing.started_at, timing.finished_at).toFixed(0)} s` : "",
