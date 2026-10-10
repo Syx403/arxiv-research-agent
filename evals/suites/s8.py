@@ -1,9 +1,11 @@
-"""S8 open questions (D41): the questions real users ask most — research a named model or method,
-explain a paper, compare two papers, survey a topic, find the latest work — in English and Chinese.
-Survey items come from ScholarQA-CS (ODC-BY) and ResearchQA (MIT); the rest are authored. This
-module loads the items and checks them: `uv run python -m evals.suites.s8` validates the file
-(schema, splits, and every evidence quote found word for word in its paper's arXiv text; free:
-arXiv only, no model call). Running and grading the suite come later."""
+"""S8 open questions (D41, D42): the questions real users ask most — research a named model or
+method, explain a paper, compare two papers, survey a topic, find the latest work — in English and
+Chinese. Messages come from real queries (the Asta Interaction Dataset, SciArena) or from QA
+datasets over papers (QASA, SciDQA, ScholarQA-CS2 and others), filtered by an external build
+(`docs/v2/eval/s8-dataset-brief.md`); nothing is invented except translations and rubrics drawn
+from a reference answer. `uv run python -m evals.suites.s8` validates the file (schema, balance,
+every evidence quote found word for word in its paper's arXiv text; free: arXiv only, no model
+call). Running and grading the suite come later."""
 
 import asyncio
 import re
@@ -43,9 +45,23 @@ class RubricItem(BaseModel):
 
 
 class Source(BaseModel):
-    dataset: Literal["ScholarQA-CS", "ResearchQA", "authored"]
-    id: str | None = None  # the source dataset's own id
+    dataset: Literal[
+        "Asta",
+        "SciArena",
+        "QASA",
+        "SciDQA",
+        "M3SciQA",
+        "ScholarQA-CS2",
+        "ScholarQA-CS",
+        "ResearchQA",
+    ]
+    id: str  # the source's own id (for Asta, the hashed thread id and the query time)
     license: str
+    origin: Literal["real_query", "dataset_question"]  # asked by a user, or written for a dataset
+    translated: bool = False  # message translated by the build, from message_en
+    # the source's own rubric, points split from its reference answer, points written by the build
+    # from the paper itself (each with evidence), or no rubric
+    rubric_from: Literal["dataset", "reference_answer", "paper", "none"] = "none"
 
 
 class Expect(BaseModel):
@@ -65,6 +81,7 @@ class Item(BaseModel):
     papers: list[str] = []  # versioned arXiv ids the message names, or survey_named's primary
     names: list[str] = []  # survey_named: the subject as the user writes it
     rubric: list[RubricItem] = []
+    reference_answer: str | None = None  # the dataset's own answer, verbatim, when it has one
     expect: Expect
     reviewed: bool = False
     notes: str = ""
@@ -80,8 +97,8 @@ class Item(BaseModel):
             problems.append("papers must be versioned arXiv ids like 2305.18323v1")
         needs = {
             "survey_named": (1, 0, False),  # (papers, rubric items, evidence required)
-            "explain_paper": (1, 5, True),
-            "compare_papers": (2, 5, True),
+            "explain_paper": (1, 3, True),
+            "compare_papers": (2, 4, True),
             "topic_survey": (0, 4, False),
             "latest_topic": (0, 0, False),
         }[self.type]
@@ -97,6 +114,15 @@ class Item(BaseModel):
             problems.append("survey_named needs names and expect.primary")
         if self.type == "latest_topic" and not self.expect.recent_days:
             problems.append("latest_topic needs expect.recent_days")
+        if self.rubric and self.source.rubric_from == "none":
+            problems.append("say where the rubric comes from (source.rubric_from)")
+        if self.source.rubric_from == "paper" and self.type not in (
+            "explain_paper",
+            "compare_papers",
+        ):
+            problems.append("only explain and compare rubrics may be written from the paper")
+        if self.source.translated and self.language != "Chinese":
+            problems.append("only Chinese messages are translated")
         if problems:
             raise ValueError("; ".join(problems))
         return self

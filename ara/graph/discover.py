@@ -318,8 +318,9 @@ def in_batch(judged: list[Judgement], batch: list[PaperCard]) -> list[Judgement]
 def rank(state: DiscoverState) -> dict[str, object]:
     """The papers the user named come first, one per title, whatever their relevance or
     constraints: the user asked for them (D28). Then papers judged relevant (≥ 2) that break no
-    stated constraint, by relevance, then, within a grade, newest first when the request prefers
-    recent work and by similarity otherwise (D24); at most MAX_LISTED in all."""
+    stated constraint, by relevance, then, within a grade, papers whose title names the request's
+    subject (D42), then newest first when the request prefers recent work and by similarity
+    otherwise (D24); at most MAX_LISTED in all."""
     judged = {j.id: j for j in state.get("judged", [])}
     request = state["request"]
     cards = [
@@ -330,7 +331,14 @@ def rank(state: DiscoverState) -> dict[str, object]:
     named = list({c.named: c for c in reversed(cards) if c.named}.values())[::-1]  # best per title
     others = [c for c in cards if c not in named and (c.relevance or 0) >= 2 and not c.violated]
     within = _newest if request.prefer_recent else _closest
-    others.sort(key=lambda c: (-(c.relevance or 0), within(c)))
+    pattern = name_pattern(request.names)
+
+    def own(c: PaperCard) -> bool:
+        """The title names what the request is about: within a grade, the subject's own paper comes
+        before papers on its parts, whatever their dates (D42)."""
+        return bool(pattern and pattern.search(c.title))
+
+    others.sort(key=lambda c: (-(c.relevance or 0), not own(c), within(c)))
     limit = min(max(request.count or MAX_LISTED, len(named)), MAX_LISTED)
     return {
         "papers": [*named, *others][:limit],

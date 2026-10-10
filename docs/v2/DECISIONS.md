@@ -1165,3 +1165,44 @@ decision gets a new entry that names the one it replaces.
     paper's arXiv text; free). Explain and compare items carry evidence quotes, so retrieval depth
     (8 passages per paper, D30) can be measured offline on long papers and open questions. No S8
     run before end-to-end turns work.
+
+## D42 — Four calibrated screen grades; S8 from real queries; Haiku 5.5 allowed for the model study (2026-10-11, Ewan)
+- Labels: Ewan graded the 40 calibration pairs (0–4 on the page). Two K3 papers that each study a
+  key K3 mechanism got 4 (Complex KDA) and 1 (ID Balancing); Ewan: his mistake, both are the most
+  relevant (c17 corrected). He used 3 once and judged four grades the right scale, read by the
+  object of study: what a paper studies or builds, not what it mentions (a paper that only
+  evaluates K3 among other models is marginal; a backtesting statistic is not a backtest engine).
+  Only grades 2 and 3 are read (already so: rank lists ≥ 2 and choose_papers reads from the list;
+  papers the user names are still read whatever their grade, D28).
+- The product screen before calibration, against his labels (24 pairs it had judged, his 4 → 3):
+  exact 0.33, read agreement 0.79, quadratic-weighted κ 0.54, 13 grades above his and 3 below.
+- Calibration (approved; `evals/calibration/screen.py`, `calib-screen-20261010T161502`, 12 Luna
+  calls, US$0.0082; two more calls than the "about 10" estimated, because the 40 pairs come in 6
+  batches per arm): the product prompt `screen@4d811f9f` and a candidate `screen_v2@f72253a9` with
+  four anchored grades (object of study; a named subject's own paper or a study of one of its key
+  mechanisms is 3; used only as one evaluated model is 1; examples taken outside the set). On 40
+  pairs, Ewan's 4 and 3 as 3: product exact 0.325, κw 0.581, read agreement 0.775, τ-b 0.635,
+  21 above / 6 below; candidate exact 0.475, κw 0.622, read agreement 0.85, τ-b 0.586, 15 above /
+  6 below. Paired (bootstrap over pairs): exact +0.152 [+0.025, +0.275]; read agreement +0.074
+  [−0.050, +0.200]; κw +0.041 [−0.094, +0.171]; τ-b −0.049 [−0.213, +0.101]. Read errors left in
+  the candidate: 4 read that Ewan would not (two of them 0 for him), 2 not read that he would.
+  Caveats: one labeller, 40 pairs, the arms differ in wording only; the set is now dev data.
+- Decision: the candidate becomes the product's screen prompt (Ewan asked for four anchored
+  grades; it is better on exact agreement and no worse elsewhere within the intervals). Within a
+  grade, a paper whose title names the request's subject (`names`, D41) comes first, then D24's
+  order, so the subject's own report leads its newer papers on parts.
+- Shortlist stays at 24 for now (Ewan).
+- S8 (replaces D41's plan, which had the external build author 24 of 30 items against Ewan's
+  instruction to borrow existing data): messages come from real queries, the Asta Interaction
+  Dataset (`optin_queries`, about 259k queries to Ai2's paper finder and QA tool, ODC-BY) and
+  SciArena (MIT), and, where real queries fall short, from QA datasets over papers (QASA, SciDQA,
+  ScholarQA-CS2 / ScholarQA-CS, ResearchQA; non-commercial sources such as PeerQA are not used).
+  The build first measures what real users ask (a classified sample of 3,000 Asta queries) and
+  sets items per type from those shares: 40 items, 4–12 per type, half Chinese (real Chinese
+  queries first, else translations marked as such), half dev. Rubrics come from the dataset, from
+  its reference answer, or, for real explain/compare queries, from the paper with evidence quotes.
+  `docs/v2/eval/s8-dataset-brief.md` rewritten; `evals/suites/s8.py` checks the new fields.
+- Model study (later, once the architecture is stable): Ewan sets aside rule 9 for it; Claude
+  Haiku 5.5 joins Luna and DeepSeek Flash as a candidate per stage, measured, with no expectation
+  that it wins. Ewan provides an Anthropic key before it starts; the gateway then needs an
+  Anthropic provider (caching, structured output, effort).

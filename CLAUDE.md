@@ -25,7 +25,8 @@ Read first: `docs/v2/DESIGN.md` (spec), `docs/v2/DECISIONS.md` (why), `docs/v2/P
 7. Never fabricate when context is long: re-read the docs or ask.
 8. Git: work on `v2`. Do not merge into `main` or push to `main` unless Ewan asks.
 9. Keys come from the existing `.env`; never print or commit secrets. Do not add new providers
-   (no Semantic Scholar).
+   (no Semantic Scholar). Exception (D42): Anthropic, for the per-stage model study, once Ewan
+   provides its key.
 10. Datasets: raw data stays in git-ignored `data/datasets/`; PaSa is gated (CC BY-NC-SA 4.0) and
     must not be committed or redistributed.
 
