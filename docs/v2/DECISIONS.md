@@ -1149,3 +1149,19 @@ decision gets a new entry that names the one it replaces.
   [+0.015, +0.144], 5 better / 0 worse; 40 − 24 +0.029 [+0.006, +0.056]. Caveat: dev cannot
   separate the arms, so a choice would rest on held-out figures, against §11.1. Unchanged at 24
   until Ewan decides.
+- Follow-ups (Ewan, same day):
+  - Grade scale: a calibration set of 40 (request, paper) pairs from four real searches (Kimi K3,
+    backtest engines, KV-cache eviction, tool-call latency with constraints; no PaSa or held-out
+    data), 14/14/6/6, stratified over the old screen grade and prerank's cut, with three K3 papers
+    the cut had dropped swapped in. Ewan labels them 0–4 on a private page (the model's grades
+    hidden). Then both screen prompts (current 0–3; 0–4 with anchored grades) judge the same 40
+    (5 batches each, about 10 Luna calls, needs approval) and are compared with Ewan's labels:
+    weighted κ, agreement on what is listed (≥ 2), and Kendall's τ of the order.
+  - S8 open questions: 30 items, six per type (survey of a named subject, explain a paper,
+    compare two papers, topic survey, latest work), half Chinese, half dev. Topic-survey items
+    come from ScholarQA-CS (ODC-BY) and ResearchQA (MIT, test split); the rest are authored. Ewan
+    has the dataset built by another model from `docs/v2/eval/s8-dataset-brief.md`;
+    `evals/suites/s8.py` validates the file (schema, balance, every evidence quote found in its
+    paper's arXiv text; free). Explain and compare items carry evidence quotes, so retrieval depth
+    (8 passages per paper, D30) can be measured offline on long papers and open questions. No S8
+    run before end-to-end turns work.

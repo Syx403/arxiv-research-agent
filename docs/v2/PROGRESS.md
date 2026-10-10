@@ -362,3 +362,11 @@ Update this file at the end of every working session: what was done, what was sp
   questions, profile as background, requeries without rerank, line-only repair, replies in the
   user's language, verify fan-out bounded) and checked live (126 calls, US$0.0319). 169 unit
   tests. Next: why retrieval is imprecise (figure captions in evidence, weak discovery results).
+- 2026-10-10 — D41: replayed the K3 search (no calls) and found the loss in prerank (4 of 22 papers
+  naming Kimi K3 shortlisted; a larger cut does not fix it), the screen's grades and the
+  within-grade order; built `names` → prerank, caption marks, re-check of unchecked lines, memory
+  replies in the user's words, the unchecked-lines note (173 unit tests). Shortlist size measured
+  offline on S3 traces (held-out 24 → 48: +0.068 [+0.015, +0.144]; dev flat): Ewan decides.
+  Calibration page for the grade scale published (40 pairs, awaiting Ewan's labels); S8 brief and
+  checker written for the external build. Next: Ewan's labels → calibration run (needs approval);
+  S8 file from the external build → review.
