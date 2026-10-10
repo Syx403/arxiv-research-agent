@@ -24,6 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0  # this action publishes no moving major tag
+      # Python from .python-version (3.13): without it uv took the runner's newest, 3.15, for
+      # which ormsgpack has no wheel and does not build (D39)
       - run: uv sync --locked
       - run: uv run ruff format --check .
       - run: uv run ruff check .
