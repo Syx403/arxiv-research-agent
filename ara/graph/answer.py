@@ -35,6 +35,7 @@ VERIFY_CONCURRENCY = 8  # verify calls in flight: each reserves its worst case u
 CONFIG: RunnableConfig = {"max_concurrency": VERIFY_CONCURRENCY}  # for whoever invokes the graph
 REWRITE = re.compile(r"^\s*(\d+)\s*:\s*(.+?)\s*$", re.MULTILINE)  # "3: <line> [E2]" (D40)
 DROP = "DROP"
+UNCHECKED = "could not be verified"  # a verify call that failed: the line is checked again (D41)
 
 
 def merge(a: dict[str, Verdict], b: dict[str, Verdict]) -> dict[str, Verdict]:
@@ -64,6 +65,7 @@ class AnswerState(AnswerInput, AnswerOutput):
     verdicts: Annotated[dict[str, Verdict], merge]  # by Claim.key, across both rounds
     rejected: Annotated[list[Claim], operator.add]  # first-draft lines the verifier rejected
     repaired: bool
+    unchecked: int  # draft lines past MAX_CLAIMS (D41)
 
 
 class VerifyTask(TypedDict):
@@ -210,8 +212,10 @@ async def synthesize(state: AnswerState, runtime: Runtime[Context]) -> dict[str,
     ctx = runtime.context
     draft = await ctx.gateway.text(STAGES["synthesize"], synthesis_prompt(state), scope=ctx.scope)
     context, body = opening(draft) if state["context"] else ("", draft)
-    claims, uncited = capped(*parse(body, {e.id for e in state["evidence"]}))
+    found, uncited = parse(body, {e.id for e in state["evidence"]})
+    claims, uncited = capped(found, uncited)
     return {
+        "unchecked": len(found) - len(claims),
         "draft": draft,
         "opening": context,
         "claims": claims,
@@ -235,7 +239,7 @@ async def prewarm(state: AnswerState, runtime: Runtime[Context]) -> dict[str, ob
 
 def _unverified_line(state: VerifyTask, error: BaseException) -> dict[str, Any]:
     """A line the verifier could not check is not delivered (M5a)."""
-    verdict = Verdict(supported=False, problem="could not be verified")
+    verdict = Verdict(supported=False, problem=UNCHECKED)
     return {"verdicts": {state["claim"].key: verdict}, "problems": [problem("verification", error)]}
 
 
@@ -257,8 +261,10 @@ async def repair(state: AnswerState, runtime: Runtime[Context]) -> dict[str, obj
     as they are. It continues the synthesize conversation (append-only), so DeepSeek serves the
     evidence pack and question from its cache."""
     ctx = runtime.context
-    first = synthesis_prompt(state)
     failed = _failing(state)
+    if not failed:  # only lines that could not be checked: they are verified again, not rewritten
+        return {"repaired": True}
+    first = synthesis_prompt(state)
     failures = "\n".join(
         f"{c.index}: {c.text} [{', '.join(c.citations)}] — {why}" for c, why in failed
     )
@@ -282,12 +288,22 @@ async def repair(state: AnswerState, runtime: Runtime[Context]) -> dict[str, obj
 
 def _failing(state: AnswerState) -> list[tuple[Claim, str]]:
     """The lines a repair rewrites, with why: those the verifier rejected, and a direct answer
-    that cites no known evidence (an uncited explanation line is only dropped, D19)."""
+    that cites no known evidence (an uncited explanation line is only dropped, D19). A line whose
+    verify call failed was not judged, so it is not rewritten (D41)."""
     verdicts = state.get("verdicts", {})
     rejected = [
-        (c, verdicts[c.key].problem) for c in state["claims"] if not verdicts[c.key].supported
+        (c, verdicts[c.key].problem)
+        for c in state["claims"]
+        if not verdicts[c.key].supported and verdicts[c.key].problem != UNCHECKED
     ]
     return rejected + [(c, "it cites no evidence") for c in state["uncited"] if c.direct]
+
+
+def _unchecked(state: AnswerState) -> list[Claim]:
+    verdicts = state.get("verdicts", {})
+    return [
+        c for c in state["claims"] if c.key in verdicts and verdicts[c.key].problem == UNCHECKED
+    ]
 
 
 def finalize(state: AnswerState) -> dict[str, Answer]:
@@ -311,6 +327,7 @@ def finalize(state: AnswerState) -> dict[str, Answer]:
         short=direct.text if direct else say(instead, state["language"]),
         abstained=direct is None,
         withheld=withheld,
+        unchecked=state.get("unchecked", 0),
         sentences=sentences,
         dropped=[c for c in claims if c not in delivered] + uncited,
         checked=len(verdicts),
@@ -338,8 +355,10 @@ def prewarm_failed(state: AnswerState, error: NodeError) -> Command[Any]:
 
 
 def _unverified(state: AnswerState) -> list[Claim]:
+    """Lines with no verdict yet; after the repair, also those whose verify call failed (once)."""
     verdicts = state.get("verdicts", {})
-    return [c for c in state["claims"] if c.key not in verdicts]
+    again = _unchecked(state) if state.get("repaired") else []
+    return [c for c in state["claims"] if c.key not in verdicts] + again
 
 
 def start(state: AnswerState) -> str:
@@ -357,7 +376,9 @@ def to_verify(state: AnswerState) -> list[Send] | str:
 
 
 def after_assemble(state: AnswerState) -> str:
-    return "repair" if _failing(state) and not state["repaired"] else "finalize"
+    """One repair round: rewrites of the rejected lines, and a second check of the unchecked."""
+    retry = _failing(state) or _unchecked(state)
+    return "repair" if retry and not state["repaired"] else "finalize"
 
 
 def build() -> CompiledStateGraph[AnswerState, Context, AnswerInput, AnswerOutput]:

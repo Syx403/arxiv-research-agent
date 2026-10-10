@@ -67,6 +67,9 @@ class ResearchRequest(BaseModel):
     constraints: list[Constraint] = Field(description="Hard constraints the user states.")
     priorities: list[Priority] = Field(description="What the user cares about, not a filter.")
     titles: list[str] = Field(description="Titles or names of papers the user names, not ids.")
+    names: list[str] = Field(
+        description="Models, methods, systems or datasets the request is about, by name (D41)."
+    )
     history: str | None = Field(
         description='For "library": what the papers the user refers back to are about.'
     )
@@ -135,6 +138,7 @@ class Answer(BaseModel):
     short: str  # the direct answer; else the abstention, or why it was withheld, in words (D40)
     abstained: bool  # no direct answer delivered
     withheld: bool = False  # a direct answer failed verification; its verified lines stand (D40)
+    unchecked: int = 0  # draft lines past MAX_CLAIMS, dropped without verification (D41)
     sentences: list[Claim]  # verified explanation lines
     dropped: list[Claim]  # final-draft lines not delivered: unsupported, uncited, or withheld
     checked: int  # distinct lines the verifier judged, over both drafts

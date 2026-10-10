@@ -34,7 +34,7 @@ def test_arxiv_html_keeps_math_source_and_heading_paths() -> None:
             "KV Cache Eviction › Method › Budget",
             "We keep 20% of keys. Nested text is part of its parent.",
         ),
-        ("KV Cache Eviction › Method › Budget", "Table 1: Results."),
+        ("KV Cache Eviction › Method › Budget › Figure or table caption", "Table 1: Results."),
     ]
 
 

@@ -260,7 +260,7 @@ def checked(
     (a non-empty quote), in this conversation or in a remembered fact (v1 rule, D27); ids must be
     arXiv ids written in the conversation or in the user's earlier research (for a library
     question, the conversation only: D32), not recalled by the model (v1 rule, DESIGN §13);
-    titles must be written by the user (D39);
+    titles and names must be written by the user (D39, D41);
     positions must point at a paper shown; dates must parse; titles are kept once each. A request
     to read that names papers (ids, numbers shown or titles) reads exactly those (D28, D29); one
     that names none becomes find-then-read."""
@@ -277,6 +277,8 @@ def checked(
     listed = [n for n in request.listed if 1 <= n <= len(shown)]
     # a title is read whatever its relevance (D29), so it must be the user's words, as written
     titles = [t for t in dict.fromkeys(t.strip() for t in request.titles) if quoted(t, typed)]
+    # names steer which candidates are screened first, so they too are the user's words (D41)
+    names = [n for n in dict.fromkeys(n.strip() for n in request.names) if quoted(n, typed)]
     named, intent = bool(paper_ids or listed or titles), request.intent
     if intent == "read" and not named:
         intent = "discover_read"
@@ -291,6 +293,7 @@ def checked(
             "constraints": [c for c in request.constraints if quoted(c.quote, said)],
             "priorities": [p for p in request.priorities if quoted(p.quote, said)],
             "titles": titles,
+            "names": names,
             "history": (request.history or "").strip() or None
             if request.intent == "library"
             else None,
@@ -742,6 +745,8 @@ def _parts(state: ConversationState) -> list[Part]:
     if (delivered := state["answer"]) is not None:
         text = "\n".join([delivered.render(), *map(_citation, delivered.evidence)])
         parts.append(_part("answer", text))
+        if delivered.unchecked:  # past MAX_CLAIMS: said, not silently cut (D41)
+            parts.append(_part("note", say("unchecked", language, n=delivered.unchecked)))
     if names(request):
         selected = {e.paper_id for e in state["evidence"]}
         parts += [
@@ -824,9 +829,14 @@ def memory_reply(state: ConversationState) -> str:
     if state["memory"] is None and state["problems"]:
         return ""  # saving failed: the note says so
     update = state["memory"] or MemoryUpdate(facts=[], forget=[])
-    known = {f.key: f.statement for f in state["profile"]}
     language = _language(state)
-    lines = [say("noted", language, fact=f.statement) for f in update.facts]
+
+    def words(f: Fact) -> str:
+        """The English statement, or the user's own words in another language (D41)."""
+        return f.statement if language == ENGLISH else f"“{f.quote}”"
+
+    known = {f.key: words(f) for f in state["profile"]}
+    lines = [say("noted", language, fact=words(f)) for f in update.facts]
     lines += [say("forgotten", language, fact=known[k]) for k in update.forget]
     return "\n".join(lines) or say("nothing_to_remember", language)
 

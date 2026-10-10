@@ -74,6 +74,7 @@ def request(query: Query) -> ResearchRequest:
         constraints=[],
         priorities=[],
         titles=[],
+        names=[],
         prefer_recent=False,  # S3 grades search quality, not the recency preference (D24)
         published_after=None,
         published_before=query.cutoff.isoformat(),

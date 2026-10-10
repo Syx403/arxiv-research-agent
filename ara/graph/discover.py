@@ -39,6 +39,7 @@ MAX_FAILED_ROUNDS = 2  # researcher rounds in a row with a failed arXiv request 
 RESULTS = 20  # per search
 SNIPPET = 300  # abstract characters shown to the researcher for a new paper
 SHORTLIST, BATCH = 24, 8  # prerank keeps three screening batches
+MENTIONS = 40  # papers naming what the request is about that prerank may keep: five batches (D41)
 TITLE_RESULTS = 10  # per title search when the user names a paper (D29)
 RESEARCHER = Instructions.load("researcher")
 SCREEN = Instructions.load("screen")
@@ -243,12 +244,20 @@ async def prerank(state: DiscoverState, runtime: Runtime[Context]) -> dict[str, 
         p.model_copy(update={"similarity": float(v @ need)})
         for p, v in zip(pool, vectors, strict=True)
     ]
-    # papers the user named by title always reach screening, closest to the need or not (D28)
-    titles = state["request"].titles
-    shortlist = sorted(
-        scored, key=lambda p: (not any(titled(t, p.title) for t in titles), -p.similarity)
-    )
-    shortlist = shortlist[:SHORTLIST]
+    # papers the user named by title always reach screening, closest to the need or not (D28);
+    # then papers that name what the request is about: similarity cannot tell "Kimi K3" from
+    # "Kimi-VL", and a paper naming it once mid-abstract scores low (D41); then the rest
+    request = state["request"]
+    pattern = name_pattern(request.names)
+
+    def tier(p: PaperCard) -> int:
+        if any(titled(t, p.title) for t in request.titles):
+            return 0
+        return 1 if pattern and pattern.search(f"{p.title} {p.abstract}") else 2
+
+    ordered = sorted(scored, key=lambda p: (tier(p), -p.similarity))
+    first = sum(tier(p) < 2 for p in ordered)
+    shortlist = ordered[: max(SHORTLIST, min(first, MENTIONS))]
     return {
         "shortlist": shortlist,
         "candidates": [p.arxiv_id for p in pool],
@@ -349,6 +358,16 @@ def name(titles: list[str], title: str, judged: str | None) -> str | None:
     by_code = next((t for t in titles if titled(t, title)), None)
     by_model = next((t for t in titles if judged and plain(judged) == plain(t)), None)
     return by_code or by_model
+
+
+def name_pattern(names: list[str]) -> re.Pattern[str] | None:
+    """Any of the names as a whole word, case-insensitive, its parts joined by any spacing or
+    hyphen: "Kimi K3" finds "Kimi-K3" and "kimi k3", not "Kimi K30" (D41)."""
+    parts = [re.findall(r"[^\W_]+", n) for n in names]
+    alternatives = [r"[\s\-_]*".join(map(re.escape, p)) for p in parts if p]
+    if not alternatives:
+        return None
+    return re.compile(rf"(?<![^\W_])(?:{'|'.join(alternatives)})(?![^\W_])", re.IGNORECASE)
 
 
 def titled(name: str, title: str) -> bool:

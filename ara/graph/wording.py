@@ -90,6 +90,11 @@ WORDING: dict[str, dict[str, str]] = {
         ENGLISH: "There was nothing to remember or forget in that message.",
         "Chinese": "这条消息里没有需要记住或忘记的内容。",
     },
+    "unchecked": {
+        ENGLISH: "Note: the draft was longer; its last {n} lines were not checked, so they are"
+        " not shown.",
+        "Chinese": "注：草稿更长，最后 {n} 句没有经过核验，因此没有显示。",
+    },
     "note": {ENGLISH: "Note: {problems}.", "Chinese": "注：{problems}。"},
     "unaffected": {
         ENGLISH: "The rest of this reply is unaffected.",

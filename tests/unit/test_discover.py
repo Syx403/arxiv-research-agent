@@ -32,6 +32,7 @@ def request(**fields: Any) -> ResearchRequest:
         "constraints": [],
         "priorities": [],
         "titles": [],
+        "names": [],
         "prefer_recent": False,
         "published_after": None,
         "published_before": None,
@@ -224,3 +225,40 @@ async def test_prerank_always_shortlists_a_paper_named_by_title(pool: Pool) -> N
     assert result["shortlisted"][0] == named.arxiv_id and len(result["shortlisted"]) == 24
     assert library.arxiv_id in result["candidates"], "the user's paper joins the pool (D30)"
     assert result["candidates"].count(named.arxiv_id) == 1, "a paper found twice counts once"
+
+
+async def test_prerank_puts_papers_naming_the_subject_first(pool: Pool) -> None:
+    """D41: a paper that names "Kimi K3" in its abstract is screened before closer-sounding ones,
+    up to MENTIONS; the shortlist grows past SHORTLIST only for such papers."""
+    near = [
+        card(n, 0.0).model_copy(update={"title": f"Kimi-VL {n}", "abstract": "b"})
+        for n in range(1, 31)
+    ]
+    naming = [
+        card(100 + n, 0.0).model_copy(update={"title": f"M{n}", "abstract": f"uses Kimi-K3 {n}"})
+        for n in range(1, 46)
+    ]
+    found = {c.arxiv_id: c for c in [*near, *naming]}
+    vectors = {"need": 1, **{f"Kimi-VL {n}. b": 1 for n in range(1, 31)}}
+    vectors |= {f"M{n}. uses Kimi-K3 {n}": 3 for n in range(1, 46)}
+    await cache(pool, vectors)
+    state: Any = {"request": request(need="need", names=["Kimi K3"]), "found": found, "library": []}
+    async with ArxivClient() as arxiv:
+        ctx = context(pool, arxiv)
+        result: Any = await discover.prerank(state, Runtime(context=ctx))
+        fewer: Any = {**state, "found": {c.arxiv_id: c for c in [*near, *naming[:2]]}}
+        few: Any = await discover.prerank(fewer, Runtime(context=ctx))
+        await ctx.gateway.aclose()
+    assert len(result["shortlisted"]) == discover.MENTIONS
+    assert set(result["shortlisted"]) <= {c.arxiv_id for c in naming}
+    assert few["shortlisted"][:2] == [naming[0].arxiv_id, naming[1].arxiv_id]
+    assert len(few["shortlisted"]) == discover.SHORTLIST
+
+
+def test_a_name_matches_as_a_whole_word_whatever_its_spacing() -> None:
+    pattern = discover.name_pattern(["Kimi K3", "SWE-bench"])
+    assert pattern is not None
+    hits = ["the 2.8T Kimi-K3 model", "(kimi k3)", "KimiK3.", "on SWE bench"]
+    misses = ["Kimi K30", "Kimi K2.5", "akimi k3"]
+    assert all(pattern.search(t) for t in hits) and not any(pattern.search(t) for t in misses)
+    assert discover.name_pattern([]) is None and discover.name_pattern([" - "]) is None

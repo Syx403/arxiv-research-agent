@@ -56,6 +56,11 @@ Fields:
   stands for one paper counts: a model, product, company or family the user wants papers about
   ("the latest Kimi paper", "papers on Llama 3", "what has DeepMind published on agents") is the
   topic, so it goes in need, not here.
+- names: the specific models, methods, systems, products or datasets the request is about, copied
+  as the user wrote them ("Kimi K3", "LLMCompiler", "SWE-bench"); papers that name them are
+  looked at first. A general topic ("KV-cache eviction", "agent memory") is not a name; a title
+  in titles is also a name here when the user wants papers about it, not only the paper itself.
+  Empty when the request names nothing specific.
 - history: for "library" only, what the papers the user refers back to are about, in a few
   words, as the user describes them ("the papers we read about parallel function calling" gives
   "parallel function calling"); otherwise null. It picks which of the user's papers are meant, so

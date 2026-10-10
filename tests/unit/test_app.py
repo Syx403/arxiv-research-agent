@@ -29,7 +29,8 @@ from ara.graph.state import (
 from ara.graph.wording import say
 from ara.llm.gateway import Gateway
 from ara.llm.ledger import Ledger, Scope
-from ara.memory import library
+from ara.memory import extract, library
+from ara.memory.store import Fact
 from ara.settings import Settings
 from tests.unit.test_search import setup
 
@@ -47,6 +48,7 @@ def request(**fields: Any) -> ResearchRequest:
         "constraints": [],
         "priorities": [],
         "titles": [],
+        "names": [],
         "prefer_recent": False,
         "published_after": None,
         "published_before": None,
@@ -528,3 +530,17 @@ def test_the_reply_is_in_the_users_language() -> None:
     )
     asked = base_state(request(intent="library"), read=[card(1)], answer=explained)
     assert app.after_answer(asked) == "respond"
+
+
+def test_memory_replies_quote_the_user_and_unchecked_lines_are_reported() -> None:
+    """D41: in another language than English, a remembered fact is shown in the user's words; an
+    answer whose draft ran past the cap says how many lines were not checked."""
+    fact = Fact(key="k", quote="我只用托管 API", statement="The user only uses hosted APIs.")
+    noted = base_state(request(intent="memory", language="Chinese"))
+    noted["memory"] = extract.MemoryUpdate(facts=[fact], forget=[])
+    assert app.memory_reply(noted) == say("noted", "Chinese", fact="“我只用托管 API”")
+    english: Any = {**noted, "request": request(intent="memory")}
+    assert app.memory_reply(english) == "Noted: The user only uses hosted APIs."
+    long = answer_citing(card(1)).model_copy(update={"unchecked": 6})
+    state = base_state(request(intent="read", paper_ids=["2401.00001v1"]), answer=long)
+    assert say("unchecked", "English", n=6) in app.reply(state)

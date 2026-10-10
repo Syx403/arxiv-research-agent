@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup, Tag
 from pypdf import PdfReader
 
 SEPARATOR = " › "
+CAPTION = "Figure or table caption"  # the last heading of a caption's paragraph (D41)
 PARAGRAPH_END = 0.9  # a sentence-final line shorter than this share of a full line ends a paragraph
 UNDECODED = re.compile(r"[\x00-\x08\x0b-\x1f]")
 
@@ -82,7 +83,11 @@ def arxiv_html_paper(html: str, arxiv_id: str, version: int) -> ParsedPaper:
     paragraphs = [Paragraph(f"{title}{SEPARATOR}Abstract", abstract)] if abstract else []
     for node in article.select("section .ltx_para, section figcaption"):
         if node.find_parent(class_="ltx_para") is None and (text := _clean(_text(node))):
-            paragraphs.append(Paragraph(_heading_path(title, node), text))
+            path = _heading_path(title, node)
+            # a caption sits where its figure floats, so it is marked as one, not as the section's
+            # text (D41)
+            caption = node.name == "figcaption"
+            paragraphs.append(Paragraph(f"{path}{SEPARATOR}{CAPTION}" if caption else path, text))
     if not paragraphs:
         raise ValueError(f"{arxiv_id}v{version}: the HTML has no readable paragraphs")
     return ParsedPaper(

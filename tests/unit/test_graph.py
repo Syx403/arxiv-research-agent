@@ -366,3 +366,26 @@ def test_chinese_punctuation_closes_a_cited_piece_and_long_drafts_are_capped() -
     kept, dropped = answer.capped(many, [])
     assert len(kept) == answer.MAX_CLAIMS + 1 and kept[0].direct
     assert [c.text for c in dropped] == [f"line {n}" for n in range(25, 31)]
+
+
+def test_a_line_that_could_not_be_checked_is_checked_again_not_rewritten() -> None:
+    """D41: a failed verify call (the cap, a timeout) judged nothing, so the repair round sends the
+    line to verify once more instead of asking the model to rewrite it."""
+    ok, lost = claim(0, "BLEU"), claim(1, "They use BLEU.")
+    state: Any = {
+        "question": "q",
+        "claims": [ok, lost],
+        "uncited": [],
+        "evidence": [evidence(1)],
+        "verdicts": {
+            ok.key: Verdict(supported=True, problem=""),
+            lost.key: Verdict(supported=False, problem=answer.UNCHECKED),
+        },
+        "repaired": False,
+    }
+    assert answer._failing(state) == [] and answer.after_assemble(state) == "repair"
+    assert answer.to_verify(state) == "assemble", "not before the repair round"
+    repaired: Any = {**state, "repaired": True}
+    sends = answer.to_verify(repaired)
+    assert isinstance(sends, list) and [s.arg["claim"] for s in sends] == [lost]
+    assert answer.after_assemble(repaired) == "finalize"

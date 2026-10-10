@@ -1108,3 +1108,44 @@ decision gets a new entry that names the one it replaces.
   priority, listed the K3 report in the first two, with reasons in Chinese.
 - Open: evidence selection keeps figure-caption sentences; the fifth K3 search result (a clinical
   diagnosis benchmark) is weakly related. Investigated next.
+
+## D41 — Named subjects reach screening; captions marked; review points of D40 (2026-10-10, Ewan)
+- Context: replaying the D40 live check's "找kimi k3相关论文" from its checkpoints (no calls): the
+  researcher's 8 searches found 89 candidates, 22 of which name Kimi K3 in title or abstract;
+  prerank (embedding similarity of title + abstract to the need) shortlisted 4 of them, while
+  Kimi-Audio, Kimi-VL and Mooncake got in on the word "Kimi". Recomputed from cached vectors, a
+  larger cut does not repair it (K3 papers in the shortlist: 24 → 4, 32 → 5, 40 → 9, 48 → 10,
+  64 → 16 of 22): a paper naming a model once mid-abstract is far from the need in embedding
+  space. The screen then gave a reward-hacking study that uses K3 as one of three models the
+  same grade (3) as the K3 report, and rank's newest-first within a grade (D24) put it first.
+  In reading, a figure caption sat under the section where the figure floats ("Sigmoid Tanh Unit
+  GLU" for a Quantile Balancing illustration) with no mark, and its drawing ("darker circles")
+  became an answer line.
+- Decision (Ewan approved):
+  1. understand gains `names`: the specific models, methods, systems, products or datasets the
+     request is about, as the user wrote them (kept only if the user wrote them, like titles).
+     Prerank puts papers whose title or abstract names one first (whole word, any spacing or
+     hyphen: "Kimi-K3", "kimi k3"; not "Kimi K30"), by similarity, then the rest; the shortlist
+     grows past 24 only for such papers, to at most 40 (five batches). S4 has no `names` labels
+     yet, so the field is not graded.
+  2. A LaTeXML figure or table caption's heading path ends in "Figure or table caption";
+     select_evidence takes from a caption only what the figure or table reports, never how it is
+     drawn. Papers ingested before keep their unmarked paths (re-ingestion is not automatic).
+  3. A line whose verify call failed (spending cap, timeout: "could not be verified") is not sent
+     to repair; the repair round verifies it once more. A repair round with nothing to rewrite
+     makes no model call.
+  4. In a language other than English, the memory reply quotes the user's own words ("已记下：
+     “…”"), not the English statement.
+  5. Draft lines past MAX_CLAIMS are counted (`Answer.unchecked`) and the reply says how many
+     were not checked.
+- Not decided yet (Ewan): the screen's grade scale. Ewan asked for a labelled calibration first
+  (4 grades as now vs 5 grades with anchored definitions that separate "is the subject" from
+  "studies it" from "uses it among others"); rank's order within a grade waits for it.
+- Shortlist size, measured offline (Ewan: measure before deciding): the S3 round
+  `s3-20261009T045853`'s candidate pools read back from LangSmith traces, ranked with cached
+  embeddings (no model call, no vector missing). Gold shortlist recall, dev (15, median pool 35):
+  0.578 at every cut (the pools are small; no difference measurable). Held-out (15, median pool
+  62): 24 → 0.510, 32 → 0.529, 40 → 0.540, 48 → 0.579 (= pool recall); paired 48 − 24 +0.068
+  [+0.015, +0.144], 5 better / 0 worse; 40 − 24 +0.029 [+0.006, +0.056]. Caveat: dev cannot
+  separate the arms, so a choice would rest on held-out figures, against §11.1. Unchanged at 24
+  until Ewan decides.
