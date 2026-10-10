@@ -14,7 +14,7 @@ Update this file at the end of every working session: what was done, what was sp
 | M3 Understand + discover | done (2026-10-08), reviewed; S3/S4 first rounds run (D25) | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); priorities, titles, recency, today, English S4 of 62 items (D24); S4 labels await Ewan's review |
 | M4 Memory | done (2026-10-09); S6 reviewed and run; review fixes (D29) and library redesign (D30) built, awaiting the S6 round | profile + research records in the Store, library + HNSW, `memory` intent; live: 2 S6 scenarios (D27); named papers read directly (D29); arXiv first with a library pre-check, no paper-choice question, per-paper evidence with one rerank (D30) |
 | M5 Reliability + UI | done (2026-10-09): M5a (D34) S7 graceful 6/6, injection 0/3, S6 19/19 without an error; M5b (D35) `make start` → http://127.0.0.1:8000, four pages, a demo turn checked live | |
-| Architecture review (Ewan) | in progress: review done, fixes built and checked live (D39); Ewan's pass pending | gate before any large-scale LLM testing |
+| Architecture review (Ewan) | passed (2026-10-10): review, fixes and live check in D39 | gate before any large-scale LLM testing |
 | E1–E6 evaluation rounds | — | ≤ US$1 each |
 
 ## Spend (US$10 cap)
@@ -352,3 +352,4 @@ Update this file at the end of every working session: what was done, what was sp
   Store embeddings still untagged (now pre-embedded by the turn) and one-line paragraphs verified
   as one claim (now cut at citations). 165 unit tests. Next: Ewan's pass of the architecture
   review, then the E rounds.
+- 2026-10-10 — Ewan passed the architecture review (DESIGN §14 gate). Next: E1.
