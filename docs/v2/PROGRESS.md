@@ -59,8 +59,9 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-10 | Ewan's own app turns | "找kimi k3相关论文" and the architecture question, one stopped send (`ui:e86ad5b5…`), investigated in D40 | 55 | 0.0153 | Ewan (his own use) |
 | 2026-10-10 | E1 baseline (stopped) | S1, S4, S5, S7, S2 complete; S3 stopped part-way, S6 not run (`s1/s4/s5/s7/s2/s3-20261010T09…`); Ewan: no evaluation before end-to-end turns work | 845 | 0.1535 | Ewan (round cap US$1) |
 | 2026-10-10 | D40 live check | open questions in Chinese and English, a remembered fact and a K3 search, user `live-check` (`d40-live-20261010T100611`, `…T101059`) | 126 | 0.0319 | Ewan (≤ US$0.06) |
+| 2026-10-10 | Ewan's own app turn | a follow-up in the Kimi K3 conversation on the D40 code (`ui:e86ad5b5…:2458…`) | 28 | 0.0085 | Ewan (his own use) |
 | 2026-10-11 | Screen calibration | product vs candidate prompt on Ewan's 40 labelled pairs (`calib-screen-20261010T161502`) | 12 | 0.0082 | Ewan (≈ 10 calls, ≤ US$0.04; 2 over in count) |
-| | | **Total so far** (from the ledger; it also counts free embedding and rerank rows not itemised above) | 4158 | **0.9825** | |
+| | | **Total so far** (from the ledger; it also counts free embedding and rerank rows not itemised above) | 4186 | **0.9910** | |
 
 ## Session log
 
