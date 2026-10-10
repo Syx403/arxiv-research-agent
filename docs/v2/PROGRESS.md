@@ -63,7 +63,10 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-11 | Screen calibration | product vs candidate prompt on Ewan's 40 labelled pairs (`calib-screen-20261010T161502`) | 12 | 0.0082 | Ewan (≈ 10 calls, ≤ US$0.04; 2 over in count) |
 | 2026-10-11 | D41/D42 live check, attempt 1 | "找kimi k3相关论文" as `live-check` (`d42-live-…`); every arXiv search refused (HTTP 429: the S8 build was using arXiv from the same machine), so nothing was screened but the library's K3 report; inconclusive | 6 | 0.0009 | Ewan (≈ 10 requests, ≤ US$0.02) |
 | 2026-10-11 | Screen calibration, generalized prompt | one arm on the 40 pairs (`calib-screen-20261010T175518`) | 6 | 0.0041 | Ewan (≈ 6 calls, ≈ US$0.004) |
-| | | **Total so far** (from the ledger; it also counts free embedding and rerank rows not itemised above) | 4198 | **0.9960** | |
+| 2026-10-11 | Anthropic smoke | Haiku 5.5, one screen batch twice: parse and cache write/read (`haiku-smoke-20261010T181518`) | 2 | 0.0013 | rule-1 threshold, reported |
+| 2026-10-11 | Screen diagnosis, attempt 1 | four arms incl. Flash high; stopped by an empty Flash reply, results not kept (`diag-screen-20261010T181614`) | 39 | 0.0489 | Ewan (diagnosis, cap US$0.10) |
+| 2026-10-11 | Screen diagnosis | Luna medium/high and Haiku medium × 3 repeats on the 40 pairs (`diag-screen-20261010T182514`) | 54 | 0.0465 | Ewan (same cap; total US$0.0967) |
+| | | **Total so far** (from the ledger; it also counts free embedding and rerank rows not itemised above) | 4293 | **1.0927** | |
 
 ## Session log
 
@@ -385,3 +388,9 @@ Update this file at the end of every working session: what was done, what was sp
   graded uniformly with a duplicate-request check, revision brief for the build; a generalized
   screen prompt scored lower on the 40 pairs, which favour the product prompt, so a held-out
   labelled set decides. 173 unit tests.
+- 2026-10-11 — D44: Anthropic provider (structured output, effort, explicit cache breakpoints,
+  usage) built from the platform docs and smoke-tested; screen diagnosis on the 40 pairs: most
+  disagreement is near the 1/2 boundary and model-dependent (Luna high best, Haiku medium fastest
+  but least stable), not a missing rule; noise across repeats measured. The first attempt lost its
+  results (no tracing, saved only at the end): US$0.0489 wasted. Project total passes US$1 (of
+  US$10). 177 unit tests.

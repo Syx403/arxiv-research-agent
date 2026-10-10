@@ -6,6 +6,7 @@ from ara.llm.prompt import (
     Instructions,
     Part,
     Prompt,
+    anthropic_request,
     data,
     deepseek_messages,
     openai_input,
@@ -79,3 +80,19 @@ def test_a_follow_up_file_is_part_of_the_version() -> None:
     prompt = Prompt(INSTRUCTIONS, item=(Block("user", repair.text),), follow_up=repair)
     assert prompt.version == f"{INSTRUCTIONS.version}+{repair.version}"
     assert claim("A").version == INSTRUCTIONS.version
+
+
+def test_anthropic_requests_put_instructions_in_system_and_cache_each_breakpoint_part() -> None:
+    """D44: the system text and the last block of each breakpoint part carry cache_control;
+    consecutive blocks of one role become one turn, because the API alternates roles."""
+    prompt = Prompt(INSTRUCTIONS, shared=(*EVIDENCE, Block("user", "more")), item=TRANSCRIPT)
+    system, messages = anthropic_request(prompt, FANOUT)
+    assert system == [
+        {"type": "text", "text": INSTRUCTIONS.text, "cache_control": {"type": "ephemeral"}}
+    ]
+    assert [m["role"] for m in messages] == ["user", "assistant"]
+    shared, q1 = messages[0]["content"][:2], messages[0]["content"][2]
+    assert ["cache_control" in c for c in shared] == [False, True] and "cache_control" not in q1
+    assert "cache_control" not in messages[1]["content"][-1]
+    _, conversation = anthropic_request(prompt, CONVERSATION)
+    assert "cache_control" in conversation[-1]["content"][-1], "the item part ends with one too"

@@ -25,13 +25,22 @@ from pydantic import BaseModel, ValidationError
 from ara import faults
 from ara.llm.ledger import Ledger, Scope
 from ara.llm.pricing import Rates, Usage, rates, upper_bound
-from ara.llm.prompt import Block, Prompt, ToolCall, deepseek_messages, openai_input
+from ara.llm.prompt import (
+    Block,
+    Prompt,
+    ToolCall,
+    anthropic_request,
+    deepseek_messages,
+    openai_input,
+)
 from ara.llm.stages import EMBEDDING_MODEL, PROVIDERS, RERANK_MODEL, Stage
 from ara.settings import Settings
 from ara.tokens import count_tokens
 
 DEEPSEEK_URL = "https://api.deepseek.com"
 COHERE_URL = "https://api.cohere.com"
+ANTHROPIC_URL = "https://api.anthropic.com"
+ANTHROPIC_VERSION = "2023-06-01"
 ESTIMATE_MARGIN = 1.2  # providers tokenise differently from cl100k; reservations err high
 CACHE_MINIMUM = 1_024  # OpenAI caches only prefixes of at least this many tokens
 MESSAGE_OVERHEAD = 8  # tokens of role and framing per message
@@ -59,6 +68,28 @@ class RerankResponse(BaseModel):
     results: list[RerankResult]
 
 
+class AnthropicUsage(BaseModel):
+    """`input_tokens` counts only the uncached tokens after the last breakpoint; total input is
+    its sum with the cache reads and writes. Output includes thinking."""
+
+    input_tokens: int
+    cache_read_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    output_tokens: int
+
+
+class AnthropicContent(BaseModel):
+    type: str
+    text: str = ""
+
+
+class AnthropicMessage(BaseModel):
+    id: str
+    content: list[AnthropicContent]
+    stop_reason: str | None
+    usage: AnthropicUsage
+
+
 class Gateway:
     def __init__(self, settings: Settings, ledger: Ledger) -> None:
         self.ledger = ledger
@@ -78,6 +109,19 @@ class Gateway:
             headers={"Authorization": f"Bearer {settings.cohere_api_key.get_secret_value()}"},
             timeout=QUICK_TIMEOUT_S,
         )
+        key = settings.anthropic_api_key
+        self.anthropic = (
+            httpx.AsyncClient(
+                base_url=ANTHROPIC_URL,
+                headers={
+                    "x-api-key": key.get_secret_value(),
+                    "anthropic-version": ANTHROPIC_VERSION,
+                },
+                timeout=REQUEST_TIMEOUT_S,
+            )
+            if key
+            else None
+        )
         self._rerank_slot = asyncio.Lock()
         self._last_rerank = 0.0
 
@@ -85,6 +129,8 @@ class Gateway:
         await self.openai.close()
         await self.deepseek.close()
         await self.cohere.aclose()
+        if self.anthropic is not None:
+            await self.anthropic.aclose()
 
     async def structured[T: BaseModel](
         self, stage: Stage, prompt: Prompt, schema: type[T], *, scope: Scope
@@ -92,8 +138,11 @@ class Gateway:
         """Structured output. OpenAI enforces the strict JSON schema (Responses API); DeepSeek only
         guarantees a JSON object, so its reply is validated here and a mismatch raises InvalidOutput
         (counted by the caller, never repaired; D10)."""
-        if stage.provider == "deepseek":
-            content = await self._chat(stage, prompt, scope, schema=schema)
+        if stage.provider in ("deepseek", "anthropic"):
+            if stage.provider == "deepseek":
+                content = await self._chat(stage, prompt, scope, schema=schema)
+            else:
+                content = await self._message(stage, prompt, schema, scope)
             try:
                 return schema.model_validate_json(content)
             except ValidationError as error:
@@ -110,8 +159,50 @@ class Gateway:
     ) -> None:
         """Write the static and shared parts to the cache before a fan-out; nothing is generated.
         It sends the model, schema and effort of the calls that follow, so their prefix matches.
-        Fan-outs call it only when `worth_prewarming` says so (D11)."""
+        Fan-outs call it only when `worth_prewarming` says so (D11). On Anthropic it does nothing:
+        a `max_tokens: 0` warm-up is refused with structured output, and one without the format
+        writes a different prefix, so the fan-out's first call writes the cache instead (D44)."""
+        if stage.provider == "anthropic":
+            return
         await self._respond(stage, replace(prompt, item=()), schema, scope, prewarm=True)
+
+    async def _message(
+        self, stage: Stage, prompt: Prompt, schema: type[BaseModel], scope: Scope
+    ) -> str:
+        """Anthropic Messages API with structured output (`output_config.format`, a strict JSON
+        schema) and the stage's effort; returns the JSON text. Thinking is on by default and
+        counts toward `max_tokens`."""
+        if self.anthropic is None:
+            raise RuntimeError("ANTHROPIC_API_KEY is not set")
+        system, messages = anthropic_request(prompt, stage.breakpoints)
+        body = {
+            "model": stage.model,
+            "max_tokens": stage.max_output_tokens,
+            "system": system,
+            "messages": messages,
+            "output_config": {
+                "effort": stage.effort,
+                "format": {"type": "json_schema", "schema": strict_schema(schema)},
+            },
+        }
+        async with self._metered(
+            stage.name,
+            stage.model,
+            prompt.version,
+            scope,
+            inputs={"system": system, "messages": messages},
+            input_tokens=_estimate(prompt, schema),
+            output_tokens=stage.max_output_tokens,
+            metadata={"effort": stage.effort},
+        ) as call:
+            response = await self.anthropic.post("/v1/messages", json=body)
+            response.raise_for_status()
+            reply = AnthropicMessage.model_validate_json(response.content)
+            text = "".join(c.text for c in reply.content if c.type == "text")
+            await call.settle(anthropic_usage(reply.usage), reply.id, text)
+        if reply.stop_reason != "end_turn" or not text:
+            raise InvalidOutput(f"{stage.name}: stopped with {reply.stop_reason}")
+        return text
 
     async def _respond[T: BaseModel](
         self, stage: Stage, prompt: Prompt, schema: type[T], scope: Scope, *, prewarm: bool
@@ -367,6 +458,55 @@ def openai_usage(usage: ResponseUsage | None) -> Usage:
         output_tokens=usage.output_tokens,
         reasoning_tokens=usage.output_tokens_details.reasoning_tokens,
     )
+
+
+def anthropic_usage(usage: AnthropicUsage) -> Usage:
+    """Anthropic reports reads and writes beside the uncached input; thinking is not split out of
+    the output, so reasoning tokens are recorded as 0 (unknown)."""
+    return Usage(
+        input_tokens=usage.input_tokens
+        + usage.cache_read_input_tokens
+        + usage.cache_creation_input_tokens,
+        cached_tokens=usage.cache_read_input_tokens,
+        cache_write_tokens=usage.cache_creation_input_tokens,
+        output_tokens=usage.output_tokens,
+        reasoning_tokens=0,
+    )
+
+
+def strict_schema(schema: type[BaseModel]) -> dict[str, Any]:
+    """A Pydantic schema in the form Anthropic's structured output accepts: every object closed
+    (`additionalProperties: false`) with all its properties required; the keywords it rejects
+    (numeric and length bounds) are dropped, since the reply is validated against the model
+    anyway."""
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, dict):
+            out = {k: walk(v) for k, v in node.items() if k not in UNSUPPORTED}
+            if out.get("type") == "object" and "properties" in out:
+                out["additionalProperties"] = False
+                out["required"] = list(out["properties"])
+            return out
+        if isinstance(node, list):
+            return [walk(v) for v in node]
+        return node
+
+    result: dict[str, Any] = walk(schema.model_json_schema())
+    return result
+
+
+UNSUPPORTED = frozenset(
+    {
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "minLength",
+        "maxLength",
+        "maxItems",
+    }
+)
 
 
 def deepseek_usage(usage: CompletionUsage | None) -> Usage:

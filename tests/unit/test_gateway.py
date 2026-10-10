@@ -5,7 +5,14 @@ from openai.types import CompletionUsage
 from openai.types.responses import ResponseUsage
 from pydantic import BaseModel
 
-from ara.llm.gateway import deepseek_usage, openai_usage, worth_prewarming
+from ara.llm.gateway import (
+    AnthropicUsage,
+    anthropic_usage,
+    deepseek_usage,
+    openai_usage,
+    strict_schema,
+    worth_prewarming,
+)
 from ara.llm.pricing import Usage
 from ara.llm.prompt import Block, Instructions, Prompt
 
@@ -50,3 +57,33 @@ def test_deepseek_usage_reads_its_own_cache_field() -> None:
         }
     )
     assert deepseek_usage(usage) == Usage(3_000, 2_816, 0, 500, 300)
+
+
+def test_anthropic_usage_adds_cache_reads_and_writes_to_the_input() -> None:
+    """D44: Anthropic's input_tokens is only what follows the last breakpoint."""
+    usage = anthropic_usage(
+        AnthropicUsage(
+            input_tokens=50,
+            cache_read_input_tokens=1800,
+            cache_creation_input_tokens=248,
+            output_tokens=503,
+        )
+    )
+    assert usage == Usage(2098, 1800, 248, 503, 0)
+
+
+def test_strict_schema_closes_every_object_and_drops_unsupported_bounds() -> None:
+    from pydantic import Field
+
+    class Inner(BaseModel):
+        n: int = Field(ge=0, le=3)
+        note: str | None = None
+
+    class Outer(BaseModel):
+        items: list[Inner]
+
+    schema = strict_schema(Outer)
+    inner = schema["$defs"]["Inner"]
+    assert schema["additionalProperties"] is False and schema["required"] == ["items"]
+    assert inner["additionalProperties"] is False and inner["required"] == ["n", "note"]
+    assert "minimum" not in inner["properties"]["n"] and "maximum" not in inner["properties"]["n"]

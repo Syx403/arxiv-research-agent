@@ -8,14 +8,15 @@ from typing import Literal
 
 from ara.llm.prompt import Part
 
-type Provider = Literal["openai", "deepseek", "cohere"]
+type Provider = Literal["openai", "deepseek", "cohere", "anthropic"]
 type Effort = Literal["none", "low", "medium", "high", "xhigh", "max"]
 
-LUNA, FLASH = "gpt-6-luna", "deepseek-flash"
+LUNA, FLASH, HAIKU = "gpt-6-luna", "deepseek-flash", "claude-haiku-5-5"
 EMBEDDING_MODEL, RERANK_MODEL = "text-embedding-3-small", "rerank-v4.0-pro"
 PROVIDERS: dict[str, Provider] = {
     LUNA: "openai",
     FLASH: "deepseek",
+    HAIKU: "anthropic",
     EMBEDDING_MODEL: "openai",
     RERANK_MODEL: "cohere",
 }
@@ -24,6 +25,7 @@ EFFORTS: dict[Provider, frozenset[Effort]] = {
     "openai": frozenset({"none", "low", "medium", "high", "xhigh", "max"}),
     "deepseek": frozenset({"low", "high", "max"}),
     "cohere": frozenset(),
+    "anthropic": frozenset({"low", "medium", "high", "xhigh", "max"}),
 }
 
 
@@ -33,7 +35,8 @@ class Stage:
     model: str
     effort: Effort
     max_output_tokens: int  # reasoning included; the ledger reserves this much output
-    breakpoints: frozenset[Part] = frozenset()  # OpenAI parts that end with a cache breakpoint
+    breakpoints: frozenset[Part] = frozenset()  # parts that end with a cache breakpoint (OpenAI,
+    # Anthropic; DeepSeek caches prefixes on its own)
 
     @property
     def provider(self) -> Provider:

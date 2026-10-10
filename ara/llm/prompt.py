@@ -144,3 +144,29 @@ def _deepseek_message(block: Block) -> ChatCompletionMessageParam:
             return {"role": "assistant", "content": block.text}
         case "tool":
             return {"role": "tool", "tool_call_id": block.call_id, "content": block.text}
+
+
+def anthropic_request(
+    prompt: Prompt, breakpoints: frozenset[Part]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Messages API `system` and `messages`. Instructions are the system text; shared and item
+    blocks are turns, consecutive blocks of one role merged into one turn (the API alternates
+    roles). Each part named in `breakpoints` ends with `cache_control` on its last text, so the
+    prefix through that part is cached (tools → system → messages order, D44)."""
+    system: list[dict[str, Any]] = []
+    messages: list[dict[str, Any]] = []
+    for part, blocks in prompt.parts():
+        for i, block in enumerate(blocks):
+            text: dict[str, Any] = {"type": "text", "text": block.text}
+            if part in breakpoints and i == len(blocks) - 1:
+                text["cache_control"] = {"type": "ephemeral"}
+            match block.role:
+                case "developer":
+                    system.append(text)
+                case "tool":
+                    raise ValueError("tool loops run on DeepSeek only (DESIGN §6.2)")
+                case role if messages and messages[-1]["role"] == role:
+                    messages[-1]["content"].append(text)
+                case role:
+                    messages.append({"role": role, "content": [text]})
+    return system, messages

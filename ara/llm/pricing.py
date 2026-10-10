@@ -20,6 +20,10 @@ def _rates(input: str, cached: str, cache_write: str, output: str) -> Rates:
 
 
 LUNA = _rates(input="0.10", cached="0.01", cache_write="0.125", output="0.50")
+# Claude Haiku 5.5, prompts up to 100K tokens, 5-minute cache writes; checked 2026-10-11 on
+# platform.claude.com/docs/en/about-claude/pricing (D44). ARA's prompts stay far below 100K; over it
+# every rate is five times higher, which these rates would understate.
+HAIKU = _rates(input="0.10", cached="0.01", cache_write="0.125", output="0.50")
 # DeepSeek has no cache-write charge: a cache miss is billed at the input rate.
 FLASH_PEAK = _rates(input="0.30", cached="0.006", cache_write="0.30", output="1.20")
 FLASH_OFF_PEAK = _rates(input="0.15", cached="0.003", cache_write="0.15", output="0.60")
@@ -37,6 +41,8 @@ def rates(model: str, at: datetime) -> Rates:
     match model:
         case "gpt-6-luna":
             return LUNA
+        case "claude-haiku-5-5":
+            return HAIKU
         case "deepseek-flash":
             utc = at.astimezone(UTC)
             peak = utc.weekday() < 5 and utc.hour in PEAK_HOURS_UTC

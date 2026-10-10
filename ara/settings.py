@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr
     deepseek_api_key: SecretStr
     cohere_api_key: SecretStr
+    anthropic_api_key: SecretStr | None = None  # the model study only (D44)
     langsmith_api_key: SecretStr | None = None
     langsmith_tracing: bool = False
 

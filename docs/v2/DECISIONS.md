@@ -1238,3 +1238,52 @@ decision gets a new entry that names the one it replaces.
   after reading Ewan's notes on these same pairs, so it is favoured here, and run-to-run variation
   of one prompt is not measured. The 40 pairs are not used for tuning again. Decision: the product
   keeps `screen_v2` until a held-out set (new labelled pairs from other searches) compares both.
+
+## D44 — Anthropic provider; screen diagnosis by model, effort and repeat (2026-10-11, Ewan)
+- Anthropic (Ewan entered the key through the masked dialog; `GET /v1/models` 200; models listed
+  include `claude-haiku-5-5`). Built from the platform docs read 2026-10-11:
+  - Messages API over httpx (no SDK); `output_config.format` = JSON schema (GA, no beta header;
+    Haiku 5.5 supported), converted to the strict form it accepts (`strict_schema`: every object
+    closed, all properties required, numeric and length bounds dropped; the reply is still
+    validated against the Pydantic model); `output_config.effort` from the stage (Haiku 5.5:
+    low…max, default medium; thinking on by default and counted in `max_tokens`).
+  - Caching: explicit `cache_control` on the last block of each breakpoint part (system text for
+    the instructions, then shared, then item), consecutive same-role blocks merged into one turn.
+    Haiku 5.5 caches prefixes from 512 tokens; 5-minute writes cost 1.25× input, reads $0.01/MTok;
+    a hit needs the first response to have started; changing the output format or a non-default
+    effort invalidates the cache. Prewarm is skipped on Anthropic: a `max_tokens: 0` warm-up is
+    refused with structured output, and one without the format would write a different prefix.
+  - Usage: `input_tokens` counts only uncached tokens after the last breakpoint; the ledger's
+    input is its sum with cache reads and writes; thinking is inside `output_tokens` (reasoning
+    recorded as 0, unknown). Prices (≤ 100K-token prompts): input $0.10, write $0.125, read $0.01,
+    output $0.50 per MTok.
+  - Smoke (rule 1, 2 calls, US$0.0013): the same screen batch twice; the first wrote 1,469 cached
+    tokens, the second read them; both replies parsed.
+- Diagnosis (`evals/calibration/diagnose.py`; the product screen prompt `screen_v2` on the 40
+  labelled pairs, each arm three times):
+  - First attempt `diag-screen-20261010T181614` (39 calls, US$0.0489) lost its results: the script
+    did not turn tracing on and saved only at the end, and DeepSeek Flash at high effort spent all
+    6,000 output tokens thinking on one batch (empty reply), which stopped the run. Flash cost about
+    US$0.0025 a call, three times Luna. Fixed: tracing on, saved after every batch, an unusable
+    batch counted instead of stopping. Flash is left out until approved separately.
+  - Second run `diag-screen-20261010T182514` (54 calls, US$0.0465; with the smoke the diagnosis
+    spent US$0.0967 of the US$0.10 approved; the estimate given was about US$0.05 before Haiku was
+    added). Against Ewan (mean ± sd over 3 repeats):
+    luna-medium (product) exact 0.392±0.012, κw 0.642, read agreement 0.850±0.020, τ-b 0.620;
+    read decision changed across repeats on 6/40 pairs; US$0.00071 a call, 8.6 s mean, 13.8 s p95.
+    luna-high exact 0.467±0.012, κw 0.674, read 0.875±0.000, τ-b 0.654; 3/40 changed; US$0.00103,
+    15.3 s mean, 40.0 s p95. haiku-medium exact 0.475±0.035, κw 0.600, read 0.783±0.042, τ-b 0.550;
+    8/40 changed; US$0.00084, 4.7 s mean, 7.8 s p95.
+  - All three arms make the same read decision on 31/40 pairs; on only 2 of those (c06, c31) it
+    differs from Ewan. The other disagreements fall on the 9 pairs where the arms differ (Ewan
+    matched there by luna-high 6, luna-medium 5, haiku-medium 3).
+  - Reading: the rubric agrees with Ewan wherever the models agree (2 shared misses), so most
+    error is not a missing rule; it sits on pairs near the 1/2 boundary, where a stronger setting
+    (Luna high) does better and repeats of one setting disagree with each other (run-to-run noise
+    of about ±0.02 in read agreement for Luna, ±0.04 for Haiku). Haiku 5.5 at medium is the
+    fastest and costs about what Luna medium does, but is the least stable and the least in line
+    with Ewan on reading decisions here. Caveats: 40 pairs, one labeller, the same pairs that shaped
+    `screen_v2` (which favours that prompt equally for every model), and Luna's calls here had no
+    cache hits (no prewarm in the script; the product prewarms fan-outs when the shared prefix
+    reaches 1,024 tokens).
+- No product change: model and effort for the screen are decided on held-out labels (parked).
