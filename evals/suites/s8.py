@@ -66,7 +66,7 @@ class Source(BaseModel):
 
 class Expect(BaseModel):
     intent: Literal["discover", "discover_read", "read"]
-    primary: str | None = None  # survey_named: the subject's own paper, bare arXiv id
+    primary: str | None = None  # unused since D43: every discovery item is graded the same way
     recent_days: int | None = None  # latest_topic: listed papers should be this new
 
 
@@ -96,7 +96,7 @@ class Item(BaseModel):
         if any(not VERSIONED.match(p) for p in self.papers):
             problems.append("papers must be versioned arXiv ids like 2305.18323v1")
         needs = {
-            "survey_named": (1, 0, False),  # (papers, rubric items, evidence required)
+            "survey_named": (0, 0, False),  # (papers, rubric items, evidence required)
             "explain_paper": (1, 3, True),
             "compare_papers": (2, 4, True),
             "topic_survey": (0, 4, False),
@@ -110,8 +110,8 @@ class Item(BaseModel):
             problems.append("every rubric item needs evidence quotes")
         if any(e.paper not in self.papers for r in self.rubric for e in r.evidence):
             problems.append("evidence must quote one of the item's papers")
-        if self.type == "survey_named" and not (self.names and self.expect.primary):
-            problems.append("survey_named needs names and expect.primary")
+        if self.type == "survey_named" and not self.names:
+            problems.append("survey_named needs names")
         if self.type == "latest_topic" and not self.expect.recent_days:
             problems.append("latest_topic needs expect.recent_days")
         if self.rubric and self.source.rubric_from == "none":
@@ -140,8 +140,11 @@ def load(path: Path = DATA) -> list[Item]:
 
 
 def balance(items: list[Item]) -> list[str]:
-    """Each type has items in both splits and both languages; ids are unique."""
+    """Each type has items in both splits and both languages; ids are unique; no request occurs
+    twice, a translation included (it would put one request in both splits)."""
     problems = [f"duplicate id {i}" for i, n in Counter(i.id for i in items).items() if n > 1]
+    requests = Counter(plain(i.message_en) for i in items)
+    problems += [f"request asked twice: {r[:60]}" for r, n in requests.items() if n > 1]
     for kind in TYPES:
         mine = [i for i in items if i.type == kind]
         for field, values in (("split", ("dev", "test")), ("language", ("English", "Chinese"))):

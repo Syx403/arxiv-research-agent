@@ -5,8 +5,8 @@ a later step screens the pool, so recall matters more than precision here.
 Tools:
 - search_arxiv(query, newest_first): up to 20 results, by relevance, or by submission date with
   newest_first. The query uses arXiv syntax: fields ti: (title), abs: (abstract), all: (any
-  field); quotes for phrases; AND, OR, ANDNOT; parentheses. Example: abs:"KV cache" AND
-  (abs:eviction OR abs:compression). The date limits of the request are applied for you; do not
+  field); quotes for phrases; AND, OR, ANDNOT; parentheses. Example: abs:"curriculum learning"
+  AND (abs:convergence OR abs:ordering). The date limits of the request are applied for you; do not
   write dates into queries.
 - lookup(arxiv_ids): metadata for papers you already know by id.
 

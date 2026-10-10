@@ -62,7 +62,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-10 | Ewan's own app turn | a follow-up in the Kimi K3 conversation on the D40 code (`ui:e86ad5b5…:2458…`) | 28 | 0.0085 | Ewan (his own use) |
 | 2026-10-11 | Screen calibration | product vs candidate prompt on Ewan's 40 labelled pairs (`calib-screen-20261010T161502`) | 12 | 0.0082 | Ewan (≈ 10 calls, ≤ US$0.04; 2 over in count) |
 | 2026-10-11 | D41/D42 live check, attempt 1 | "找kimi k3相关论文" as `live-check` (`d42-live-…`); every arXiv search refused (HTTP 429: the S8 build was using arXiv from the same machine), so nothing was screened but the library's K3 report; inconclusive | 6 | 0.0009 | Ewan (≈ 10 requests, ≤ US$0.02) |
-| | | **Total so far** (from the ledger; it also counts free embedding and rerank rows not itemised above) | 4192 | **0.9919** | |
+| 2026-10-11 | Screen calibration, generalized prompt | one arm on the 40 pairs (`calib-screen-20261010T175518`) | 6 | 0.0041 | Ewan (≈ 6 calls, ≈ US$0.004) |
+| | | **Total so far** (from the ledger; it also counts free embedding and rerank rows not itemised above) | 4198 | **0.9960** | |
 
 ## Session log
 
@@ -378,3 +379,9 @@ Update this file at the end of every working session: what was done, what was sp
   paper leads its grade. S8 re-planned around real queries (Asta, SciArena) with the brief and
   checker rewritten. Rule 9 relaxed for a later Anthropic model study. 174 unit tests. Next:
   the external S8 build → review; a live check of D41/D42 discovery (needs approval).
+- 2026-10-11 — Grok's S8 build reviewed (40 items, checker OK; a dev/test leak, survey primaries
+  that did not match the queries, an infeasible allocation rule in our brief, few real Chinese).
+  D43 (Ewan: no point fixes): the K3-shaped rank rule removed, prompt examples neutralised, S8
+  graded uniformly with a duplicate-request check, revision brief for the build; a generalized
+  screen prompt scored lower on the 40 pairs, which favour the product prompt, so a held-out
+  labelled set decides. 173 unit tests.

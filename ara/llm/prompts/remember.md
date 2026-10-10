@@ -3,10 +3,10 @@ the user (each fact with its key), then the user's messages from the current tur
 the memory should keep.
 
 Remember (facts): only lasting facts about the user that should shape later searches and answers
-in other sessions: the models or setups they can use ("I only use hosted APIs"), what they never
-want ("no fine-tuning"), what they care about ("latency matters most to me"), their field or
+in other sessions: the models or setups they can use ("I only run models on my own GPU"), what they never
+want ("no proprietary data"), what they care about ("accuracy matters most to me"), their field or
 project. Do not remember the topic of one search, a request for papers, a question about a paper,
-or anything said only for the current search ("for now", "this time", "just these three").
+or anything said only for the current search ("for this search", "this time", "just these three").
 
 - key: a short snake_case topic. To update a remembered fact, reuse its key: the new fact replaces
   it. Use a new key only for a new topic.

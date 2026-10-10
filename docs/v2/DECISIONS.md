@@ -1206,3 +1206,35 @@ decision gets a new entry that names the one it replaces.
   Haiku 5.5 joins Luna and DeepSeek Flash as a candidate per stage, measured, with no expectation
   that it wins. Ewan provides an Anthropic key before it starts; the gateway then needs an
   Anthropic provider (caching, structured output, effort).
+
+## D43 — No point fixes: general rules, neutral examples, held-out checks (2026-10-11, Ewan)
+- Principle (Ewan): no decision or fix may overfit or patch one case. Every fix is a general rule
+  for a class of cases; prompt examples come neither from the case that prompted a change nor from
+  any evaluation item; a rule is checked on data beyond the case that prompted it; every item of a
+  kind is graded the same way.
+- Reviewed against it and changed:
+  - D42's within-grade rule (a title naming the subject first) was built for the Kimi K3 case and
+    misfires for requests that ask for papers using a subject ("papers that use HotPotQA as a
+    benchmark" would lead with the HotPotQA paper): removed; rank is D24's order again.
+  - Prompt examples: Kimi K3 and the D40 profile facts in understand (D40, D41), and examples that
+    also occur in evaluation data (ReWOO, LLMCompiler, ReAct's id, KV-cache eviction, diffusion
+    models, "hosted APIs", "no fine-tuning", "latency matters most", the ReWOO Solver correction in
+    synthesize and verify, the researcher's KV-cache query, S4's FlashAttention), replaced by
+    neutral ones (Chinchilla, Gopher, Mamba, AlphaFold, MMLU, curriculum learning, …) carrying the
+    same rules; a scan finds no example string in `evals/datasets/` any more (label words and
+    generic words aside). `names` now covers a subject the request is about or one the papers
+    should use or evaluate on.
+  - S8: discovery items are graded alike (no per-item primary paper; D42's plan had one, and some
+    of the build's primaries did not match what the query asked); a request may occur once, a
+    translation included (the build had put a request in dev and its translation in test); fixed
+    counts per type; licences must name the data. The checker enforces the first two;
+    `docs/v2/eval/s8-dataset-brief-2.md` asks the external build for a revision under these rules.
+- Screen prompt, a generalized candidate (`screen_v3@00b2b048`: decide what kind of paper the
+  request asks for, then grade whether the paper's own object of study is that; no clause for named
+  subjects) on the same 40 labelled pairs (`calib-screen-20261010T175518`, 6 calls, US$0.0041;
+  the product prompt's grades reused from the previous run, not re-run): against the product
+  (`screen_v2`) exact −0.196 [−0.325, −0.075], read agreement −0.144 [−0.275, −0.025], κw −0.068
+  [−0.171, +0.029]. Not conclusive either way: the product prompt's named-subject clause was written
+  after reading Ewan's notes on these same pairs, so it is favoured here, and run-to-run variation
+  of one prompt is not measured. The 40 pairs are not used for tuning again. Decision: the product
+  keeps `screen_v2` until a held-out set (new labelled pairs from other searches) compares both.

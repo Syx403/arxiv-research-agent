@@ -262,19 +262,3 @@ def test_a_name_matches_as_a_whole_word_whatever_its_spacing() -> None:
     misses = ["Kimi K30", "Kimi K2.5", "akimi k3"]
     assert all(pattern.search(t) for t in hits) and not any(pattern.search(t) for t in misses)
     assert discover.name_pattern([]) is None and discover.name_pattern([" - "]) is None
-
-
-def test_the_subjects_own_paper_leads_its_grade() -> None:
-    """D42: within relevance 3, the paper whose title names "Kimi K3" comes before newer papers
-    on its parts, though the request prefers recent work."""
-    report = card(1, 0.1).model_copy(
-        update={"title": "Kimi K3: Open Frontier Intelligence", "published": "2026-07-27"}
-    )
-    part = card(2, 0.9).model_copy(update={"title": "Complex KDA", "published": "2026-09-21"})
-    state: Any = {
-        "request": request(names=["Kimi K3"], prefer_recent=True),
-        "shortlist": [part, report],
-        "judged": [judge(p.arxiv_id, 3) for p in (part, report)],
-    }
-    ranked: Any = discover.rank(state)
-    assert [p.arxiv_id for p in ranked["papers"]] == [report.arxiv_id, part.arxiv_id]
