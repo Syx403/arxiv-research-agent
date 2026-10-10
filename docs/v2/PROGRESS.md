@@ -61,7 +61,8 @@ Update this file at the end of every working session: what was done, what was sp
 | 2026-10-10 | D40 live check | open questions in Chinese and English, a remembered fact and a K3 search, user `live-check` (`d40-live-20261010T100611`, `…T101059`) | 126 | 0.0319 | Ewan (≤ US$0.06) |
 | 2026-10-10 | Ewan's own app turn | a follow-up in the Kimi K3 conversation on the D40 code (`ui:e86ad5b5…:2458…`) | 28 | 0.0085 | Ewan (his own use) |
 | 2026-10-11 | Screen calibration | product vs candidate prompt on Ewan's 40 labelled pairs (`calib-screen-20261010T161502`) | 12 | 0.0082 | Ewan (≈ 10 calls, ≤ US$0.04; 2 over in count) |
-| | | **Total so far** (from the ledger; it also counts free embedding and rerank rows not itemised above) | 4186 | **0.9910** | |
+| 2026-10-11 | D41/D42 live check, attempt 1 | "找kimi k3相关论文" as `live-check` (`d42-live-…`); every arXiv search refused (HTTP 429: the S8 build was using arXiv from the same machine), so nothing was screened but the library's K3 report; inconclusive | 6 | 0.0009 | Ewan (≈ 10 requests, ≤ US$0.02) |
+| | | **Total so far** (from the ledger; it also counts free embedding and rerank rows not itemised above) | 4192 | **0.9919** | |
 
 ## Session log
 
