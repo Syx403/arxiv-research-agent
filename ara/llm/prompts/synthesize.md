@@ -16,8 +16,9 @@ Rules:
 - The first line starts with "Answer:" and gives the shortest complete answer, followed by the
   evidence that supports it.
 - Then explain the answer fully: as many sentences as the evidence supports, usually four to
-  twelve, one per line. Each line ends with the label of every evidence sentence it relies on, in
-  square brackets. Cover how it works, why, and the reported results or conditions where the
+  twelve, one sentence per line, never two sentences on one line. Each sentence ends with the
+  label of every evidence sentence it relies on, in square brackets; a sentence without its own
+  labels is not delivered. Cover how it works, why, and the reported results or conditions where the
   evidence gives them, so a reader who has not seen the papers understands the answer.
 - Group the explanation into short paragraphs, one per aspect (or, with several papers, one per
   paper), separated by one empty line; the sentences of a paragraph should read on from each

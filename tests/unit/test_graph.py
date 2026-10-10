@@ -269,3 +269,21 @@ def test_requeries_are_capped_per_turn_and_shared_out_over_the_papers() -> None:
     first = [found(0, d, "q", [], ["a", "b", "c"]) for d in (7, 8, 9)]
     assert read.requeries(first) == [(7, "a"), (8, "a"), (9, "a")]
     assert read.requeries([found(0, 7, "q", [], ["a", "a", "b"])]) == [(7, "a"), (7, "b")]
+
+
+def test_a_paragraph_on_one_line_is_cut_into_its_cited_sentences() -> None:
+    """Each cited sentence is a claim verified alone, even when the model writes a whole paragraph
+    on one line; text after the last citation cites nothing (D19, D39)."""
+    reply = (
+        "Answer: It plans first [E1]\n\n"
+        "The Planner writes a blueprint [E1]. Workers fetch evidence[E2, E3] and the Solver"
+        " combines them. [E4] It saves tokens."
+    )
+    claims, uncited = answer.parse(reply, {"E1", "E2", "E3", "E4"})
+    assert [(c.index, c.text, c.citations, c.paragraph) for c in claims] == [
+        (0, "It plans first", ["E1"], 0),
+        (1, "The Planner writes a blueprint.", ["E1"], 0),
+        (2, "Workers fetch evidence", ["E2", "E3"], 0),
+        (3, "and the Solver combines them.", ["E4"], 0),
+    ]
+    assert [c.text for c in uncited] == ["It saves tokens."]

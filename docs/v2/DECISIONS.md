@@ -1015,8 +1015,11 @@ decision gets a new entry that names the one it replaces.
      most seen were 860 and 384), so a long answer's fan-out does not reach the turn cap on
      reservations alone. Deviation from D10's stage table (limits only).
   9. Paper parsing (HTML, PDF) runs in a worker thread, so other turns keep streaming.
-  10. The Store's own embedding requests are charged to the current turn or run (a context
-      variable set around Store calls), so they count against its cap.
+  10. The Store's own embedding requests are charged to the current turn or run: the turn embeds
+      the texts the Store is about to embed (the message, a fact's statement, a record's need)
+      through the cache, charged to itself, and the Store then finds them cached. (A context
+      variable did not work: the Store embeds in its own background batching task; found in the
+      live check.)
   11. A stopped model call is settled at its input estimate and marked "cancelled" (was: its whole
       reservation, kept open).
   12. Reservations read running totals (migration 0008: `spend_totals`, kept by a trigger on
@@ -1031,7 +1034,17 @@ decision gets a new entry that names the one it replaces.
       holds, simulated users' memory and library rows); `--execute` deletes them. Results, the
       ledger and the corpus stay. Deleting a conversation still keeps the facts and records drawn
       from it (D36); the memory page says when a fact's conversation is gone.
-- Checked: 164 unit tests, among them undo on a failure outside the graph, Stop during the
+  17. Found in the live check: with D37's paragraphs the model wrote a whole paragraph on one line
+      with its citations at the end, so a line of 8 sentences citing 13 evidence sentences was one
+      claim, verified as a block (below D19's per-sentence grain). An explanation line is now cut
+      after each citation, each piece a claim verified alone (text after the last citation cites
+      nothing and is dropped, as before); the prompt says one sentence per line, never two.
+- Checked: 165 unit tests, among them undo on a failure outside the graph, Stop during the
   commit, startup repair, running totals, the requery cap, the history window, library writes at
-  commit, titles not written by the user, parts. No billable call so far; a live check follows
-  with Ewan's approval.
+  commit, titles not written by the user, parts, a paragraph cut into claims.
+- Live check (approved ≤ US$0.03): 57 calls, US$0.0137. Comparing ReWOO and LLMCompiler: first
+  run showed the one-line paragraphs (2 claims); after the fix 17 sentences delivered of 19
+  checked (1 rejected, repaired), each with its chips, 27 calls, 48 s, one rerank, no requery. A
+  read stopped while searching the papers left the library at 3 papers and gave the message back.
+  "find kimi latest paper" listed five Kimi papers (Kimi K3 among them) as a topic search. Memory
+  turns: after the second fix every embedding call carries its turn id (none untagged since).

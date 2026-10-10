@@ -2,9 +2,7 @@
 ("users", uid, "profile") and one record per research turn under ("users", uid, "episodes"),
 searchable by meaning. Embeddings go through the content-addressed cache and the ledger."""
 
-from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
-from contextvars import ContextVar
+from collections.abc import Sequence
 
 from langgraph.store.base import BaseStore
 from langgraph.store.postgres.aio import AsyncPostgresStore
@@ -19,18 +17,6 @@ DIMS = 1536
 EPISODES_SHOWN = 3  # records understand sees for the latest message
 FACTS_SHOWN = 20  # profile facts understand sees: all of them up to here, then the most relevant
 ALL = 10_000  # every item of a namespace, for code that lists it whole
-# The turn (or evaluation run) the Store's own embedding requests are charged to (D39): the Store
-# calls `vectors` itself, so the scope travels in a context variable.
-_charged: ContextVar[Scope | None] = ContextVar("store_scope", default=None)
-
-
-@contextmanager
-def charged_to(scope: Scope) -> Iterator[None]:
-    token = _charged.set(scope)
-    try:
-        yield
-    finally:
-        _charged.reset(token)
 
 
 class Fact(BaseModel):
@@ -76,8 +62,9 @@ async def open_store(pool: Pool, gateway: Gateway) -> AsyncPostgresStore:
     by their need; profile facts are read whole and never searched."""
 
     async def vectors(texts: Sequence[str]) -> list[list[float]]:
-        scope = _charged.get() or Scope()
-        found = await embed(list(texts), pool=pool, gateway=gateway, scope=scope)
+        # the Store embeds in its own background task, so it cannot know the turn: callers embed
+        # the same texts first, charged to their turn (`prepaid`), and these are cache hits (D39)
+        found = await embed(list(texts), pool=pool, gateway=gateway, scope=Scope())
         return [v.tolist() for v in found]
 
     store = AsyncPostgresStore(pool, index={"dims": DIMS, "embed": vectors, "fields": ["need"]})

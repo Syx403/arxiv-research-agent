@@ -75,7 +75,7 @@ def parse(reply: str, known: set[str]) -> tuple[list[Claim], list[Claim]]:
     direct answer, written "Answer: ..."; an abstaining answer is neither."""
     claims: list[Claim] = []
     uncited: list[Claim] = []
-    for index, paragraph, line in _lines(reply):
+    for index, paragraph, line in _claims(_lines(reply)):
         if index == 0:
             line = line.removeprefix("Answer:").strip()
         ids = list(dict.fromkeys(i.strip() for g in CITATION.findall(line) for i in g.split(",")))
@@ -102,6 +102,31 @@ def _lines(reply: str) -> list[tuple[int, int, str]]:
         found.append((len(found), paragraph, line))
         gap = False
     return found
+
+
+def _claims(lines: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    """Every claim: the direct answer's line whole; an explanation line cut after each of its
+    citations, so a model that writes a paragraph on one line still has each cited sentence
+    verified on its own (D19; seen in D39's live check). Text after the last citation is a claim
+    without one. Claims are numbered in order; 0 stays the direct answer."""
+    found: list[tuple[int, int, str]] = []
+    for index, paragraph, line in lines:
+        for piece in [line] if index == 0 else _cut(line):
+            found.append((len(found), paragraph, piece))
+    return found
+
+
+def _cut(line: str) -> list[str]:
+    """The line cut after each citation (and the punctuation that follows it)."""
+    pieces, start = [], 0
+    for match in CITATION.finditer(line):
+        end = match.end()
+        while end < len(line) and line[end] in ".,;:!?":
+            end += 1
+        pieces.append(line[start:end])
+        start = end
+    pieces.append(line[start:])
+    return [p.strip() for p in pieces if p.strip()]
 
 
 def pack(evidence: list[Evidence]) -> Block:

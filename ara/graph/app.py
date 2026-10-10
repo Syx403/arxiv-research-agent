@@ -182,13 +182,20 @@ async def load_context(state: ConversationState, runtime: Runtime[Context]) -> d
     if memory is None:  # a graph compiled without a Store (unit tests) has no memory
         return {**fresh_turn(), "turn_start": len(state["messages"]) - 1}
     latest = state["messages"][-1].text
-    with store.charged_to(ctx.scope):
-        return {
-            **fresh_turn(),
-            "turn_start": len(state["messages"]) - 1,
-            "profile": await store.relevant(memory, ctx.user_id, latest),
-            "episodes": await store.recall(memory, ctx.user_id, latest),
-        }
+    await prepaid(ctx, [latest])
+    return {
+        **fresh_turn(),
+        "turn_start": len(state["messages"]) - 1,
+        "profile": await store.relevant(memory, ctx.user_id, latest),
+        "episodes": await store.recall(memory, ctx.user_id, latest),
+    }
+
+
+async def prepaid(ctx: Context, texts: list[str]) -> None:
+    """Embed what the Store is about to embed, charged to this turn: the Store embeds in its own
+    background task, outside the turn, and then finds these in the cache (D39)."""
+    if texts:
+        await embed(texts, pool=ctx.pool, gateway=ctx.gateway, scope=ctx.scope)
 
 
 def understand_prompt(
@@ -611,14 +618,14 @@ async def remember(state: ConversationState, runtime: Runtime[Context]) -> dict[
             "turn": state["turn_start"],
             "day": ctx.today.isoformat(),
         }
-        with store.charged_to(ctx.scope):
-            for fact in update.facts:
-                await store.remember(memory, ctx.user_id, Remembered(**fact.model_dump(), **source))
+        await prepaid(ctx, [f.statement for f in update.facts])
+        for fact in update.facts:
+            await store.remember(memory, ctx.user_id, Remembered(**fact.model_dump(), **source))
         for key in update.forget:
             await store.forget(memory, ctx.user_id, key)
     if request.intent in RESEARCH and (record := episode(state, ctx.today)) is not None:
-        with store.charged_to(ctx.scope):
-            await store.record(memory, ctx.user_id, uuid4().hex, record)
+        await prepaid(ctx, [record.need])
+        await store.record(memory, ctx.user_id, uuid4().hex, record)
     return {"memory": update}
 
 
