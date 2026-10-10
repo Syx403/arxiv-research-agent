@@ -9,6 +9,7 @@ the aspects its evidence left uncovered.
 
 import operator
 import re
+from itertools import zip_longest
 from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -17,14 +18,14 @@ from langgraph.runtime import Runtime
 from langgraph.types import Send
 from pydantic import BaseModel, Field
 
-from ara.graph.reliability import INGEST_TIMEOUT_S, LLM_TIMEOUT_S, RETRY, degrade, problem
+from ara.graph.reliability import LLM_TIMEOUT_S, RETRY, SLOT_BACKSTOP_S, degrade, problem
 from ara.graph.state import Context, Evidence
 from ara.llm.prompt import Block, Instructions, Prompt
 from ara.llm.stages import STAGES
 from ara.rag.ingest import document_id, ingest
 from ara.rag.retrieve import Passage, retrieve
 
-MAX_REQUERIES = 3  # missing aspects searched again, per paper (D21)
+MAX_REQUERIES = 3  # missing aspects searched again, per turn over all papers (D21, D39)
 LABEL = re.compile(r"S\d+")
 BARE_ARXIV = re.compile(r"^arxiv:(\d{4}\.\d{4,5})$")
 SELECT = Instructions.load("select_evidence")
@@ -224,11 +225,19 @@ def collect(state: ReadState) -> dict[str, object]:
     if state.get("requeried", False):
         return {"evidence": evidence, "missing": uncovered(state.get("found", [])), "requery": []}
     requery = [
-        SearchTask(question=state["question"], query=aspect, documents=[f.document], round=1)
-        for f in state.get("found", [])
-        for aspect in list(dict.fromkeys(f.missing))[:MAX_REQUERIES]
+        SearchTask(question=state["question"], query=aspect, documents=[document], round=1)
+        for document, aspect in requeries(state.get("found", []))
     ]
     return {"evidence": evidence, "missing": [], "requery": requery, "requeried": True}
+
+
+def requeries(found: list[Found]) -> list[tuple[int, str]]:
+    """The aspects to search again, MAX_REQUERIES in all, taken from the papers in turn (each
+    paper's first missing aspect, then each one's second, ...): each requery is one rerank call,
+    and rerank calls queue one per 6 s across every running turn (D39)."""
+    per_paper = [[(f.document, a) for a in dict.fromkeys(f.missing)] for f in found]
+    rounds = zip_longest(*per_paper)
+    return [pair for row in rounds for pair in row if pair is not None][:MAX_REQUERIES]
 
 
 def uncovered(found: list[Found]) -> list[str]:
@@ -282,11 +291,11 @@ def build() -> CompiledStateGraph[ReadState, Context, ReadInput, ReadOutput]:
         ingest_paper,
         input_schema=IngestTask,
         retry_policy=RETRY,
-        timeout=INGEST_TIMEOUT_S,
+        timeout=SLOT_BACKSTOP_S,
     )
     graph.add_node("ready", ready)
     graph.add_node(
-        "search", search, input_schema=SearchTask, retry_policy=RETRY, timeout=LLM_TIMEOUT_S
+        "search", search, input_schema=SearchTask, retry_policy=RETRY, timeout=SLOT_BACKSTOP_S
     )
     graph.add_node("staged", staged)
     graph.add_node(

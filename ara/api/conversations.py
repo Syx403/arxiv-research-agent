@@ -22,6 +22,7 @@ TURN_COLUMNS = (
     "problems",
     "trace",
     "waiting",
+    "parts",
     "started_at",
     "finished_at",
 )
@@ -99,7 +100,7 @@ async def record(
 ) -> None:
     """One turn as the UI will show it again."""
     values = {k: turn[k] for k in TURN_COLUMNS[:-2]}
-    jsonb = {"answer", "papers", "read", "problems", "trace", "waiting"}
+    jsonb = {"answer", "papers", "read", "problems", "trace", "waiting", "parts"}
     await conn.execute(
         "INSERT INTO turns (conversation_id, started_at, "
         + ", ".join(values)

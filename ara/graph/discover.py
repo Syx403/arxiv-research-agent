@@ -22,9 +22,9 @@ from pydantic import BaseModel, Field, ValidationError
 
 from ara.arxiv.client import Metadata, SearchError
 from ara.graph.reliability import (
-    ARXIV_TIMEOUT_S,
     LLM_TIMEOUT_S,
     RETRY,
+    SLOT_BACKSTOP_S,
     degrade,
     problem,
 )
@@ -443,7 +443,7 @@ def build() -> CompiledStateGraph[DiscoverState, Context, DiscoverInput, Discove
         "arxiv_tools",
         arxiv_tools,
         retry_policy=RETRY,
-        timeout=ARXIV_TIMEOUT_S,
+        timeout=SLOT_BACKSTOP_S,
         error_handler=search_stopped,
     )
     graph.add_node(

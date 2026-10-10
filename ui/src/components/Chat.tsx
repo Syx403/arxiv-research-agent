@@ -23,7 +23,7 @@ export function ChatView({ chat, open }: { chat: Chat; open: Open }) {
   const end = useRef<HTMLDivElement>(null);
   const turns = chat.conversation?.turns ?? [];
   const empty = turns.length === 0 && !chat.pending;
-  const running = !!chat.pending && !chat.pending.error;
+  const running = !!chat.pending;
 
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -63,6 +63,7 @@ export function ChatView({ chat, open }: { chat: Chat; open: Open }) {
           I find arXiv papers, read them, and answer with every line checked against the sentence
           it cites.
         </p>
+        {chat.notice && <p className="notice-bar">{chat.notice}</p>}
         {composer}
         <div className="starters">
           {SUGGESTIONS.map((s) => (
@@ -89,6 +90,7 @@ export function ChatView({ chat, open }: { chat: Chat; open: Open }) {
         <div ref={end} />
       </div>
       <div className="dock">
+        {chat.notice && <p className="notice-bar">{chat.notice}</p>}
         {composer}
         <p className="dock-note">
           {running
@@ -139,18 +141,14 @@ function PendingView({ pending, open }: { pending: Pending; open: Open }) {
     <>
       <div className="msg user">{pending.message}</div>
       <div className="msg agent">
-        {pending.error ? (
-          <div className="error-box">{pending.error}</div>
-        ) : (
-          <Process
-            trace={pending.trace}
-            calls={pending.calls}
-            problems={pending.problems}
-            live
-            since={pending.since}
-            open={(tab) => open("pending", tab)}
-          />
-        )}
+        <Process
+          trace={pending.trace}
+          calls={pending.calls}
+          problems={pending.problems}
+          live
+          since={pending.since}
+          open={(tab) => open("pending", tab)}
+        />
       </div>
     </>
   );

@@ -5,6 +5,7 @@ the API, so the page says what DESIGN §11.2 says. Item counts come from the sui
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from ara.llm.prompt import versions as prompt_versions
 from evals.report import SUITES as MODULES
 
 
@@ -170,6 +171,8 @@ PROTOCOL = [
     " comes in E1).",
     "Real model calls only, no mocks or recordings; a round costs at most US$1 and every run is"
     " approved before it starts.",
+    "A round is measured on the code and prompts of its day: one whose prompts differ from"
+    " today's is marked, so an old number is not read as the current system's (D39).",
 ]
 
 
@@ -180,4 +183,4 @@ def catalog() -> dict[str, Any]:
         splits = MODULES[suite.id].splits()
         counts = {s: sum(1 for v in splits.values() if v == s) for s in ("dev", "test")}
         suites.append({**asdict(suite), "items": counts})
-    return {"suites": suites, "protocol": PROTOCOL}
+    return {"suites": suites, "protocol": PROTOCOL, "prompts": prompt_versions()}

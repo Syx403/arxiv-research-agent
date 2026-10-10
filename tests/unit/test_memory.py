@@ -67,7 +67,11 @@ def fact(key: str, quote: str) -> Remembered:
     return Remembered(**said.model_dump(), thread="t", turn=0, day="2026-10-09")
 
 
-async def test_a_newer_fact_replaces_the_old_one_and_forget_deletes(memory: Any) -> None:
+async def test_a_newer_fact_replaces_the_old_one_and_forget_deletes(
+    pool: Pool, memory: Any
+) -> None:
+    said = ["hosted APIs only", "I can run local models now", "latency matters most"]
+    await cache(pool, {f"The user said {q}.": n for n, q in enumerate(said, 1)})
     await store.remember(memory, "u", fact("access", "hosted APIs only"))
     await store.remember(memory, "u", fact("access", "I can run local models now"))
     await store.remember(memory, "u", fact("goal", "latency matters most"))
@@ -251,3 +255,25 @@ async def test_a_shared_name_resolves_to_the_paper_closest_to_the_need(pool: Poo
         ranked = await app.closest_to("API hallucination", [consensus, apis], ctx)
         await ctx.gateway.aclose()
     assert ranked == [apis, consensus]
+
+
+async def test_a_long_profile_shows_the_facts_closest_to_the_message(
+    pool: Pool, memory: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Past FACTS_SHOWN facts, understand sees the closest in meaning (D39)."""
+    monkeypatch.setattr(store, "FACTS_SHOWN", 2)
+    await cache(
+        pool,
+        {
+            "The user said hosted APIs only.": 1,
+            "The user said latency matters most.": 2,
+            "The user said I work on MoE.": 3,
+            "how fast is it?": 2,
+        },
+    )
+    for key, quote in [("access", "hosted APIs only"), ("goal", "latency matters most")]:
+        await store.remember(memory, "u", fact(key, quote))
+    assert len(await store.relevant(memory, "u", "how fast is it?")) == 2, "all, up to the limit"
+    await store.remember(memory, "u", fact("field", "I work on MoE"))
+    shown = await store.relevant(memory, "u", "how fast is it?")
+    assert len(shown) == 2 and "goal" in [f.key for f in shown]

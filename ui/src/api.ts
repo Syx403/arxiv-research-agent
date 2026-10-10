@@ -34,6 +34,7 @@ export interface Claim {
   index: number;
   text: string;
   citations: string[];
+  paragraph: number; // 0 for answers recorded before D37
 }
 
 export interface Answer {
@@ -46,6 +47,13 @@ export interface Answer {
   rejected: Claim[];
   evidence: Evidence[];
   context: string;
+}
+
+/** One piece of a reply (D39): the UI renders listings and answers from the turn's data. */
+export interface Part {
+  kind: "text" | "context" | "warning" | "listing" | "answer" | "note";
+  text: string;
+  source?: "arxiv" | "library";
 }
 
 export interface Waiting {
@@ -66,6 +74,7 @@ export interface Turn {
   problems: string[];
   trace: NodeEvent[];
   waiting: Waiting | null;
+  parts: Part[]; // empty for turns recorded before D39
   calls: Call[];
   started_at: string;
   finished_at: string;
@@ -114,6 +123,7 @@ export interface Call {
 export interface Stopped extends Running {
   spent_usd: number;
   conversation_removed: boolean;
+  error?: string; // set when the turn failed and was undone (D39)
 }
 
 export type StreamEvent =
@@ -123,7 +133,7 @@ export type StreamEvent =
   | { event: "problem"; data: { text: string } }
   | { event: "done"; data: Turn }
   | { event: "stopped"; data: Stopped }
-  | { event: "error"; data: { error: string } };
+  | { event: "error"; data: Stopped & { error: string } };
 
 export interface Passage {
   chunk_id: number;
@@ -161,7 +171,8 @@ export interface Metric {
 }
 
 export interface RunSummary {
-  run: Run & { config: Record<string, unknown> };
+  run: Run & { config: Record<string, unknown> & { code?: string } };
+  prompts: string[]; // "synthesize@1a2b3c4d": the prompt files its model calls carried
   metrics: Metric[];
   items: {
     item_id: string;
@@ -229,6 +240,7 @@ export interface SuiteInfo {
 export interface Catalog {
   suites: SuiteInfo[];
   protocol: string[];
+  prompts: Record<string, string>; // today's version of every prompt file
 }
 
 export type Graphs = Record<"main" | "discover" | "read" | "answer", string>;

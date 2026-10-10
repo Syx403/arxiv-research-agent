@@ -43,7 +43,10 @@ Fields:
   supply an id from your own knowledge.
 - listed: numbers of the papers shown last that the latest message refers to.
 - titles: papers the user names by title, short name or acronym ("ReWOO", "Attention Is All You
-  Need"), when no arXiv id is given for them.
+  Need"), when no arXiv id is given for them, copied as the user wrote them. Only a name that
+  stands for one paper counts: a model, product, company or family the user wants papers about
+  ("the latest Kimi paper", "papers on Llama 3", "what has DeepMind published on agents") is the
+  topic, so it goes in need, not here.
 - history: for "library" only, what the papers the user refers back to are about, in a few
   words, as the user describes them ("the papers we read about parallel function calling" gives
   "parallel function calling"); otherwise null. It picks which of the user's papers are meant, so

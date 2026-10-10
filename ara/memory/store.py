@@ -2,7 +2,9 @@
 ("users", uid, "profile") and one record per research turn under ("users", uid, "episodes"),
 searchable by meaning. Embeddings go through the content-addressed cache and the ledger."""
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from langgraph.store.base import BaseStore
 from langgraph.store.postgres.aio import AsyncPostgresStore
@@ -15,6 +17,20 @@ from ara.rag.embed import embed
 
 DIMS = 1536
 EPISODES_SHOWN = 3  # records understand sees for the latest message
+FACTS_SHOWN = 20  # profile facts understand sees: all of them up to here, then the most relevant
+ALL = 10_000  # every item of a namespace, for code that lists it whole
+# The turn (or evaluation run) the Store's own embedding requests are charged to (D39): the Store
+# calls `vectors` itself, so the scope travels in a context variable.
+_charged: ContextVar[Scope | None] = ContextVar("store_scope", default=None)
+
+
+@contextmanager
+def charged_to(scope: Scope) -> Iterator[None]:
+    token = _charged.set(scope)
+    try:
+        yield
+    finally:
+        _charged.reset(token)
 
 
 class Fact(BaseModel):
@@ -60,7 +76,8 @@ async def open_store(pool: Pool, gateway: Gateway) -> AsyncPostgresStore:
     by their need; profile facts are read whole and never searched."""
 
     async def vectors(texts: Sequence[str]) -> list[list[float]]:
-        found = await embed(list(texts), pool=pool, gateway=gateway, scope=Scope())
+        scope = _charged.get() or Scope()
+        found = await embed(list(texts), pool=pool, gateway=gateway, scope=scope)
         return [v.tolist() for v in found]
 
     store = AsyncPostgresStore(pool, index={"dims": DIMS, "embed": vectors, "fields": ["need"]})
@@ -77,13 +94,30 @@ def _episodes(user: str) -> tuple[str, ...]:
 
 
 async def profile(store: BaseStore, user: str) -> list[Remembered]:
-    items = await store.asearch(profile_namespace(user), limit=100)
+    """Every fact, by key."""
+    items = await store.asearch(profile_namespace(user), limit=ALL)
     return sorted((Remembered(**i.value) for i in items), key=lambda f: f.key)
 
 
+async def relevant(store: BaseStore, user: str, query: str) -> list[Remembered]:
+    """What understand sees of the profile (D39): every fact while there are at most FACTS_SHOWN,
+    then the FACTS_SHOWN closest in meaning to `query`, topped up with the newest (a fact kept
+    before facts were indexed has no vector)."""
+    everything = await store.asearch(profile_namespace(user), limit=ALL)
+    if len(everything) <= FACTS_SHOWN:
+        chosen = everything
+    else:
+        close = await store.asearch(profile_namespace(user), query=query, limit=FACTS_SHOWN)
+        keys = {i.key for i in close}
+        newest = sorted(everything, key=lambda i: i.updated_at, reverse=True)
+        chosen = [*close, *(i for i in newest if i.key not in keys)][:FACTS_SHOWN]
+    return sorted((Remembered(**i.value) for i in chosen), key=lambda f: f.key)
+
+
 async def remember(store: BaseStore, user: str, fact: Remembered) -> None:
-    """A fact with an existing key replaces the old one (DESIGN §7: newer supersedes)."""
-    await store.aput(profile_namespace(user), fact.key, fact.model_dump(), index=False)
+    """A fact with an existing key replaces the old one (DESIGN §7: newer supersedes); its
+    statement is indexed, so a long profile can be searched by meaning (D39)."""
+    await store.aput(profile_namespace(user), fact.key, fact.model_dump(), index=["statement"])
 
 
 async def forget(store: BaseStore, user: str, key: str) -> None:

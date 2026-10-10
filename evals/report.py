@@ -203,6 +203,11 @@ def _efficiency(usage: Sequence[DictRow]) -> list[str]:
     return lines
 
 
+# the prompt files a run's model calls carried ("synthesize@1a2b3c4d", "+" joins a follow-up)
+PROMPTS_USED = """
+SELECT DISTINCT prompt_version FROM llm_calls WHERE run_id = %s AND prompt_version LIKE '%%@%%'
+"""
+
 RUNS = """
 SELECT r.id, r.suite, r.status, r.created_at, r.finished_at, r.langsmith_experiment,
        count(DISTINCT e.item_id) AS items,
@@ -236,6 +241,7 @@ async def summary(pool: Pool, run_id: str) -> dict[str, Any]:
             )
         ).fetchall()
         usage = await (await conn.execute(EFFICIENCY, (run_id,))).fetchall()
+        prompts = await (await conn.execute(PROMPTS_USED, (run_id,))).fetchall()
     split_of = SUITES[run["suite"]].splits()
     metrics: list[dict[str, Any]] = []
     for split, _ in SPLITS:
@@ -261,6 +267,7 @@ async def summary(pool: Pool, run_id: str) -> dict[str, Any]:
                 )
     return {
         "run": run,
+        "prompts": sorted({v for row in prompts for v in row["prompt_version"].split("+")}),
         "metrics": metrics,
         "items": [{**r, "split": split_of.get(r["item_id"], "?")} for r in results],
         "usage": [

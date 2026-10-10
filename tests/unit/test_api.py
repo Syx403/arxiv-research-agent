@@ -15,11 +15,13 @@ from langchain_core.messages import HumanMessage
 from ara import faults
 from ara.api import conversations, events, server
 from ara.api.runs import Run
+from ara.db import prune
 from ara.db.pool import Pool
 from ara.graph import app
 from ara.memory import library, store
 from ara.memory.store import Remembered
 from tests.unit.test_app import request
+from tests.unit.test_memory import cache
 from tests.unit.test_search import setup
 
 
@@ -35,7 +37,7 @@ async def client(
     faults.reset()
     async with server.lifespan(server.api):
         transport = httpx.ASGITransport(app=server.api)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as http:
             yield http
 
 
@@ -176,7 +178,9 @@ async def test_a_stopped_turn_leaves_the_conversation_as_it_was(
     )
     running = await wait_running(client, conversation)
     assert running["message"] == "first try" and running["kind"] == "messages"
-    assert [c["running"] for c in (await client.get("/api/conversations")).json()] == [True]
+    while not (listed := (await client.get("/api/conversations")).json()):
+        await asyncio.sleep(0.02)  # stored as the run starts, a moment after it is claimed
+    assert [c["running"] for c in listed] == [True]
     second = await client.post(f"/api/conversations/{conversation}/messages", json={"text": "x"})
     assert second.status_code == 409, "one turn at a time"
     stopped = (await client.post(f"/api/conversations/{conversation}/stop")).json()
@@ -261,9 +265,11 @@ async def test_memory_links_facts_and_papers_to_their_conversations(
             "problems": [],
             "trace": [],
             "waiting": None,
+            "parts": [],
         }
         await conversations.record(conn, "c1", turn, datetime.now(UTC))
     s = server._services()
+    await cache(pool, {"s": 1})  # facts are indexed by statement (D39): no embedding request
     for n, thread in enumerate(["c1", "gone"]):
         fact = Remembered(
             key=f"k{n}", statement="s", quote="q", thread=thread, turn=0, day="2026-10-10"
@@ -278,4 +284,107 @@ async def test_memory_links_facts_and_papers_to_their_conversations(
     assert (await client.get("/api/memory/facts", params={"offset": 1})).json()["total"] == 2
     [read_in] = (await client.get("/api/memory/library/2401.00002")).json()["read_in"]
     assert (read_in["conversation_id"], read_in["title"]) == ("c1", "Read the cache paper")
+    await gateway.aclose()
+
+
+async def test_a_turn_that_fails_outside_the_graph_is_undone(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recording the turn fails: the turn is undone like a stopped one and the stream ends with
+    an error that carries the message back (D39)."""
+
+    async def broken(*_: Any) -> None:
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(conversations, "record", broken)
+    conversation = (await client.post("/api/conversations")).json()["id"]
+    sent = await client.post(f"/api/conversations/{conversation}/messages", json={"text": "hi"})
+    kind, data = sse(sent.text)[-1]
+    assert kind == "error" and data["message"] == "hi" and data["conversation_removed"]
+    assert data["error"] == "The turn failed: an unexpected error"
+    assert (await client.get(f"/api/conversations/{conversation}")).status_code == 404
+    assert server._services().runs == {}
+
+
+async def test_stop_lets_a_turn_that_has_replied_finish(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Past respond the reply is written: Stop waits for the commit and the turn is kept (D39)."""
+    monkeypatch.setenv("ARA_FAULTS", "embed=refused,understand=503")
+    conversation = (await client.post("/api/conversations")).json()["id"]
+    sending = asyncio.create_task(
+        client.post(f"/api/conversations/{conversation}/messages", json={"text": "kept"})
+    )
+    await wait_running(client, conversation)
+    server._services().runs[conversation].committing = True  # as if respond had started
+    assert (await client.post(f"/api/conversations/{conversation}/stop")).status_code == 409
+    assert sse((await sending).text)[-1][0] == "done"
+    turns = (await client.get(f"/api/conversations/{conversation}")).json()["turns"]
+    assert [t["message"] for t in turns] == ["kept"]
+
+
+async def test_startup_repairs_a_conversation_left_in_the_middle_of_a_turn(
+    client: httpx.AsyncClient,
+) -> None:
+    """The server was killed mid-turn: the thread goes back to its last turn's end; a
+    conversation whose first turn never finished is removed (D39)."""
+    s = server._services()
+    kept = (await client.post("/api/conversations")).json()["id"]
+    await client.post(f"/api/conversations/{kept}/messages", json={"text": "first"})
+    lost = (await client.post("/api/conversations")).json()["id"]
+    async with s.pool.connection() as conn:
+        await conversations.touch(conn, lost, server.USER, "never answered")
+    for thread in (kept, lost):
+        config: Any = {"configurable": {"thread_id": thread}}
+        await s.graph.aupdate_state(
+            config,
+            {
+                "messages": [HumanMessage("killed mid-turn")],
+                **app.fresh_turn(),
+                "request": request(intent="discover"),
+            },
+            as_node="understand",
+        )
+        assert (await s.graph.aget_state(config)).next == ("discover",)
+    assert sorted(await server.repair(s)) == sorted([kept, lost])
+    state = await s.graph.aget_state({"configurable": {"thread_id": kept}})
+    assert state.next == () and state.values["messages"][-1].text.startswith("I could not")
+    assert (await client.get(f"/api/conversations/{lost}")).status_code == 404
+    assert await server.repair(s) == []
+
+
+async def test_only_this_machines_names_reach_the_api(client: httpx.AsyncClient) -> None:
+    """A page that rebinds its own domain to 127.0.0.1 is refused (D39)."""
+    assert (await client.get("/api/conversations")).status_code == 200
+    rebound = await client.get("/api/conversations", headers={"Host": "evil.example"})
+    assert rebound.status_code == 400
+
+
+async def test_prune_removes_evaluation_leftovers_only(
+    client: httpx.AsyncClient, pool: Pool
+) -> None:
+    """Threads no conversation holds, and simulated users' memory and library, go; the app's
+    own conversations stay (D39)."""
+    s = server._services()
+    kept = (await client.post("/api/conversations")).json()["id"]
+    await client.post(f"/api/conversations/{kept}/messages", json={"text": "mine"})
+    gateway, first, _ = await setup(pool)
+    async with pool.connection() as conn:
+        await prune.prune(conn)  # what other tests left
+        await library.record_read(conn, "s6-run:scenario", [first])
+        await library.record_read(conn, server.USER, [first])
+    await s.graph.aupdate_state(
+        {"configurable": {"thread_id": "s6-run:scenario:0"}},
+        {"messages": [HumanMessage("eval")], **app.fresh_turn(), "request": request()},
+        as_node="understand",
+    )
+    await s.memory.aput(("users", "s6-run:scenario", "episodes"), "e", {"need": "x"}, index=False)
+    await s.memory.aput(("users", server.USER, "episodes"), "e", {"need": "x"}, index=False)
+    async with pool.connection() as conn:
+        assert await prune.leftovers(conn) == {"threads": 1, "memory items": 1, "library rows": 1}
+        await prune.prune(conn)
+        assert await prune.leftovers(conn) == {"threads": 0, "memory items": 0, "library rows": 0}
+        assert [p.arxiv_id for p in await library.papers(conn, server.USER)] == ["2401.00001"]
+    assert (await s.graph.aget_state({"configurable": {"thread_id": kept}})).values["messages"]
+    assert await s.memory.aget(("users", server.USER, "episodes"), "e") is not None
     await gateway.aclose()

@@ -1701,3 +1701,41 @@ a.button {
     padding-right: 1rem;
   }
 }
+
+/* D39 */
+
+.notice-bar {
+  margin: 0 0 0.5rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: var(--radius-small);
+  background: var(--amber-wash);
+  color: var(--amber);
+  font-size: 0.84rem;
+}
+
+.reply .context {
+  font-style: italic;
+  color: var(--ink-soft);
+  margin: 0 0 0.8rem;
+}
+
+.listing-head {
+  font: 500 0.72rem/1.4 var(--sans);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.4rem;
+}
+
+.stale {
+  margin: 1rem 0 0;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--radius-small);
+  background: var(--amber-wash);
+  color: var(--amber);
+  font-size: 0.85rem;
+}
+
+.suite-card .pill {
+  align-self: flex-start;
+}

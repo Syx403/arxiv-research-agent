@@ -975,3 +975,63 @@ decision gets a new entry that names the one it replaces.
 - Not changed (seen while investigating, for later): "Kimi" was taken as a paper title for "find
   kimi latest paper"; two embedding calls made during app turns carry no turn id in the ledger
   (probably the memory Store's search; not yet checked).
+
+## D39 — Architecture review fixes (2026-10-10, Ewan)
+- Context: the read-only architecture and implementation review after D38 (DESIGN §14 gate)
+  found 16 issues; Ewan approved every recommended change. One finding was wrong: concurrent
+  ingests of the same paper were already safe (a per-paper advisory lock and a second look), so
+  nothing changed there.
+- Decisions:
+  1. Queues are not timed as work. A node that waits for a shared rate-limit slot (arXiv, one
+     request per 3 s; rerank, one per 6 s; shared by every running turn) has a 300 s backstop
+     instead of D34's 45/60 s; each request inside has its own timeout (arXiv 20 s, rerank and
+     embeddings 20 s). Requeries are capped at 3 per turn over all papers, one per paper first
+     (was 3 per paper, D21): 3 papers could need 9 reranks, about 58 s of queue in a 45 s node.
+     Deviation from D21 and D34.
+  2. Every turn ends with done, stopped or error. A turn that fails in any way (in the graph or
+     around it) is undone like a stopped one and its message returns to the composer with a
+     notice; at startup, a conversation left in the middle of a turn (server killed) goes back to
+     its last checkpoint between turns, or is removed if its first turn never finished. A stream
+     that breaks rejoins the turn (or reloads the conversation if it has ended); a message the
+     server refused comes back to the composer.
+  3. A turn writes outside its thread only when it commits: the library is updated in remember
+     (was in read), with what the turn read (`documents`); Stop after respond lets the turn finish
+     (it has replied), so a stopped turn leaves no library rows, facts or research records.
+  4. Titles are checked like constraints: kept only if the user wrote them (whitespace and case
+     folded). understand is told that a model, product, company or family the user wants papers
+     about ("the latest Kimi paper") is the topic, not a title. (Named papers are read whatever
+     their relevance, D29, so a title is a trust boundary.)
+  5. An evaluation round records the commit (`code`, "+changes" when the tree differs) and every
+     prompt file's version; the page compares the prompts a round's calls carried (from the
+     ledger, so older rounds too) with today's and marks a round measured on older prompts.
+  6. understand sees the latest message and 12 to 23 messages before it: the window moves 12
+     messages at a time, so the cached prefix holds between moves; replies reach it without their
+     citation-location lines. Older turns reach it as research records (recalled by meaning).
+     Profile facts are indexed by statement; past 20, understand sees the 20 closest to the
+     message, topped up with the newest (no silent cut at 100).
+  7. synthesize and repair: node timeout 90 s (was 45 s), max output 12K tokens (was 8K; one draft
+     spent all 8K on thinking).
+  8. Reservations closer to use: verify and select_evidence max output 1.5K tokens (were 3K; the
+     most seen were 860 and 384), so a long answer's fan-out does not reach the turn cap on
+     reservations alone. Deviation from D10's stage table (limits only).
+  9. Paper parsing (HTML, PDF) runs in a worker thread, so other turns keep streaming.
+  10. The Store's own embedding requests are charged to the current turn or run (a context
+      variable set around Store calls), so they count against its cap.
+  11. A stopped model call is settled at its input estimate and marked "cancelled" (was: its whole
+      reservation, kept open).
+  12. Reservations read running totals (migration 0008: `spend_totals`, kept by a trigger on
+      `llm_calls`), not a sum of the ledger.
+  13. A reply is built in parts (text, context, warning, listing with its source, answer, note);
+      the reply text is their join, and a recorded turn keeps them (migration 0009). The UI renders
+      listings from `turn.papers` and answers from `turn.answer` (paragraphs, chips) instead of
+      parsing the text; turns recorded before have no parts and are shown as text.
+  14. The sidebar no longer spins for a failed turn (a failed turn ends); a broken stream rejoins.
+  15. The API accepts only Host 127.0.0.1 or localhost (DNS rebinding).
+  16. `ara db prune` lists evaluation leftovers in the app database (threads no conversation
+      holds, simulated users' memory and library rows); `--execute` deletes them. Results, the
+      ledger and the corpus stay. Deleting a conversation still keeps the facts and records drawn
+      from it (D36); the memory page says when a fact's conversation is gone.
+- Checked: 164 unit tests, among them undo on a failure outside the graph, Stop during the
+  commit, startup repair, running totals, the requery cap, the history window, library writes at
+  commit, titles not written by the user, parts. No billable call so far; a live check follows
+  with Ewan's approval.

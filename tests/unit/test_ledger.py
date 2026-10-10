@@ -91,3 +91,39 @@ async def test_concurrent_reservations_never_overshoot_a_cap(pool: Pool) -> None
     )
     assert sum(isinstance(result, int) for result in results) == 5
     assert sum(isinstance(result, BudgetExceeded) for result in results) == 3
+
+
+async def totals(pool: Pool) -> dict[str, Decimal]:
+    async with pool.connection() as conn:
+        found = await (await conn.execute("SELECT key, usd FROM spend_totals")).fetchall()
+    return {row["key"]: row["usd"] for row in found}
+
+
+async def test_running_totals_follow_every_change_to_the_ledger(pool: Pool) -> None:
+    """Reservations read three running totals kept by a trigger, not a sum of the ledger (D39)."""
+    ledger = make_ledger(pool)
+    run = Scope(run_id="r1", turn_id="t1")
+    first, second = await reserve(ledger, "0.004", run), await reserve(ledger, "0.002")
+    assert await totals(pool) == {
+        "total": Decimal("0.006"),
+        "run:r1": Decimal("0.004"),
+        "turn:t1": Decimal("0.004"),
+        "turn:turn-1": Decimal("0.002"),
+    }
+    await ledger.settle(first, USAGE, Decimal("0.0001"), latency_ms=1, response_id="x")
+    await ledger.fail(second, "BadRequestError(400)", released=True)
+    assert await totals(pool) == {
+        "total": Decimal("0.0001"),
+        "run:r1": Decimal("0.0001"),
+        "turn:t1": Decimal("0.0001"),
+        "turn:turn-1": Decimal("0"),
+    }
+
+
+async def test_a_cancelled_call_is_charged_its_input_estimate(pool: Pool) -> None:
+    ledger = make_ledger(pool)
+    call = await reserve(ledger, "0.004")
+    await ledger.cancelled(call, Decimal("0.0003"))
+    [row] = await rows(pool)
+    assert (row["status"], row["charge_usd"]) == ("settled", Decimal("0.0003"))
+    assert row["error"].startswith("cancelled") and row["settled_at"] is not None

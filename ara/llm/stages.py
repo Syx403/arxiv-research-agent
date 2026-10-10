@@ -49,10 +49,10 @@ STAGES = {
         Stage("understand", LUNA, "low", 2_000, CONVERSATION),
         Stage("researcher", FLASH, "low", 4_000),
         Stage("screen", LUNA, "medium", 6_000, FANOUT),
-        Stage("select_evidence", LUNA, "low", 3_000, FANOUT),
-        Stage("synthesize", FLASH, "high", 8_000),
-        Stage("repair", FLASH, "high", 8_000),
-        Stage("verify", LUNA, "medium", 3_000, FANOUT),
+        Stage("select_evidence", LUNA, "low", 1_500, FANOUT),  # max seen 384 (D39)
+        Stage("synthesize", FLASH, "high", 12_000),  # one draft used all 8K thinking (D39)
+        Stage("repair", FLASH, "high", 12_000),
+        Stage("verify", LUNA, "medium", 1_500, FANOUT),  # max seen 860 (D39)
         Stage("remember", LUNA, "low", 1_500, frozenset({"static"})),
         Stage("judge_answer", LUNA, "medium", 3_000, FANOUT),
         Stage("judge_relevance", FLASH, "high", 6_000),

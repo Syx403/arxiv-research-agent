@@ -66,7 +66,7 @@ def card(n: int, relevance: int = 3) -> PaperCard:
 
 def test_understand_keeps_only_literal_constraints_and_valid_references() -> None:
     messages: Any = [
-        HumanMessage("Read 2305.18323v1, hosted APIs only, latency matters, before 2024")
+        HumanMessage("Read 2305.18323v1 (ReWOO), hosted APIs only, latency matters, before 2024")
     ]
     raw = request(
         constraints=[
@@ -77,7 +77,7 @@ def test_understand_keeps_only_literal_constraints_and_valid_references() -> Non
             Priority(quote="latency matters", meaning="low latency"),
             Priority(quote="cheap to run", meaning="invented by the model"),
         ],
-        titles=[" ReWOO ", "ReWOO", ""],
+        titles=[" ReWOO ", "ReWOO", "", "Toolformer"],
         paper_ids=["2305.18323v1", "ReWOO"],
         listed=[1, 4],
         count=0,
@@ -86,7 +86,7 @@ def test_understand_keeps_only_literal_constraints_and_valid_references() -> Non
     checked = app.checked(raw, messages, [card(1)])
     assert [c.meaning for c in checked.constraints] == ["hosted models only"]
     assert [p.meaning for p in checked.priorities] == ["low latency"]
-    assert checked.titles == ["ReWOO"]
+    assert checked.titles == ["ReWOO"], "a title the user never wrote is dropped (D39)"
     assert checked.paper_ids == ["2305.18323v1"]
     assert checked.listed == [1]
     assert (checked.count, checked.published_before) == (None, None)
@@ -461,3 +461,45 @@ def test_history_is_kept_only_for_a_question_about_our_history() -> None:
     )
     blank = request(intent="library", history="  ")
     assert app.checked(blank, messages, []).history is None
+
+
+def test_understand_sees_recent_history_a_block_at_a_time() -> None:
+    """The window moves HISTORY messages at a time, so the cached prefix holds between moves;
+    a reply reaches it without the lines that locate its cited sentences (D39)."""
+    messages: Any = [HumanMessage(f"m{n}") for n in range(30)]
+    assert app.recent(messages[:5]) == messages[:5]
+    assert app.recent(messages[:24]) == messages[:24]
+    assert app.recent(messages[:25]) == messages[12:25]
+    assert app.recent(messages[:30]) == messages[12:30]
+    reply = AIMessage("BLEU\n\nIt is used. [E1]\n[E1] Results (arXiv 2401.00001v1)")
+    assert app._block(reply).text == "BLEU\n\nIt is used. [E1]"
+
+
+async def test_the_papers_read_join_the_library_when_the_turn_commits(pool: Pool) -> None:
+    """Reading records nothing; remember, the turn's last step, adds the papers to the library,
+    so a turn stopped before it leaves the library as it was (D39)."""
+    gateway, first, _ = await setup(pool)
+    state = base_state(request(intent="read"), documents=[first])
+    async with ArxivClient() as arxiv:
+        ctx = context(pool, arxiv)
+        async with pool.connection() as conn:
+            assert await library.papers(conn, ctx.user_id) == []
+        await app.remember(state, Runtime(context=ctx))
+        async with pool.connection() as conn:
+            assert [p.arxiv_id for p in await library.papers(conn, ctx.user_id)] == ["2401.00001"]
+        await ctx.gateway.aclose()
+    await gateway.aclose()
+
+
+def test_a_reply_is_built_in_parts_the_ui_shows_from_the_turn_data() -> None:
+    """The text the conversation keeps is the parts joined; the UI reads the kinds (D39)."""
+    state = base_state(
+        request(intent="discover_read", titles=["LLMCompiler"]),
+        papers=[card(1, relevance=3)],
+        problems=["screening a batch failed: HTTP 503"],
+    )
+    parts = app.reply_parts(state)
+    assert [p["kind"] for p in parts] == ["text", "listing", "note"]
+    assert parts[1]["source"] == "arxiv" and parts[1]["text"].startswith("1. Paper 1")
+    assert app.reply(state) == "\n\n".join(p["text"] for p in parts)
+    assert app.respond(state)["parts"] == parts

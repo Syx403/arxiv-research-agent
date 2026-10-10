@@ -27,8 +27,13 @@ from langgraph.types import RetryPolicy
 from ara.llm.gateway import InvalidOutput
 
 LLM_TIMEOUT_S = 45.0  # one model call per node attempt (DESIGN §4.4)
-INGEST_TIMEOUT_S = 60.0  # fetch, parse and embed one paper
-ARXIV_TIMEOUT_S = 60.0  # a researcher turn's tool calls, 3 s apart, or a title lookup
+# Writing an answer thinks longest (35.6 s seen, one draft at its 8K-token cap), and D37 asks for
+# longer answers (D39).
+SYNTHESIS_TIMEOUT_S = 90.0
+# A node that waits for a shared rate-limit slot (arXiv one request per 3 s, rerank one per 6 s,
+# shared by every running turn) is not timed by its queue: each request it sends has its own
+# timeout, and the node only this backstop (D39).
+SLOT_BACKSTOP_S = 300.0
 ATTEMPTS = 3  # first try included
 EMPTY_ATTEMPTS = 2  # an empty model answer is asked again once
 

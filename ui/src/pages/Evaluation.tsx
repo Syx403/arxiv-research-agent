@@ -59,15 +59,29 @@ export function EvaluationPage() {
             key={s.id}
             suite={s}
             summary={latest[s.id]}
+            older={stale(latest[s.id], catalog.prompts)}
             rounds={runs.filter((r) => r.suite === s.id).length}
             chosen={s.id === suite}
             choose={() => setSuite(s.id)}
           />
         ))}
       </div>
-      {chosen && <SuiteDetail key={chosen.id} suite={chosen} runs={runs.filter((r) => r.suite === chosen.id)} />}
+      {chosen && catalog && (
+        <SuiteDetail
+          key={chosen.id}
+          suite={chosen}
+          runs={runs.filter((r) => r.suite === chosen.id)}
+          current={catalog.prompts}
+        />
+      )}
     </>
   );
+}
+
+/** The prompt files a round used that have changed since (D39): its numbers describe older code. */
+function stale(summary: RunSummary | undefined, current: Record<string, string>): string[] {
+  const used = summary?.prompts ?? [];
+  return [...new Set(used.filter((v) => current[v.split("@")[0]] !== v).map((v) => v.split("@")[0]))];
 }
 
 function headline(suite: SuiteInfo, summary: RunSummary | undefined, split: string): Metric | undefined {
@@ -77,12 +91,14 @@ function headline(suite: SuiteInfo, summary: RunSummary | undefined, split: stri
 function SuiteCard({
   suite,
   summary,
+  older,
   rounds,
   chosen,
   choose,
 }: {
   suite: SuiteInfo;
   summary: RunSummary | undefined;
+  older: string[];
   rounds: number;
   chosen: boolean;
   choose: () => void;
@@ -108,6 +124,11 @@ function SuiteCard({
           <span>{rounds ? "no complete round" : "not run yet"}</span>
         )}
       </span>
+      {older.length > 0 && (
+        <span className="pill amber" title={`changed since: ${older.join(", ")}`}>
+          measured on older prompts
+        </span>
+      )}
       <span className="suite-foot">
         {suite.items.dev} dev · {suite.items.test} held-out · {rounds} {rounds === 1 ? "round" : "rounds"}
       </span>
@@ -115,7 +136,7 @@ function SuiteCard({
   );
 }
 
-function SuiteDetail({ suite, runs }: { suite: SuiteInfo; runs: Run[] }) {
+function SuiteDetail({ suite, runs, current }: { suite: SuiteInfo; runs: Run[]; current: Record<string, string> }) {
   const [chosen, setChosen] = useState<string | null>(runs.find((r) => r.status === "complete")?.id ?? runs[0]?.id ?? null);
   const [summary, setSummary] = useState<RunSummary | null>(null);
 
@@ -161,17 +182,24 @@ function SuiteDetail({ suite, runs }: { suite: SuiteInfo; runs: Run[] }) {
         </div>
       )}
       {chosen && !summary && <p className="notice">Loading the round…</p>}
-      {summary && <RoundView suite={suite} summary={summary} />}
+      {summary && <RoundView suite={suite} summary={summary} older={stale(summary, current)} />}
     </section>
   );
 }
 
-function RoundView({ suite, summary }: { suite: SuiteInfo; summary: RunSummary }) {
+function RoundView({ suite, summary, older }: { suite: SuiteInfo; summary: RunSummary; older: string[] }) {
   const arms = [...new Set(summary.metrics.map((m) => m.arm))];
   return (
     <>
+      {older.length > 0 && (
+        <p className="stale">
+          Measured on older prompts ({older.join(", ")} changed since): these numbers describe the
+          system as it was, not as it is.
+        </p>
+      )}
       <p className="round-meta">
         <span className="mono">{summary.run.id}</span>
+        <span className="mono">code {summary.run.config.code ?? "not recorded"}</span>
         <span>{summary.items.length} results</span>
         <span>{summary.items.filter((i) => i.error).length} errors</span>
         {summary.run.langsmith_experiment && <span className="mono">LangSmith: {summary.run.langsmith_experiment}</span>}

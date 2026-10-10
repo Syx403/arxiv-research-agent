@@ -7,6 +7,7 @@ import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 from datetime import date
+from functools import partial
 from types import TracebackType
 
 import httpx
@@ -131,14 +132,18 @@ class ArxivClient:
         meta = await self.metadata(arxiv_id)
         version = int(parsed[2]) if parsed[2] else meta.version
         html = await self.get(f"https://arxiv.org/html/{arxiv_id}v{version}")
+        # parsing takes seconds of CPU: off the event loop, so other turns keep streaming (D39)
         if html.status_code != 404:
             html.raise_for_status()
-            parsed_paper = arxiv_html_paper(html.text, arxiv_id, version)
+            parsed_paper = await asyncio.to_thread(arxiv_html_paper, html.text, arxiv_id, version)
         else:
             pdf = await self.get(f"https://arxiv.org/pdf/{arxiv_id}v{version}")
             pdf.raise_for_status()
-            parsed_paper = arxiv_pdf_paper(
-                pdf.content, arxiv_id, version, title=meta.title, abstract=meta.abstract
+            parsed_paper = await asyncio.to_thread(
+                partial(arxiv_pdf_paper, title=meta.title, abstract=meta.abstract),
+                pdf.content,
+                arxiv_id,
+                version,
             )
         return replace(parsed_paper, published=meta.published)
 

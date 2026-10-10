@@ -48,7 +48,7 @@ from langgraph.types import Command, interrupt
 from ara.arxiv.client import ARXIV_ID
 from ara.db.pool import Connection, Pool
 from ara.graph import answer, discover, read
-from ara.graph.reliability import ARXIV_TIMEOUT_S, LLM_TIMEOUT_S, RETRY, problem
+from ara.graph.reliability import LLM_TIMEOUT_S, RETRY, SLOT_BACKSTOP_S, problem
 from ara.graph.state import (
     MAX_LISTED,
     MAX_READ,
@@ -77,6 +77,8 @@ LIBRARY_SCREENED = 8  # library papers a library question screens: one screen ba
 LIBRARY_LOOKED_UP = 5  # library papers discovery adds to its candidates (D30)
 PASSAGES_SHOWN = 2  # full-text passages per library paper in its screen (D30)
 OPENING = 300  # characters of an abstract quoted when a named paper does not fit the question
+HISTORY = 12  # messages understand sees before the latest, a block at a time (D39)
+SOURCE_LINE = re.compile(r"^\[E\d+\] .*$", re.MULTILINE)  # "[E1] Section (arXiv …)" in a reply
 READ, ANSWER, DISCOVER = read.build(), answer.build(), discover.build()
 OTHER = (
     "I find arXiv papers and answer questions from their full text. Ask me for papers on a topic,"
@@ -115,6 +117,9 @@ CHECKPOINTED = [
 ]
 
 type Status = Literal["running", "needs_input", "complete", "partial", "failed"]
+# One piece of a reply: "text", "context" (how the answer was found, D31), "warning", "listing"
+# (with "source": "arxiv" or "library"), "answer", or "note" (what failed).
+type Part = dict[str, str]
 
 
 class ConversationState(TypedDict):
@@ -134,9 +139,11 @@ class ConversationState(TypedDict):
     papers: list[PaperCard]  # listed by discovery
     selected: list[str]  # paper references to read
     read: list[PaperCard]  # the papers read, in the order selected
+    documents: list[int]  # what was read, added to the library when the turn commits (D39)
     evidence: list[Evidence]
     missing: list[str]
     answer: Answer | None
+    parts: list[Part]  # the reply in parts, for the UI (D39)
     status: Status
     stop_reason: str
 
@@ -158,9 +165,11 @@ def fresh_turn() -> dict[str, object]:
         "papers": [],
         "selected": [],
         "read": [],
+        "documents": [],
         "evidence": [],
         "missing": [],
         "answer": None,
+        "parts": [],
         "status": "running",
         "stop_reason": "",
     }
@@ -169,15 +178,17 @@ def fresh_turn() -> dict[str, object]:
 async def load_context(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
     """Start a turn: fresh turn-scoped fields, and the user's memory from the Store, which is the
     profile and the earlier research closest to the new message (D27)."""
-    user, memory = runtime.context.user_id, runtime.store
+    ctx, memory = runtime.context, runtime.store
     if memory is None:  # a graph compiled without a Store (unit tests) has no memory
         return {**fresh_turn(), "turn_start": len(state["messages"]) - 1}
-    return {
-        **fresh_turn(),
-        "turn_start": len(state["messages"]) - 1,
-        "profile": await store.profile(memory, user),
-        "episodes": await store.recall(memory, user, state["messages"][-1].text),
-    }
+    latest = state["messages"][-1].text
+    with store.charged_to(ctx.scope):
+        return {
+            **fresh_turn(),
+            "turn_start": len(state["messages"]) - 1,
+            "profile": await store.relevant(memory, ctx.user_id, latest),
+            "episodes": await store.recall(memory, ctx.user_id, latest),
+        }
 
 
 def understand_prompt(
@@ -192,7 +203,7 @@ def understand_prompt(
     the item. Each turn extends the previous turn's cached prefix, which ends just before the
     previous turn's item (DESIGN §6.3; the date is never placed before the item, D24); the
     profile changes rarely, and only then breaks the prefix (D27)."""
-    blocks = tuple(_block(m) for m in messages)
+    blocks = tuple(_block(m) for m in recent(messages))
     facts = [{"quote": f.quote, "statement": f.statement} for f in profile]
     known = (data("About the user", facts),)
     listing = [
@@ -209,8 +220,20 @@ def understand_prompt(
     )
 
 
+def recent(messages: list[AnyMessage]) -> list[AnyMessage]:
+    """The latest message and the HISTORY to 2 * HISTORY - 1 before it (D39). The window moves a
+    block of HISTORY messages at a time, so the cached prefix holds between moves; older turns
+    reach understand as earlier research, which load_context recalls by meaning."""
+    start = max(0, (len(messages) - 1) // HISTORY * HISTORY - HISTORY)
+    return messages[start:]
+
+
 def _block(message: AnyMessage) -> Block:
-    return Block("user" if isinstance(message, HumanMessage) else "assistant", message.text)
+    """A message as understand sees it; a reply without the lines that say where each cited
+    sentence is (the text the citations point at is not needed to read the request)."""
+    if isinstance(message, HumanMessage):
+        return Block("user", message.text)
+    return Block("assistant", SOURCE_LINE.sub("", message.text).strip())
 
 
 async def understand(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
@@ -234,10 +257,12 @@ def checked(
     (a non-empty quote), in this conversation or in a remembered fact (v1 rule, D27); ids must be
     arXiv ids written in the conversation or in the user's earlier research (for a library
     question, the conversation only: D32), not recalled by the model (v1 rule, DESIGN §13);
+    titles must be written by the user (D39);
     positions must point at a paper shown; dates must parse; titles are kept once each. A request
     to read that names papers (ids, numbers shown or titles) reads exactly those (D28, D29); one
     that names none becomes find-then-read."""
     human = [m.text for m in messages if isinstance(m, HumanMessage)]
+    typed = plain(" ".join(human))
     said = plain(" ".join([*human, *(f.quote for f in profile)]))
     said_here = " ".join(m.text for m in messages)
     # a question about our history names a paper only by an id the user wrote; ids from research
@@ -247,7 +272,8 @@ def checked(
         i for i in request.paper_ids if (m := ARXIV_ID.match(i)) and _written(m[1], written)
     ]
     listed = [n for n in request.listed if 1 <= n <= len(shown)]
-    titles = list(dict.fromkeys(t.strip() for t in request.titles if t.strip()))
+    # a title is read whatever its relevance (D29), so it must be the user's words, as written
+    titles = [t for t in dict.fromkeys(t.strip() for t in request.titles) if quoted(t, typed)]
     named, intent = bool(paper_ids or listed or titles), request.intent
     if intent == "read" and not named:
         intent = "discover_read"
@@ -452,7 +478,6 @@ async def run_read(state: ConversationState, runtime: Runtime[Context]) -> dict[
     found = await READ.ainvoke({"question": question, "papers": papers}, context=ctx)
     async with ctx.pool.connection() as conn:
         cards = await read_cards(conn, found["documents"])
-        await library.record_read(conn, ctx.user_id, found["documents"])
     screened = {p.arxiv_id: p for p in state["papers"]}
     cards = [screened.get(c.arxiv_id, c) for c in cards]
     order = [_bare(r) for r in papers]
@@ -461,6 +486,7 @@ async def run_read(state: ConversationState, runtime: Runtime[Context]) -> dict[
         "evidence": found["evidence"],
         "missing": found["missing"],
         "read": cards,
+        "documents": [*state["documents"], *found["documents"]],
         "problems": [*state["problems"], *found["problems"]],
     }
 
@@ -561,10 +587,15 @@ def search_instead(state: ConversationState) -> dict[str, object]:
 
 
 async def remember(state: ConversationState, runtime: Runtime[Context]) -> dict[str, object]:
-    """Keep what the user said about themselves, with its source turn (one Luna call, only when
-    the turn is about memory or the user stated constraints or priorities in it, not when they
-    came from the profile), then record a research turn as an episode (by code)."""
+    """The turn's commit (D39): what nothing earlier writes outside the thread, so a turn stopped
+    before it leaves no trace. The papers read join the library; what the user said about
+    themselves is kept, with its source turn (one Luna call, only when the turn is about memory
+    or the user stated constraints or priorities in it, not when they came from the profile); a
+    research turn is recorded as an episode (by code)."""
     ctx, memory = runtime.context, runtime.store
+    if state["documents"]:
+        async with ctx.pool.connection() as conn:
+            await library.record_read(conn, ctx.user_id, state["documents"])
     if memory is None:
         return {}
     request = _request(state)
@@ -580,12 +611,14 @@ async def remember(state: ConversationState, runtime: Runtime[Context]) -> dict[
             "turn": state["turn_start"],
             "day": ctx.today.isoformat(),
         }
-        for fact in update.facts:
-            await store.remember(memory, ctx.user_id, Remembered(**fact.model_dump(), **source))
+        with store.charged_to(ctx.scope):
+            for fact in update.facts:
+                await store.remember(memory, ctx.user_id, Remembered(**fact.model_dump(), **source))
         for key in update.forget:
             await store.forget(memory, ctx.user_id, key)
     if request.intent in RESEARCH and (record := episode(state, ctx.today)) is not None:
-        await store.record(memory, ctx.user_id, uuid4().hex, record)
+        with store.charged_to(ctx.scope):
+            await store.record(memory, ctx.user_id, uuid4().hex, record)
     return {"memory": update}
 
 
@@ -615,55 +648,84 @@ def respond(state: ConversationState) -> dict[str, object]:
     """The papers a follow-up can point at: those the reply lists, else those just read (D24)."""
     shown = state["papers"] or state["read"] or state.get("shown", [])
     status = "partial" if state["problems"] else "complete"
-    return {"messages": [AIMessage(reply(state))], "shown": shown, "status": status}
+    parts = reply_parts(state)
+    return {
+        "messages": [AIMessage(render(parts))],
+        "parts": parts,
+        "shown": shown,
+        "status": status,
+    }
 
 
 def reply(state: ConversationState) -> str:
-    """The reply, with a note on any part that failed (M5a), never an error. A failure that left
-    nothing to show says so first, rather than a note about a reply that is not there (D38)."""
-    body = _body(state)
+    """The reply as text: what the conversation keeps and understand reads."""
+    return render(reply_parts(state))
+
+
+def render(parts: list[Part]) -> str:
+    return "\n\n".join(p["text"] for p in parts)
+
+
+def reply_parts(state: ConversationState) -> list[Part]:
+    """The reply in parts, which the UI shows from the turn's own data rather than by parsing
+    the text (D39), with a note on any part that failed (M5a), never an error. A failure that
+    left nothing to show says so first, rather than a note about a reply that is not there
+    (D38)."""
+    parts = _parts(state)
     if problems := list(dict.fromkeys(state["problems"])):
         note = f"Note: {'; '.join(problems)}."
-        if body:
-            return f"{body}\n\n{note} The rest of this reply is unaffected."
-        return f"{UNFINISHED}\n\n{note}"
-    return body
+        if parts:
+            return [*parts, _part("note", f"{note} The rest of this reply is unaffected.")]
+        return [_part("text", UNFINISHED), _part("note", note)]
+    return parts
 
 
-def _body(state: ConversationState) -> str:
+def _part(kind: str, text: str, **more: str) -> Part:
+    return {"kind": kind, "text": text, **more}
+
+
+def _parts(state: ConversationState) -> list[Part]:
     request = _request(state)
     if request.intent == "other":
-        return OTHER
+        return [_part("text", OTHER)]
     if request.intent == "memory":
-        return memory_reply(state)
+        said = memory_reply(state)
+        return [_part("text", said)] if said else []
     if _by_meaning(state) and not (state["papers"] or state["earlier"] or state["problems"]):
-        return NOT_DISCUSSED  # no shared history on this: offer a search instead (D27, D30)
-    parts = list(state["notes"])
+        return [_part("text", NOT_DISCUSSED)]  # no shared history: offer a search (D27, D30)
+    parts = [_part("text", n) for n in state["notes"]]
     if state["earlier"]:  # the model's own words when it wrote an answer, else the facts (D31)
         written = state["answer"].context if state["answer"] else ""
-        parts.append(written or searched_instead_note(state["earlier"], state["gaps"]))
+        parts.append(
+            _part("context", written or searched_instead_note(state["earlier"], state["gaps"]))
+        )
     parts += [
-        _identity(p) for p in state["read"] if p.named and not discover.titled(p.named, p.title)
+        _part("text", _identity(p))
+        for p in state["read"]
+        if p.named and not discover.titled(p.named, p.title)
     ]
-    parts += [_conflict(p) for p in state["read"] if p.violated]
+    parts += [_part("warning", _conflict(p)) for p in state["read"] if p.violated]
     found = {*state["identified"], *(p.named for p in state["papers"])}
     if missing := [t for t in request.titles if t not in found]:
         unchecked = any("arXiv" in p for p in state["problems"])  # not found, or not searched
         lead = "I could not search arXiv for" if unchecked else "I could not find on arXiv"
-        parts.append(f"{lead}: {'; '.join(missing)}.")
+        parts.append(_part("text", f"{lead}: {'; '.join(missing)}."))
     if state["papers"]:
         listing = "\n".join(_listing(n, p) for n, p in enumerate(state["papers"], 1))
-        parts.append(("From your library:\n" if _from_library(state) else "") + listing)
+        source = "library" if _from_library(state) else "arxiv"
+        header = "From your library:\n" if source == "library" else ""
+        parts.append(_part("listing", header + listing, source=source))
     elif (request.intent in ("discover", "discover_read") or state["earlier"]) and not state[
         "problems"
     ]:
-        parts.append("I found no arXiv papers that match this request.")
+        parts.append(_part("text", "I found no arXiv papers that match this request."))
     if (delivered := state["answer"]) is not None:
-        parts.append("\n".join([delivered.render(), *map(_citation, delivered.evidence)]))
+        text = "\n".join([delivered.render(), *map(_citation, delivered.evidence)])
+        parts.append(_part("answer", text))
     if names(request):
         selected = {e.paper_id for e in state["evidence"]}
-        parts += [_mismatch(p) for p in state["read"] if p.reference not in selected]
-    return "\n\n".join(parts)
+        parts += [_part("text", _mismatch(p)) for p in state["read"] if p.reference not in selected]
+    return parts
 
 
 def searched_instead_note(earlier: list[PaperCard], gaps: list[str]) -> str:
@@ -883,7 +945,7 @@ def build(
         "resolve",
         resolve,
         retry_policy=RETRY,
-        timeout=ARXIV_TIMEOUT_S,
+        timeout=SLOT_BACKSTOP_S,
         error_handler=give_up("finding the named papers", "respond", selected=[]),
     )
     graph.add_node("read", run_read, error_handler=give_up("reading the papers", "respond"))

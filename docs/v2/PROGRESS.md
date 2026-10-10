@@ -14,7 +14,7 @@ Update this file at the end of every working session: what was done, what was sp
 | M3 Understand + discover | done (2026-10-08), reviewed; S3/S4 first rounds run (D25) | top-level graph with Postgres checkpointer, understand + clarify interrupt, researcher tool loop, prerank, screen, choose_papers; live: a clarify turn and a discover → read turn passed (D22); review fixes (D23); priorities, titles, recency, today, English S4 of 62 items (D24); S4 labels await Ewan's review |
 | M4 Memory | done (2026-10-09); S6 reviewed and run; review fixes (D29) and library redesign (D30) built, awaiting the S6 round | profile + research records in the Store, library + HNSW, `memory` intent; live: 2 S6 scenarios (D27); named papers read directly (D29); arXiv first with a library pre-check, no paper-choice question, per-paper evidence with one rerank (D30) |
 | M5 Reliability + UI | done (2026-10-09): M5a (D34) S7 graceful 6/6, injection 0/3, S6 19/19 without an error; M5b (D35) `make start` → http://127.0.0.1:8000, four pages, a demo turn checked live | |
-| Architecture review (Ewan) | — | gate before any large-scale LLM testing |
+| Architecture review (Ewan) | in progress: review done, 16 fixes approved and built (D39); live check and Ewan's pass pending | gate before any large-scale LLM testing |
 | E1–E6 evaluation rounds | — | ≤ US$1 each |
 
 ## Spend (US$10 cap)
@@ -341,3 +341,11 @@ Update this file at the end of every working session: what was done, what was sp
   a paper drawer with the conversations that read it) and evaluation page (protocol, a card per
   suite, metrics explained, items). Live: 42 calls, US$0.0114. 152 unit tests. Next: the
   architecture review (DESIGN §14 gate).
+- 2026-10-10 — Architecture review (read-only) and D39: Ewan approved all 16 fixes (one finding,
+  an ingest race, was wrong and dropped). Shared rate-limit queues no longer time out nodes;
+  every turn ends in done, stopped or error, failures are undone, startup repairs half-done turns;
+  library and memory are written only when a turn commits; titles must be the user's words;
+  evaluation rounds record code and prompt versions and the page marks stale rounds; understand
+  sees a moving window of history and the most relevant facts; replies are recorded in parts;
+  running spend totals; `ara db prune`. 164 unit tests; no billable calls yet. Next: a live check
+  (needs approval), then the E rounds.

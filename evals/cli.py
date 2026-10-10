@@ -1,5 +1,5 @@
 """`ara eval prepare|plan|run|report|hnsw` (DESIGN §11.5; `run` is a dry run without --execute)
-and `ara db backfill` (paper dates, D30)."""
+`ara db backfill` (paper dates, D30) and `ara db prune` (evaluation leftovers, D39)."""
 
 import argparse
 import asyncio
@@ -7,6 +7,7 @@ import json
 from decimal import Decimal
 
 from ara.arxiv.client import ArxivClient
+from ara.db import prune
 from ara.db.migrate import migrate
 from ara.db.pool import make_pool
 from ara.rag.ingest import backfill_published
@@ -47,6 +48,10 @@ def main() -> None:
         dest="command", required=True
     )
     database.add_parser("backfill", help="date papers stored before migration 0005 (free)")
+    prune_parser = database.add_parser(
+        "prune", help="list evaluation leftovers in the app database; --execute deletes them"
+    )
+    prune_parser.add_argument("--execute", action="store_true")
     commands.add_parser("serve", help="the local web app on http://127.0.0.1:8000")
     args = parser.parse_args()
     if args.area == "serve":
@@ -94,6 +99,10 @@ def main() -> None:
             print(json.dumps(asyncio.run(hnsw.measure()), indent=2))
         case "backfill":
             print(f"dated {asyncio.run(_backfill())} paper rows")
+        case "prune":
+            counts = asyncio.run(_prune(execute=args.execute))
+            verb = "deleted" if args.execute else "would delete (add --execute)"
+            print(verb + ": " + ", ".join(f"{n} {what}" for what, n in counts.items()))
 
 
 async def _backfill() -> int:
@@ -101,6 +110,13 @@ async def _backfill() -> int:
     migrate(settings.database_url)
     async with make_pool(settings.database_url) as pool, ArxivClient() as arxiv:
         return await backfill_published(pool, arxiv)
+
+
+async def _prune(*, execute: bool) -> dict[str, int]:
+    settings = get_settings()
+    migrate(settings.database_url)
+    async with make_pool(settings.database_url) as pool, pool.connection() as conn:
+        return await (prune.prune(conn) if execute else prune.leftovers(conn))
 
 
 async def _report(run_id: str) -> str:

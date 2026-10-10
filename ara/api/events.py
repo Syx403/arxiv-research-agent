@@ -61,8 +61,11 @@ def outcome(values: dict[str, Any]) -> dict[str, Any]:
     verifier rejected, and anything that failed."""
     request, delivered = values.get("request"), values.get("answer")
     replies = [m for m in values.get("messages", []) if isinstance(m, AIMessage)]
+    said = replies[-1].text if replies else ""
     return {
-        "reply": replies[-1].text if replies else "",
+        "reply": said,
+        # a turn that ended before respond (understand failed) has its text only
+        "parts": values.get("parts") or ([{"kind": "text", "text": said}] if said else []),
         "status": values.get("status", "complete"),
         "intent": request.intent if request else None,
         "papers": [p.model_dump() for p in values.get("papers", [])],

@@ -35,6 +35,13 @@ class Instructions:
         return cls(name, (directory / f"{name}.md").read_text(encoding="utf-8"))
 
 
+def versions(directory: Path = PROMPTS) -> dict[str, str]:
+    """Every prompt file's current version, by name: what a round or a call can be compared with."""
+    return {
+        p.stem: Instructions.load(p.stem, directory).version for p in sorted(directory.glob("*.md"))
+    }
+
+
 @dataclass(frozen=True)
 class ToolCall:
     id: str

@@ -3,6 +3,7 @@ LangSmith `aevaluate`, under a run cap in the ledger, and stores every result in
 
 import json
 import os
+import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -24,12 +25,13 @@ from ara.graph.state import Context, PaperCard, ResearchRequest, Verdict
 from ara.llm.gateway import Gateway, InvalidOutput
 from ara.llm.ledger import Ledger, Scope
 from ara.llm.pricing import EMBEDDING, MILLION
+from ara.llm.prompt import versions as prompt_versions
 from ara.memory import store
 from ara.rag.chunking import chunk
 from ara.rag.embed import cache_key
 from ara.rag.ingest import PIPELINE_VERSION, ingest
 from ara.rag.sources import ParsedPaper
-from ara.settings import Settings, configure_tracing, get_settings
+from ara.settings import ROOT, Settings, configure_tracing, get_settings
 from ara.tokens import count_tokens
 from evals.graders import discovery
 from evals.graders.retrieval import score
@@ -222,11 +224,28 @@ async def _store(
 
 
 async def _start(pool: Pool, run_id: str, config: dict[str, Any]) -> None:
+    """The run, with the code and prompts it measures (D39), so a result is never read as the
+    current system's after either has changed."""
+    recorded = {**config, "code": code_version(), "prompts": prompt_versions()}
     async with pool.connection() as conn:
         await conn.execute(
             "INSERT INTO eval_runs (id, suite, config) VALUES (%s, %s, %s)",
-            (run_id, config["suite"], json.dumps(config)),
+            (run_id, config["suite"], json.dumps(recorded)),
         )
+
+
+def code_version() -> str:
+    """The commit checked out, marked "+changes" when the working tree differs from it."""
+    head = subprocess.run(
+        ["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT, capture_output=True, text=True
+    ).stdout.strip()
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return f"{head or 'unknown'}{'+changes' if dirty else ''}"
 
 
 async def _finish(pool: Pool, run_id: str, status: str) -> None:

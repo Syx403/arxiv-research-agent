@@ -26,11 +26,11 @@ class Scope:
 
 
 SPENT = """
-SELECT coalesce(sum(charge_usd), 0) AS total,
-       coalesce(sum(charge_usd) FILTER (WHERE run_id = %(run_id)s), 0) AS run,
-       coalesce(sum(charge_usd) FILTER (WHERE turn_id = %(turn_id)s), 0) AS turn
-FROM llm_calls
-"""
+SELECT coalesce(max(usd) FILTER (WHERE key = 'total'), 0) AS total,
+       coalesce(max(usd) FILTER (WHERE key = 'run:' || %(run_id)s), 0) AS run,
+       coalesce(max(usd) FILTER (WHERE key = 'turn:' || %(turn_id)s), 0) AS turn
+FROM spend_totals WHERE key IN ('total', 'run:' || %(run_id)s, 'turn:' || %(turn_id)s)
+"""  # running totals kept by a trigger (migration 0008, D39)
 RESERVE = """
 INSERT INTO llm_calls (stage, model, prompt_version, run_id, turn_id, reserved_usd)
 VALUES (%(stage)s, %(model)s, %(prompt_version)s, %(run_id)s, %(turn_id)s, %(usd)s)
@@ -51,6 +51,13 @@ UPDATE llm_calls
 SET error = %(error)s,
     status = CASE WHEN %(released)s THEN 'released' ELSE status END,
     settled_at = CASE WHEN %(released)s THEN now() ELSE settled_at END
+WHERE id = %(id)s
+"""
+
+CANCELLED = """
+UPDATE llm_calls
+SET status = 'settled', settled_at = now(), cost_usd = %(usd)s,
+    error = 'cancelled: charged the estimate of its input'
 WHERE id = %(id)s
 """
 
@@ -111,6 +118,11 @@ class Ledger:
         billed; otherwise the outcome is unknown and the row stays an open, charged reservation."""
         async with self.pool.connection() as conn:
             await conn.execute(FAIL, {"error": error, "released": released, "id": call_id})
+
+    async def cancelled(self, call_id: int, usd: Decimal) -> None:
+        """A request stopped before its answer: settled at `usd`, an estimate, marked as such."""
+        async with self.pool.connection() as conn:
+            await conn.execute(CANCELLED, {"usd": usd, "id": call_id})
 
     async def calls(self, run_id: str) -> list[DictRow]:
         async with self.pool.connection() as conn:

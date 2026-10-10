@@ -261,3 +261,11 @@ def test_a_context_line_is_split_off_and_kept_out_of_verification() -> None:
     assert context == "We had read ReAct, which says nothing on tokens."
     assert [c.text for c in answer.parse(body, {"E1"})[0]] == ["5x fewer"]
     assert answer.opening("Answer: yes [E1]") == ("", "Answer: yes [E1]")
+
+
+def test_requeries_are_capped_per_turn_and_shared_out_over_the_papers() -> None:
+    """Three papers missing three aspects each: three requeries in all, one per paper first,
+    since each is a rerank call and rerank calls queue one per 6 s (D39)."""
+    first = [found(0, d, "q", [], ["a", "b", "c"]) for d in (7, 8, 9)]
+    assert read.requeries(first) == [(7, "a"), (8, "a"), (9, "a")]
+    assert read.requeries([found(0, 7, "q", [], ["a", "a", "b"])]) == [(7, "a"), (7, "b")]

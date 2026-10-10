@@ -17,6 +17,7 @@ class Run:
     kind: str  # "messages" or "resume"
     events: list[tuple[str, Any]] = field(default_factory=list)
     finished: bool = False
+    committing: bool = False  # the reply is written; Stop no longer undoes the turn (D39)
     task: asyncio.Task[None] | None = None
     changed: asyncio.Condition = field(default_factory=asyncio.Condition)
 

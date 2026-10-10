@@ -16,7 +16,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import Command, Send
 
-from ara.graph.reliability import LLM_TIMEOUT_S, RETRY, degrade, problem
+from ara.graph.reliability import LLM_TIMEOUT_S, RETRY, SYNTHESIS_TIMEOUT_S, degrade, problem
 from ara.graph.state import ABSTAIN, Answer, Claim, Context, Evidence, Verdict
 from ara.llm.gateway import worth_prewarming
 from ara.llm.prompt import Block, Instructions, Prompt
@@ -278,7 +278,7 @@ def build() -> CompiledStateGraph[AnswerState, Context, AnswerInput, AnswerOutpu
         "synthesize",
         synthesize,
         retry_policy=RETRY,
-        timeout=LLM_TIMEOUT_S,
+        timeout=SYNTHESIS_TIMEOUT_S,
         error_handler=synthesis_failed,
     )
     graph.add_node(
@@ -293,7 +293,11 @@ def build() -> CompiledStateGraph[AnswerState, Context, AnswerInput, AnswerOutpu
     )
     graph.add_node("assemble", assemble)
     graph.add_node(
-        "repair", repair, retry_policy=RETRY, timeout=LLM_TIMEOUT_S, error_handler=repair_failed
+        "repair",
+        repair,
+        retry_policy=RETRY,
+        timeout=SYNTHESIS_TIMEOUT_S,
+        error_handler=repair_failed,
     )
     graph.add_node("finalize", finalize)
     graph.add_conditional_edges(START, start, ["synthesize", "finalize"])

@@ -40,6 +40,9 @@ RERANK_INTERVAL_S = 6.0  # Cohere trial keys allow 10 rerank calls per minute
 # slowest legitimate call (8K thinking tokens on DeepSeek); callers outside the graph, such as the
 # eval runner, rely on it, and graph nodes add their own, tighter timeouts in M5 (§4.4).
 REQUEST_TIMEOUT_S = 120.0
+# Embedding and rerank requests are short; their own timeout bounds a node that queues for them,
+# which is timed only by a backstop (D39).
+QUICK_TIMEOUT_S = 20.0
 
 
 class InvalidOutput(Exception):
@@ -73,7 +76,7 @@ class Gateway:
         self.cohere = httpx.AsyncClient(
             base_url=COHERE_URL,
             headers={"Authorization": f"Bearer {settings.cohere_api_key.get_secret_value()}"},
-            timeout=REQUEST_TIMEOUT_S,
+            timeout=QUICK_TIMEOUT_S,
         )
         self._rerank_slot = asyncio.Lock()
         self._last_rerank = 0.0
@@ -216,7 +219,9 @@ class Gateway:
             input_tokens=round(tokens * ESTIMATE_MARGIN),
             output_tokens=0,
         ) as call:
-            response = await self.openai.embeddings.create(model=EMBEDDING_MODEL, input=list(texts))
+            response = await self.openai.embeddings.create(
+                model=EMBEDDING_MODEL, input=list(texts), timeout=QUICK_TIMEOUT_S
+            )
             usage = Usage(response.usage.prompt_tokens, 0, 0, 0, 0)
             await call.settle(usage, f"embed:{len(texts)}", f"{len(response.data)} vectors")
         return [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
@@ -298,8 +303,10 @@ class Gateway:
             except Exception as error:
                 await self.ledger.fail(call_id, repr(error), released=_rejected(error))
                 raise
-            except asyncio.CancelledError:  # the user stopped the turn (D38): it may be billed
-                await self.ledger.fail(call_id, "cancelled", released=False)
+            except asyncio.CancelledError:
+                # the user stopped the turn (D38): the request was sent and its input is billed;
+                # what it would have generated is not known, so its input estimate is charged (D39)
+                await self.ledger.cancelled(call_id, upper_bound(input_tokens, 0, r))
                 raise
 
 

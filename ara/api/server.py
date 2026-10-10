@@ -6,6 +6,7 @@ then the finished turn or the question the graph waits on. The built UI (ui/dist
 """
 
 import asyncio
+import logging
 import re
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager
@@ -23,6 +24,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Command, StateSnapshot
 from pydantic import BaseModel
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ara.api import conversations as chats
 from ara.api import events
@@ -44,7 +46,9 @@ from evals.catalog import catalog
 
 HOST, PORT = "127.0.0.1", 8000
 USER = "local"  # single user, no login (DESIGN §9)
+COMMIT = ("respond", "remember")  # past these a turn has replied: Stop lets it finish (D39)
 UI = ROOT / "ui" / "dist"
+log = logging.getLogger(__name__)
 
 DOCUMENT = """
 SELECT p.id, p.title, p.source, c.id AS chunk_id, c.heading_path, c.text, c.sentences
@@ -93,6 +97,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         saver = await conversation.checkpointer(pool)
         graph = conversation.build(saver, memory)
         services = Services(pool, gateway, arxiv, memory, saver, graph, {})
+        if repaired := await repair(services):
+            log.warning("repaired conversations left in the middle of a turn: %s", repaired)
         try:
             yield
         finally:
@@ -110,6 +116,9 @@ async def _stop_all(s: Services) -> None:
 
 
 api = FastAPI(title="ARA", lifespan=lifespan)
+# Only this machine's own names: a web page that rebinds its domain to 127.0.0.1 cannot drive the
+# API (and spend on it) from the user's browser (D39).
+api.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 
 
 def _services() -> Services:
@@ -252,7 +261,8 @@ async def stop(conversation_id: str) -> dict[str, Any]:
     before it, so the message can be edited and sent again; its spend stays in the ledger (D38)."""
     run = await _running(conversation_id)
     assert run.task is not None  # set when the run is claimed
-    run.task.cancel()
+    if not run.committing:  # the reply is written and being committed: let it finish (D39)
+        run.task.cancel()
     await asyncio.wait({run.task})
     stopped = next((data for event, data in run.events if event == "stopped"), None)
     if stopped is None:  # it finished before the stop arrived
@@ -279,7 +289,9 @@ async def _follow(run: Run) -> AsyncIterator[ServerSentEvent]:
 
 async def _run(s: Services, run: Run, payload: Any) -> None:
     """Run the turn, keep what happens as events, record the finished turn and send its record.
-    Stopped, the conversation goes back to its state before the turn."""
+    A turn that is stopped, or fails in any way, is undone: the conversation goes back to its
+    state before the turn and the message to the composer (D38, D39). Every run ends with one
+    of done, stopped or error."""
     config = _config(run.conversation)
     started, trace, sent, noted = datetime.now(UTC), list[dict[str, Any]](), set[int](), set[str]()
     before: StateSnapshot | None = None
@@ -304,17 +316,19 @@ async def _run(s: Services, run: Run, payload: Any) -> None:
             ) as stream:
                 async for part in stream:
                     await _observe(s, run, dict(part), trace, sent, noted)
-        except Exception as error:
+        except Exception:
             # LangGraph 1.2.14 streaming with subgraphs=True re-raises, at the end, an error a
             # node's error handler already handled, after the run has finished and been
             # checkpointed (reproduced on a two-node graph, D35). A finished run is a turn.
             snapshot = await s.graph.aget_state(config)
             if snapshot.next and not snapshot.interrupts:
-                await run.emit("error", {"error": "The turn failed: " + why(error)})
-                return
+                raise
         await _record(s, run, config, started, trace, sent)
     except asyncio.CancelledError:
-        await _undo(s, run, before)
+        await _undone(s, run, before, "stopped", {})
+    except Exception as error:
+        log.exception("turn %s failed", run.turn_id)
+        await _undone(s, run, before, "error", {"error": "The turn failed: " + why(error)})
     finally:
         s.runs.pop(run.conversation, None)
         await run.finish()
@@ -332,6 +346,8 @@ async def _observe(
     if (node := events.node_event(part)) is None:
         return
     trace.append(node)
+    if node["graph"] == "main" and node["node"] in COMMIT and node["phase"] == "start":
+        run.committing = True
     await run.emit("node", node)
     for text in events.problems(part):
         if text not in noted:
@@ -363,7 +379,7 @@ async def _record(
         "waiting": waiting,
     }
     if waiting is not None:  # the turn stops at a question: that question is its reply
-        turn |= {"reply": waiting["question"], "status": "needs_input", "answer": None}
+        turn |= {"reply": waiting["question"], "status": "needs_input", "answer": None, "parts": []}
     async with s.pool.connection() as conn:
         await chats.record(conn, run.conversation, turn, started)
         calls = (await chats.turn_calls(conn, [run.turn_id])).get(run.turn_id, [])
@@ -374,26 +390,63 @@ async def _record(
     await run.emit("done", {**turn, "calls": calls, "started_at": started, "finished_at": finished})
 
 
-async def _undo(s: Services, run: Run, before: StateSnapshot | None) -> None:
-    """Put the conversation back as it was before a stopped turn: the checkpoint from before it
-    becomes the latest again (a question it was answering is asked again, without a model
-    call); a conversation the turn started is removed."""
-    config = _config(run.conversation)
-    async with s.pool.connection() as conn:
-        spent = await chats.charged(conn, run.turn_id)
-        if before is not None and before.config["configurable"].get("checkpoint_id"):
-            await s.graph.aupdate_state(before.config, None, as_node="__copy__")
-            if before.interrupts:
-                await s.graph.ainvoke(None, config, context=s.context(run.turn_id))
-            removed = False
-        else:  # the turn started the conversation, or stopped before the graph ran
-            if before is not None:
-                await s.checkpointer.adelete_thread(run.conversation)
-            removed = await chats.forget_if_empty(conn, run.conversation)
+async def _undone(
+    s: Services, run: Run, before: StateSnapshot | None, event: str, extra: dict[str, Any]
+) -> None:
+    """Undo the turn and say so; if undoing fails too, say what failed."""
+    try:
+        removed = await restore(s, run.conversation, before, run.turn_id)
+        async with s.pool.connection() as conn:
+            spent = await chats.charged(conn, run.turn_id)
+    except Exception as error:
+        log.exception("undoing turn %s failed", run.turn_id)
+        extra = {"error": f"The turn could not be undone: {why(error)}"}
+        event, removed, spent = "error", False, 0.0
     await run.emit(
-        "stopped",
-        {**run.summary(), "spent_usd": spent, "conversation_removed": removed},
+        event,
+        {**run.summary(), **extra, "spent_usd": spent, "conversation_removed": removed},
     )
+
+
+async def restore(
+    s: Services, conversation_id: str, before: StateSnapshot | None, turn_id: str
+) -> bool:
+    """Put a conversation back as it was at `before`: that checkpoint becomes the latest again (a
+    question it was waiting on is asked again, by clarify, which calls no model). With nothing
+    before (the turn started the conversation), the thread goes, and so does the conversation if
+    it has no recorded turn; returns whether it went. `before` None with a thread also means the
+    graph never ran: nothing to undo."""
+    config = _config(conversation_id)
+    if before is not None and before.config["configurable"].get("checkpoint_id"):
+        await s.graph.aupdate_state(before.config, None, as_node="__copy__")
+        if before.interrupts:
+            await s.graph.ainvoke(None, config, context=s.context(turn_id))
+        return False
+    if before is not None:
+        await s.checkpointer.adelete_thread(conversation_id)
+    async with s.pool.connection() as conn:
+        return await chats.forget_if_empty(conn, conversation_id)
+
+
+async def repair(s: Services) -> list[str]:
+    """At startup: a conversation whose thread stopped in the middle of a turn (the server was
+    killed while it ran) goes back to the last checkpoint between turns, or to a question it
+    was waiting on (D39). Returns the conversations repaired."""
+    async with s.pool.connection() as conn:
+        ids = [c["id"] for c in await chats.listed(conn, USER)]
+    repaired = []
+    for conversation_id in ids:
+        latest = await s.graph.aget_state(_config(conversation_id))
+        if not latest.next or latest.interrupts:
+            continue
+        settled = None
+        async for snapshot in s.graph.aget_state_history(_config(conversation_id)):
+            if not snapshot.next or snapshot.interrupts:
+                settled = snapshot
+                break
+        await restore(s, conversation_id, settled, f"ui:{conversation_id}:repair")
+        repaired.append(conversation_id)
+    return repaired
 
 
 def _config(conversation_id: str) -> Any:
@@ -448,7 +501,7 @@ async def facts(offset: int = 0, limit: int = PAGE) -> dict[str, Any]:
     """What is remembered about the user, oldest first (new facts are added at the end), each
     with the conversation it came from when that conversation is still kept (D38)."""
     s = _services()
-    items = await s.memory.asearch(store.profile_namespace(USER), limit=10_000)
+    items = await s.memory.asearch(store.profile_namespace(USER), limit=store.ALL)
     ordered = sorted(items, key=lambda i: i.created_at)
     page = [store.Remembered(**i.value) for i in ordered[offset : offset + limit]]
     async with s.pool.connection() as conn:

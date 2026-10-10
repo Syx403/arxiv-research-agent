@@ -264,6 +264,9 @@ def after_understand(s) -> Literal["clarify", "discover", "read", "answer", "res
   D38: problems are worded ("too many requests right now (HTTP 429)", "it took too long"), a
   reply with nothing else says it could not finish; after a failed arXiv request the round's
   other calls are skipped and two failed rounds end the search; Retry-After is honoured up to 20 s.
+  D39: nodes that wait for a shared rate-limit slot (arXiv, rerank) have a 300 s backstop and
+  their requests their own 20 s timeouts; synthesize and repair 90 s; requeries ≤ 3 per turn; a
+  turn that fails is undone like a stopped one, and startup repairs a turn left half-done.
 - Durability: checkpoints after every step; completed `Send` branches are not re-run on resume.
 
 ---
@@ -533,7 +536,8 @@ API (FastAPI + SSE, under `/api`, as built after D38): `GET/POST /conversations`
 it), `GET /conversations/{id}/live` (follow the running turn), `POST /conversations/{id}/stop`,
 `GET /graph`, `GET /papers/{id}/document`, `GET /evals`, `GET /evals/suites`, `GET /evals/{run}`,
 `GET /memory/facts`, `GET /memory/library`, `GET /memory/library/{arxiv_id}`,
-`DELETE /memory/{key}`.
+`DELETE /memory/{key}`. D39: a reply is recorded in parts (0009) and rendered from the turn's data; the API
+accepts Host 127.0.0.1 and localhost only; reservations read running totals (0008).
 Frontend: React + Vite + TypeScript + mermaid.js, served by FastAPI. A demo mode uses
 pre-ingested papers so a live demo turn stays short.
 

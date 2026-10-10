@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
 
-import type { Paper, Turn } from "../api";
+import type { Claim, Paper, Part, Turn } from "../api";
 
 const CITATION = /\[(E\d+(?:\s*,\s*E\d+)*)\]/g;
-const SOURCE_LINE = /^\[E\d+\] /;
-const LISTING = /^(\d+)\. (.+) \(arXiv ([^,)]+)(?:, ([^)]*))?\) — (.*)$/;
 
-/** The agent's reply as written, with citations as chips and listed papers as rows. The
- *  "[E1] section (arXiv …)" source lines are left to the side panel. */
+/** The agent's reply, from the turn's own data (D39): listed papers from `turn.papers`, the
+ *  answer from `turn.answer` (the direct answer, then its explanation in paragraphs, every
+ *  sentence with its citation chips), notes and warnings as such. Turns recorded before D39 have
+ *  no parts and are shown as their text. */
 export function Reply({
   turn,
   onCite,
@@ -17,55 +17,96 @@ export function Reply({
   onCite: (id: string) => void;
   onPaper: (paper: Paper | undefined) => void;
 }) {
-  const blocks = turn.reply.split(/\n\n+/).map((b) => b.split("\n").filter((l) => !SOURCE_LINE.test(l)));
-  const lead = turn.answer && !turn.answer.abstained ? turn.answer.short : null;
+  const parts: Part[] = turn.parts?.length ? turn.parts : [{ kind: "text", text: turn.reply }];
   return (
     <div className="reply">
-      {blocks.map((lines, b) => {
-        if (lines.length === 0) return null;
-        if (lines.every((l) => LISTING.test(l))) {
-          return (
-            <ol key={b} className="listing">
-              {lines.map((line) => {
-                const [, n, title, id, date, reason] = LISTING.exec(line)!;
-                const paper = turn.papers[Number(n) - 1] ?? turn.read[Number(n) - 1];
-                return (
-                  <li key={n}>
-                    <button className="listing-item" onClick={() => onPaper(paper)}>
-                      <span className="listing-title">{title}</span>
-                      <span className="listing-meta">
-                        <span className="mono">{id}</span>
-                        {date && <span>{date}</span>}
-                        {paper?.relevance != null && <span>relevance {paper.relevance}</span>}
-                      </span>
-                      <span className="listing-reason">{reason}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-          );
-        }
-        return (
-          <div key={b} className="reply-block">
-            {lines.map((line, i) => {
-              if (line.startsWith("Note: ")) {
-                return (
-                  <p key={i} className="note">
-                    {line.slice(6)}
-                  </p>
-                );
-              }
-              const isLead = lead !== null && line.replace(CITATION, "").trim() === lead;
-              return (
-                <p key={i} className={isLead ? "lead" : undefined}>
-                  {chipped(line, onCite)}
-                </p>
-              );
-            })}
-          </div>
-        );
-      })}
+      {parts.map((part, i) => (
+        <PartView key={i} part={part} turn={turn} onCite={onCite} onPaper={onPaper} />
+      ))}
+    </div>
+  );
+}
+
+function PartView({
+  part,
+  turn,
+  onCite,
+  onPaper,
+}: {
+  part: Part;
+  turn: Turn;
+  onCite: (id: string) => void;
+  onPaper: (paper: Paper | undefined) => void;
+}) {
+  switch (part.kind) {
+    case "listing":
+      return (
+        <div className="reply-block">
+          {part.source === "library" && <p className="listing-head">From your library</p>}
+          <ol className="listing">
+            {turn.papers.map((paper) => (
+              <li key={paper.arxiv_id}>
+                <button className="listing-item" onClick={() => onPaper(paper)}>
+                  <span className="listing-title">{paper.title}</span>
+                  <span className="listing-meta">
+                    <span className="mono">
+                      {paper.arxiv_id}v{paper.version}
+                    </span>
+                    {paper.published && <span>{paper.published}</span>}
+                    {paper.relevance != null && <span>relevance {paper.relevance}</span>}
+                    {paper.read_before && <span>read before</span>}
+                  </span>
+                  <span className="listing-reason">{paper.reason}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </div>
+      );
+    case "answer":
+      return turn.answer ? <AnswerView answer={turn.answer} onCite={onCite} /> : null;
+    case "note":
+    case "warning":
+      return <p className="note">{part.text.replace(/^Note: /, "")}</p>;
+    case "context":
+      return <p className="context">{chipped(part.text, onCite)}</p>;
+    default:
+      return (
+        <div className="reply-block">
+          {part.text
+            .split("\n")
+            .filter(Boolean)
+            .map((line, i) => (
+              <p key={i}>{chipped(line, onCite)}</p>
+            ))}
+        </div>
+      );
+  }
+}
+
+/** The direct answer (an abstention in plain type), then each paragraph of verified sentences. */
+function AnswerView({ answer, onCite }: { answer: NonNullable<Turn["answer"]>; onCite: (id: string) => void }) {
+  const paragraphs = new Map<number, Claim[]>();
+  for (const sentence of answer.sentences) {
+    paragraphs.set(sentence.paragraph, [...(paragraphs.get(sentence.paragraph) ?? []), sentence]);
+  }
+  return (
+    <div className="reply-block answer">
+      <p className={answer.abstained ? undefined : "lead"}>{answer.short}</p>
+      {[...paragraphs.values()].map((claims, i) => (
+        <p key={i}>
+          {claims.map((c) => (
+            <span key={c.index}>
+              {c.text}
+              {c.citations.map((id) => (
+                <button key={id} className="chip" onClick={() => onCite(id)}>
+                  {id}
+                </button>
+              ))}{" "}
+            </span>
+          ))}
+        </p>
+      ))}
     </div>
   );
 }
