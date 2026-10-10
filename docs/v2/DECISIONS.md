@@ -1042,6 +1042,9 @@ decision gets a new entry that names the one it replaces.
 - Checked: 165 unit tests, among them undo on a failure outside the graph, Stop during the
   commit, startup repair, running totals, the requery cap, the history window, library writes at
   commit, titles not written by the user, parts, a paragraph cut into claims.
+- CI: the first two D39 pushes failed before any test ran: with no `.python-version` and
+  `requires-python >= 3.13`, uv took the runner's newest Python (3.15), for which ormsgpack (via
+  langgraph-checkpoint) has no wheel and does not build. `.python-version` now pins 3.13.
 - Live check (approved ≤ US$0.03): 57 calls, US$0.0137. Comparing ReWOO and LLMCompiler: first
   run showed the one-line paragraphs (2 claims); after the fix 17 sentences delivered of 19
   checked (1 rejected, repaired), each with its chips, 27 calls, 48 s, one rerank, no requery. A
